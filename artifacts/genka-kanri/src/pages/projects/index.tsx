@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useListProjects, getListProjectsQueryKey } from "@workspace/api-client-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
@@ -9,16 +9,17 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Plus, Search, FolderKanban } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 
-const STATUS_LABELS = {
+const STATUS_LABELS: Record<string, string> = {
   planning: "計画中",
   active: "施工中",
   completed: "完工",
   suspended: "中断",
 };
 
-const STATUS_COLORS = {
+const STATUS_COLORS: Record<string, string> = {
   planning: "bg-slate-100 text-slate-700",
   active: "bg-orange-100 text-orange-700 border-orange-200",
   completed: "bg-emerald-100 text-emerald-700 border-emerald-200",
@@ -27,11 +28,14 @@ const STATUS_COLORS = {
 
 export default function Projects() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  
-  // Cast statusFilter to any to pass to params, Orval limits it to specific union but we use 'all' for undefined
-  const { data, isLoading } = useListProjects({ 
-    status: statusFilter !== "all" ? statusFilter as any : undefined 
-  }, { query: { queryKey: getListProjectsQueryKey({ status: statusFilter !== "all" ? statusFilter as any : undefined }) } });
+
+  const params = statusFilter !== "all" ? { status: statusFilter as "planning" | "active" | "completed" | "suspended" } : undefined;
+
+  const { data, isLoading, isError } = useListProjects(params, {
+    query: { queryKey: getListProjectsQueryKey(params) },
+  });
+
+  const projects = data?.items ?? [];
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -79,10 +83,11 @@ export default function Projects() {
                 <TableRow>
                   <TableHead className="w-[120px]">工事番号</TableHead>
                   <TableHead>工事名称</TableHead>
-                  <TableHead className="w-[120px]">状態</TableHead>
+                  <TableHead>得意先名</TableHead>
+                  <TableHead className="w-[100px]">状態</TableHead>
                   <TableHead className="text-right">請負金額</TableHead>
                   <TableHead className="text-right">実績原価</TableHead>
-                  <TableHead className="text-center w-[200px]">予算消化率</TableHead>
+                  <TableHead className="text-center w-[180px]">予算消化率</TableHead>
                   <TableHead className="text-right">粗利率</TableHead>
                   <TableHead className="w-[80px]"></TableHead>
                 </TableRow>
@@ -91,24 +96,38 @@ export default function Projects() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={8} className="h-16 text-center text-slate-500">読み込み中...</TableCell>
+                      <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                      <TableCell><Skeleton className="h-5 w-16 rounded-full" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="h-4 w-24 ml-auto" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="h-4 w-24 ml-auto" /></TableCell>
+                      <TableCell><Skeleton className="h-2 w-full" /></TableCell>
+                      <TableCell className="text-right"><Skeleton className="h-4 w-12 ml-auto" /></TableCell>
+                      <TableCell></TableCell>
                     </TableRow>
                   ))
-                ) : data?.items.length === 0 ? (
+                ) : isError ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-32 text-center text-slate-500">工事が見つかりません</TableCell>
+                    <TableCell colSpan={9} className="h-32 text-center text-destructive">
+                      データの取得に失敗しました。再度お試しください。
+                    </TableCell>
+                  </TableRow>
+                ) : projects.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="h-32 text-center text-slate-500">
+                      工事が見つかりません
+                    </TableCell>
                   </TableRow>
                 ) : (
-                  data?.items.map((project) => (
+                  projects.map((project) => (
                     <TableRow key={project.id} className="hover:bg-slate-50/50">
                       <TableCell className="font-mono text-xs text-slate-600">{project.projectCode}</TableCell>
-                      <TableCell className="font-medium text-slate-900">
-                        {project.name}
-                        <div className="text-xs text-slate-500 font-normal mt-0.5">{project.clientName}</div>
-                      </TableCell>
+                      <TableCell className="font-medium text-slate-900">{project.name}</TableCell>
+                      <TableCell className="text-sm text-slate-600">{project.clientName}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={STATUS_COLORS[project.status as keyof typeof STATUS_COLORS]}>
-                          {STATUS_LABELS[project.status as keyof typeof STATUS_LABELS]}
+                        <Badge variant="outline" className={STATUS_COLORS[project.status] ?? ""}>
+                          {STATUS_LABELS[project.status] ?? project.status}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right font-medium">
@@ -119,10 +138,9 @@ export default function Projects() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <Progress 
-                            value={Math.min(project.budgetUsageRate, 100)} 
+                          <Progress
+                            value={Math.min(project.budgetUsageRate, 100)}
                             className="h-2 flex-1"
-                            // Custom class for indicator color if overrun
                             indicatorClassName={project.budgetUsageRate > 100 ? "bg-destructive" : "bg-primary"}
                           />
                           <span className={`text-xs font-medium w-9 text-right ${project.budgetUsageRate > 100 ? "text-destructive" : "text-slate-600"}`}>
