@@ -250,8 +250,22 @@ function BudgetTab({ projectId }: { projectId: number }) {
                   const isEditing = cat in editing;
                   const isSaving = saving[cat] ?? false;
 
+                  const rowHighlight =
+                    usageRate >= 100
+                      ? "bg-red-50 border-l-4 border-l-red-400"
+                      : usageRate >= 80
+                      ? "bg-yellow-50 border-l-4 border-l-yellow-400"
+                      : "hover:bg-slate-50/50";
+
+                  const rateTextColor =
+                    usageRate >= 100
+                      ? "text-red-600"
+                      : usageRate >= 80
+                      ? "text-yellow-600"
+                      : "text-slate-600";
+
                   return (
-                    <TableRow key={cat} className="hover:bg-slate-50/50">
+                    <TableRow key={cat} className={rowHighlight}>
                       <TableCell>
                         <Badge variant="outline" className={CATEGORY_COLORS[cat]}>
                           {CATEGORY_LABELS[cat]}
@@ -303,11 +317,15 @@ function BudgetTab({ projectId }: { projectId: number }) {
                           <Progress
                             value={Math.min(usageRate, 100)}
                             className="h-2 flex-1"
-                            indicatorClassName={usageRate > 100 ? "bg-destructive" : "bg-primary"}
+                            indicatorClassName={
+                              usageRate >= 100
+                                ? "bg-red-500"
+                                : usageRate >= 80
+                                ? "bg-yellow-400"
+                                : "bg-primary"
+                            }
                           />
-                          <span
-                            className={`text-xs font-medium w-9 text-right ${usageRate > 100 ? "text-destructive" : "text-slate-600"}`}
-                          >
+                          <span className={`text-xs font-medium w-9 text-right ${rateTextColor}`}>
                             {usageRate.toFixed(1)}%
                           </span>
                         </div>
