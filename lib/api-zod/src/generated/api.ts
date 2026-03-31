@@ -375,6 +375,91 @@ export const UpdateBudgetResponse = zod.object({
 });
 
 /**
+ * @summary 実行予算明細一覧取得
+ */
+export const ListBudgetItemsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListBudgetItemsResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      projectId: zod.number(),
+      workTypeCode: zod.string().describe("工種コード"),
+      workTypeName: zod.string().describe("工種名称"),
+      supplierName: zod.string().describe("仕入先"),
+      contractAmount: zod.number().describe("請負金額"),
+      initialBudget: zod.number().describe("当初予算"),
+      revisedBudget: zod.number().describe("実行予算"),
+      sortOrder: zod.number().describe("表示順"),
+      createdAt: zod.coerce.date(),
+      updatedAt: zod.coerce.date(),
+    }),
+  ),
+  totalContractAmount: zod.number(),
+  totalInitialBudget: zod.number(),
+  totalRevisedBudget: zod.number(),
+});
+
+/**
+ * @summary 実行予算明細登録
+ */
+export const CreateBudgetItemParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CreateBudgetItemBody = zod.object({
+  workTypeCode: zod.string(),
+  workTypeName: zod.string(),
+  supplierName: zod.string().optional(),
+  contractAmount: zod.number().optional(),
+  initialBudget: zod.number().optional(),
+  revisedBudget: zod.number().optional(),
+  sortOrder: zod.number().optional(),
+});
+
+/**
+ * @summary 実行予算明細更新
+ */
+export const UpdateBudgetItemParams = zod.object({
+  id: zod.coerce.number(),
+  itemId: zod.coerce.number(),
+});
+
+export const UpdateBudgetItemBody = zod.object({
+  workTypeCode: zod.string().optional(),
+  workTypeName: zod.string().optional(),
+  supplierName: zod.string().optional(),
+  contractAmount: zod.number().optional(),
+  initialBudget: zod.number().optional(),
+  revisedBudget: zod.number().optional(),
+  sortOrder: zod.number().optional(),
+});
+
+export const UpdateBudgetItemResponse = zod.object({
+  id: zod.number(),
+  projectId: zod.number(),
+  workTypeCode: zod.string().describe("工種コード"),
+  workTypeName: zod.string().describe("工種名称"),
+  supplierName: zod.string().describe("仕入先"),
+  contractAmount: zod.number().describe("請負金額"),
+  initialBudget: zod.number().describe("当初予算"),
+  revisedBudget: zod.number().describe("実行予算"),
+  sortOrder: zod.number().describe("表示順"),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary 実行予算明細削除
+ */
+export const DeleteBudgetItemParams = zod.object({
+  id: zod.coerce.number(),
+  itemId: zod.coerce.number(),
+});
+
+/**
  * @summary ダッシュボード概要取得
  */
 export const GetDashboardOverviewResponse = zod.object({

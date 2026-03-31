@@ -8,6 +8,8 @@
 
 export * from "./budget";
 export * from "./budgetCategory";
+export * from "./budgetItem";
+export * from "./budgetItemListResponse";
 export * from "./budgetListResponse";
 export * from "./budgetVsActualResponse";
 export * from "./budgetVsActualResponseItemsItem";
@@ -16,6 +18,7 @@ export * from "./costByCategoryResponseCategoriesItem";
 export * from "./costItem";
 export * from "./costItemCategory";
 export * from "./costItemListResponse";
+export * from "./createBudgetItemRequest";
 export * from "./createBudgetRequest";
 export * from "./createBudgetRequestCategory";
 export * from "./createCostItemRequest";
@@ -43,6 +46,7 @@ export * from "./projectListResponse";
 export * from "./projectStatus";
 export * from "./projectSummary";
 export * from "./projectSummaryCostBreakdown";
+export * from "./updateBudgetItemRequest";
 export * from "./updateBudgetRequest";
 export * from "./updateBudgetRequestCategory";
 export * from "./updateCostItemRequest";

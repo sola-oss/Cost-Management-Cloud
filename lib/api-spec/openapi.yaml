@@ -15,6 +15,8 @@ tags:
     description: 原価入力
   - name: budgets
     description: 予算管理
+  - name: budget-items
+    description: 実行予算明細
   - name: dashboard
     description: ダッシュボード・集計
 
@@ -297,6 +299,102 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Budget"
+
+  /projects/{id}/budget-items:
+    get:
+      operationId: listBudgetItems
+      tags: [budget-items]
+      summary: 実行予算明細一覧取得
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 実行予算明細一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetItemListResponse"
+    post:
+      operationId: createBudgetItem
+      tags: [budget-items]
+      summary: 実行予算明細登録
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBudgetItemRequest"
+      responses:
+        "201":
+          description: 登録成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetItem"
+
+  /projects/{id}/budget-items/{itemId}:
+    put:
+      operationId: updateBudgetItem
+      tags: [budget-items]
+      summary: 実行予算明細更新
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: path
+          name: itemId
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBudgetItemRequest"
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetItem"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteBudgetItem
+      tags: [budget-items]
+      summary: 実行予算明細削除
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+        - in: path
+          name: itemId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: 削除成功
 
   /dashboard/overview:
     get:
@@ -895,6 +993,111 @@ components:
           type: string
         budgetAmount:
           type: number
+
+    BudgetItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        projectId:
+          type: integer
+        workTypeCode:
+          type: string
+          description: 工種コード
+        workTypeName:
+          type: string
+          description: 工種名称
+        supplierName:
+          type: string
+          description: 仕入先
+        contractAmount:
+          type: number
+          description: 請負金額
+        initialBudget:
+          type: number
+          description: 当初予算
+        revisedBudget:
+          type: number
+          description: 実行予算
+        sortOrder:
+          type: integer
+          description: 表示順
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - projectId
+        - workTypeCode
+        - workTypeName
+        - supplierName
+        - contractAmount
+        - initialBudget
+        - revisedBudget
+        - sortOrder
+        - createdAt
+        - updatedAt
+
+    BudgetItemListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BudgetItem"
+        totalContractAmount:
+          type: number
+        totalInitialBudget:
+          type: number
+        totalRevisedBudget:
+          type: number
+      required:
+        - items
+        - totalContractAmount
+        - totalInitialBudget
+        - totalRevisedBudget
+
+    CreateBudgetItemRequest:
+      type: object
+      properties:
+        workTypeCode:
+          type: string
+        workTypeName:
+          type: string
+        supplierName:
+          type: string
+        contractAmount:
+          type: number
+        initialBudget:
+          type: number
+        revisedBudget:
+          type: number
+        sortOrder:
+          type: integer
+      required:
+        - workTypeCode
+        - workTypeName
+
+    UpdateBudgetItemRequest:
+      type: object
+      properties:
+        workTypeCode:
+          type: string
+        workTypeName:
+          type: string
+        supplierName:
+          type: string
+        contractAmount:
+          type: number
+        initialBudget:
+          type: number
+        revisedBudget:
+          type: number
+        sortOrder:
+          type: integer
 
     DashboardOverview:
       type: object

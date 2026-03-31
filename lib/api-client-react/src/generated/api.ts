@@ -18,11 +18,14 @@ import type {
 
 import type {
   Budget,
+  BudgetItem,
+  BudgetItemListResponse,
   BudgetListResponse,
   BudgetVsActualResponse,
   CostByCategoryResponse,
   CostItem,
   CostItemListResponse,
+  CreateBudgetItemRequest,
   CreateBudgetRequest,
   CreateCostItemRequest,
   CreateProjectRequest,
@@ -40,6 +43,7 @@ import type {
   ProjectDetail,
   ProjectListResponse,
   ProjectSummary,
+  UpdateBudgetItemRequest,
   UpdateBudgetRequest,
   UpdateCostItemRequest,
   UpdateProjectRequest,
@@ -1270,6 +1274,353 @@ export const useUpdateBudget = <
   TContext
 > => {
   return useMutation(getUpdateBudgetMutationOptions(options));
+};
+
+/**
+ * @summary 実行予算明細一覧取得
+ */
+export const getListBudgetItemsUrl = (id: number) => {
+  return `/api/projects/${id}/budget-items`;
+};
+
+export const listBudgetItems = async (
+  id: number,
+  options?: RequestInit,
+): Promise<BudgetItemListResponse> => {
+  return customFetch<BudgetItemListResponse>(getListBudgetItemsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListBudgetItemsQueryKey = (id: number) => {
+  return [`/api/projects/${id}/budget-items`] as const;
+};
+
+export const getListBudgetItemsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listBudgetItems>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listBudgetItems>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListBudgetItemsQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listBudgetItems>>> = ({
+    signal,
+  }) => listBudgetItems(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listBudgetItems>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListBudgetItemsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listBudgetItems>>
+>;
+export type ListBudgetItemsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary 実行予算明細一覧取得
+ */
+
+export function useListBudgetItems<
+  TData = Awaited<ReturnType<typeof listBudgetItems>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listBudgetItems>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListBudgetItemsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary 実行予算明細登録
+ */
+export const getCreateBudgetItemUrl = (id: number) => {
+  return `/api/projects/${id}/budget-items`;
+};
+
+export const createBudgetItem = async (
+  id: number,
+  createBudgetItemRequest: CreateBudgetItemRequest,
+  options?: RequestInit,
+): Promise<BudgetItem> => {
+  return customFetch<BudgetItem>(getCreateBudgetItemUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createBudgetItemRequest),
+  });
+};
+
+export const getCreateBudgetItemMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createBudgetItem>>,
+    TError,
+    { id: number; data: BodyType<CreateBudgetItemRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createBudgetItem>>,
+  TError,
+  { id: number; data: BodyType<CreateBudgetItemRequest> },
+  TContext
+> => {
+  const mutationKey = ["createBudgetItem"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createBudgetItem>>,
+    { id: number; data: BodyType<CreateBudgetItemRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return createBudgetItem(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateBudgetItemMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createBudgetItem>>
+>;
+export type CreateBudgetItemMutationBody = BodyType<CreateBudgetItemRequest>;
+export type CreateBudgetItemMutationError = ErrorType<unknown>;
+
+/**
+ * @summary 実行予算明細登録
+ */
+export const useCreateBudgetItem = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createBudgetItem>>,
+    TError,
+    { id: number; data: BodyType<CreateBudgetItemRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createBudgetItem>>,
+  TError,
+  { id: number; data: BodyType<CreateBudgetItemRequest> },
+  TContext
+> => {
+  return useMutation(getCreateBudgetItemMutationOptions(options));
+};
+
+/**
+ * @summary 実行予算明細更新
+ */
+export const getUpdateBudgetItemUrl = (id: number, itemId: number) => {
+  return `/api/projects/${id}/budget-items/${itemId}`;
+};
+
+export const updateBudgetItem = async (
+  id: number,
+  itemId: number,
+  updateBudgetItemRequest: UpdateBudgetItemRequest,
+  options?: RequestInit,
+): Promise<BudgetItem> => {
+  return customFetch<BudgetItem>(getUpdateBudgetItemUrl(id, itemId), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateBudgetItemRequest),
+  });
+};
+
+export const getUpdateBudgetItemMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateBudgetItem>>,
+    TError,
+    { id: number; itemId: number; data: BodyType<UpdateBudgetItemRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateBudgetItem>>,
+  TError,
+  { id: number; itemId: number; data: BodyType<UpdateBudgetItemRequest> },
+  TContext
+> => {
+  const mutationKey = ["updateBudgetItem"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateBudgetItem>>,
+    { id: number; itemId: number; data: BodyType<UpdateBudgetItemRequest> }
+  > = (props) => {
+    const { id, itemId, data } = props ?? {};
+
+    return updateBudgetItem(id, itemId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateBudgetItemMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateBudgetItem>>
+>;
+export type UpdateBudgetItemMutationBody = BodyType<UpdateBudgetItemRequest>;
+export type UpdateBudgetItemMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary 実行予算明細更新
+ */
+export const useUpdateBudgetItem = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateBudgetItem>>,
+    TError,
+    { id: number; itemId: number; data: BodyType<UpdateBudgetItemRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateBudgetItem>>,
+  TError,
+  { id: number; itemId: number; data: BodyType<UpdateBudgetItemRequest> },
+  TContext
+> => {
+  return useMutation(getUpdateBudgetItemMutationOptions(options));
+};
+
+/**
+ * @summary 実行予算明細削除
+ */
+export const getDeleteBudgetItemUrl = (id: number, itemId: number) => {
+  return `/api/projects/${id}/budget-items/${itemId}`;
+};
+
+export const deleteBudgetItem = async (
+  id: number,
+  itemId: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteBudgetItemUrl(id, itemId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteBudgetItemMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteBudgetItem>>,
+    TError,
+    { id: number; itemId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteBudgetItem>>,
+  TError,
+  { id: number; itemId: number },
+  TContext
+> => {
+  const mutationKey = ["deleteBudgetItem"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteBudgetItem>>,
+    { id: number; itemId: number }
+  > = (props) => {
+    const { id, itemId } = props ?? {};
+
+    return deleteBudgetItem(id, itemId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteBudgetItemMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteBudgetItem>>
+>;
+
+export type DeleteBudgetItemMutationError = ErrorType<unknown>;
+
+/**
+ * @summary 実行予算明細削除
+ */
+export const useDeleteBudgetItem = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteBudgetItem>>,
+    TError,
+    { id: number; itemId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteBudgetItem>>,
+  TError,
+  { id: number; itemId: number },
+  TContext
+> => {
+  return useMutation(getDeleteBudgetItemMutationOptions(options));
 };
 
 /**

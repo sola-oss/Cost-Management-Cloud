@@ -34,7 +34,8 @@ artifacts-monorepo/
 │       └── src/schema/
 │           ├── projects.ts     # 工事テーブル
 │           ├── cost-items.ts   # 原価項目テーブル
-│           ├── budgets.ts      # 予算テーブル
+│           ├── budgets.ts      # 予算テーブル（旧4区分固定・後方互換のため保持）
+│           ├── budget-items.ts # 実行予算明細テーブル（工種コード・仕入先管理）
 │           └── payments.ts     # 支払管理テーブル
 ├── scripts/                # Utility scripts
 └── ...
@@ -46,7 +47,7 @@ artifacts-monorepo/
 - **工事一覧** — 工事のCRUD、ステータスフィルタ、得意先名列、予算消化率バー、粗利率
 - **工事詳細（タブ付き）** — 4タブ構成：基本情報・実行予算・原価明細・収支状況
   - **基本情報タブ** — 工事情報の表示・インライン編集
-  - **実行予算タブ** — 工種別（材料費・労務費・外注費・経費）インライン予算入力・編集
+  - **実行予算タブ** — 工種コード・仕入先・請負金額・当初予算・実行予算のグリッド表示。行の追加・インライン編集・削除。予定利益率サマリーKPI表示。20種の工種マスタ選択対応
   - **原価明細タブ** — 原価明細一覧（モーダル追加・削除）、カテゴリ別フィルタ・テキスト検索、件数・合計表示
   - **収支状況タブ** — KPI、工種別予算実績グラフ（BarChart）、収支明細テーブル
 - **収支レポート** — 工事間比較BarChart、要注意工事リスト
@@ -61,6 +62,10 @@ artifacts-monorepo/
 - `PUT /api/projects/:id` — 工事更新
 - `DELETE /api/projects/:id` — 工事削除
 - `GET /api/projects/:id/summary` — 工事収支サマリ
+- `GET /api/projects/:id/budget-items` — 実行予算明細一覧
+- `POST /api/projects/:id/budget-items` — 実行予算明細登録
+- `PUT /api/projects/:id/budget-items/:itemId` — 実行予算明細更新
+- `DELETE /api/projects/:id/budget-items/:itemId` — 実行予算明細削除
 - `GET /api/cost-items?projectId=` — 原価項目一覧
 - `POST /api/cost-items` — 原価項目登録
 - `PUT /api/cost-items/:id` — 原価項目更新

@@ -327,6 +327,54 @@ export interface UpdateBudgetRequest {
   budgetAmount?: number;
 }
 
+export interface BudgetItem {
+  id: number;
+  projectId: number;
+  /** 工種コード */
+  workTypeCode: string;
+  /** 工種名称 */
+  workTypeName: string;
+  /** 仕入先 */
+  supplierName: string;
+  /** 請負金額 */
+  contractAmount: number;
+  /** 当初予算 */
+  initialBudget: number;
+  /** 実行予算 */
+  revisedBudget: number;
+  /** 表示順 */
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BudgetItemListResponse {
+  items: BudgetItem[];
+  totalContractAmount: number;
+  totalInitialBudget: number;
+  totalRevisedBudget: number;
+}
+
+export interface CreateBudgetItemRequest {
+  workTypeCode: string;
+  workTypeName: string;
+  supplierName?: string;
+  contractAmount?: number;
+  initialBudget?: number;
+  revisedBudget?: number;
+  sortOrder?: number;
+}
+
+export interface UpdateBudgetItemRequest {
+  workTypeCode?: string;
+  workTypeName?: string;
+  supplierName?: string;
+  contractAmount?: number;
+  initialBudget?: number;
+  revisedBudget?: number;
+  sortOrder?: number;
+}
+
 export interface DashboardOverview {
   /** 工事件数合計 */
   totalProjects: number;

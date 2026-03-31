@@ -5,9 +5,10 @@ import {
   useGetProjectSummary,
   useListCostItems, useCreateCostItem, useUpdateCostItem, useDeleteCostItem,
   useGetBudgetVsActual,
-  useListBudgets, useCreateBudget, useUpdateBudget,
+  useListBudgetItems, useCreateBudgetItem, useUpdateBudgetItem, useDeleteBudgetItem,
   getGetProjectQueryKey, getGetProjectSummaryQueryKey,
-  getListCostItemsQueryKey, getGetBudgetVsActualQueryKey, getListBudgetsQueryKey,
+  getListCostItemsQueryKey, getGetBudgetVsActualQueryKey,
+  getListBudgetItemsQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -92,317 +93,474 @@ const costItemSchema = z.object({
   notes: z.string().optional(),
 });
 
-// ─── 実行予算インライン編集コンポーネント ─────────────────────────────────
+// ─── 工種マスタ（建設業一般的工種コード） ───────────────────────────────
+const WORK_TYPE_MASTER = [
+  { code: "0610", name: "仮設工事" },
+  { code: "0620", name: "土工事" },
+  { code: "0630", name: "地業工事" },
+  { code: "0640", name: "鉄筋工事" },
+  { code: "0650", name: "基礎工事" },
+  { code: "0660", name: "木工事" },
+  { code: "0670", name: "屋根工事" },
+  { code: "0680", name: "金属工事" },
+  { code: "0690", name: "左官工事" },
+  { code: "0700", name: "タイル・石工事" },
+  { code: "0710", name: "建具工事" },
+  { code: "0720", name: "内装工事" },
+  { code: "0730", name: "塗装工事" },
+  { code: "0740", name: "防水工事" },
+  { code: "0750", name: "断熱工事" },
+  { code: "0760", name: "電気設備工事" },
+  { code: "0770", name: "給排水設備工事" },
+  { code: "0780", name: "空調設備工事" },
+  { code: "0790", name: "外構工事" },
+  { code: "0800", name: "その他" },
+] as const;
+
+// ─── 実行予算タブ ─────────────────────────────────────────────────────────
+
+type EditingRow = {
+  workTypeCode: string;
+  workTypeName: string;
+  supplierName: string;
+  contractAmount: string;
+  initialBudget: string;
+  revisedBudget: string;
+};
 
 function BudgetTab({ projectId }: { projectId: number }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: budgets, isLoading } = useListBudgets(
-    { projectId },
-    { query: { enabled: !!projectId, queryKey: getListBudgetsQueryKey({ projectId }) } },
-  );
-  const { data: bva } = useGetBudgetVsActual(
-    { projectId },
-    { query: { enabled: !!projectId, queryKey: getGetBudgetVsActualQueryKey({ projectId }) } },
+  const { data: budgetItemsData, isLoading } = useListBudgetItems(
+    projectId,
+    { query: { enabled: !!projectId, queryKey: getListBudgetItemsQueryKey(projectId) } },
   );
 
-  const createBudget = useCreateBudget();
-  const updateBudget = useUpdateBudget();
+  const createBudgetItem = useCreateBudgetItem();
+  const updateBudgetItem = useUpdateBudgetItem();
+  const deleteBudgetItem = useDeleteBudgetItem();
 
-  // ローカル編集状態（カテゴリ → 入力金額）
-  const [editing, setEditing] = useState<Partial<Record<Category, string>>>({});
-  const [saving, setSaving] = useState<Partial<Record<Category, boolean>>>({});
+  // Inline editing state per row: id -> editing values
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingValues, setEditingValues] = useState<EditingRow>({
+    workTypeCode: "", workTypeName: "", supplierName: "",
+    contractAmount: "", initialBudget: "", revisedBudget: "",
+  });
 
-  // カテゴリ別予算合計を計算
-  const budgetByCategory = (cat: Category) =>
-    budgets?.items.filter((b) => b.category === cat).reduce((s, b) => s + b.budgetAmount, 0) ?? 0;
+  // New row add state
+  const [addingRow, setAddingRow] = useState(false);
+  const [newRow, setNewRow] = useState<EditingRow>({
+    workTypeCode: "", workTypeName: "", supplierName: "",
+    contractAmount: "0", initialBudget: "0", revisedBudget: "0",
+  });
+  const [savingId, setSavingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [addSaving, setAddSaving] = useState(false);
 
-  // カテゴリ別実績合計
-  const actualByCategory = (cat: Category) =>
-    bva?.items.find((i) => i.category === cat)?.actual ?? 0;
+  const items = budgetItemsData?.items ?? [];
 
-  const handleSave = async (cat: Category) => {
-    const rawVal = editing[cat];
-    if (rawVal === undefined) return;
+  const totalContractAmount = budgetItemsData?.totalContractAmount ?? 0;
+  const totalInitialBudget = budgetItemsData?.totalInitialBudget ?? 0;
+  const totalRevisedBudget = budgetItemsData?.totalRevisedBudget ?? 0;
+  const totalExpectedProfit = totalContractAmount - totalRevisedBudget;
+  const totalExpectedProfitRate = totalContractAmount > 0 ? (totalExpectedProfit / totalContractAmount) * 100 : 0;
 
-    const amount = Number(rawVal.replace(/,/g, ""));
-    if (isNaN(amount) || amount < 0) {
-      toast({ title: "入力エラー", description: "正しい金額を入力してください。", variant: "destructive" });
+  function invalidate() {
+    queryClient.invalidateQueries({ queryKey: getListBudgetItemsQueryKey(projectId) });
+    queryClient.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
+  }
+
+  function startEdit(item: typeof items[number]) {
+    setEditingId(item.id);
+    setEditingValues({
+      workTypeCode: item.workTypeCode,
+      workTypeName: item.workTypeName,
+      supplierName: item.supplierName,
+      contractAmount: String(item.contractAmount),
+      initialBudget: String(item.initialBudget),
+      revisedBudget: String(item.revisedBudget),
+    });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+  }
+
+  async function saveEdit(id: number) {
+    const ca = parseFloat(editingValues.contractAmount) || 0;
+    const ib = parseFloat(editingValues.initialBudget) || 0;
+    const rb = parseFloat(editingValues.revisedBudget) || 0;
+    if (!editingValues.workTypeCode || !editingValues.workTypeName) {
+      toast({ title: "入力エラー", description: "工種コードと工種名称は必須です。", variant: "destructive" });
       return;
     }
-
-    setSaving((s) => ({ ...s, [cat]: true }));
-
-    const existing = budgets?.items.filter((b) => b.category === cat) ?? [];
-
+    setSavingId(id);
     try {
-      if (existing.length === 0) {
-        // 新規作成
-        await createBudget.mutateAsync({
-          data: { projectId, category: cat, description: CATEGORY_LABELS[cat], budgetAmount: amount },
-        });
-      } else if (existing.length === 1) {
-        // 既存1件を更新
-        await updateBudget.mutateAsync({
-          id: existing[0].id,
-          data: { budgetAmount: amount, description: existing[0].description },
-        });
-      } else {
-        // 複数あれば先頭を更新し、残りの予算は維持（合計を合わせるため先頭のみ調整）
-        const otherSum = existing.slice(1).reduce((s, b) => s + b.budgetAmount, 0);
-        const newFirst = Math.max(0, amount - otherSum);
-        await updateBudget.mutateAsync({
-          id: existing[0].id,
-          data: { budgetAmount: newFirst, description: existing[0].description },
-        });
-      }
-
-      await queryClient.invalidateQueries({ queryKey: getListBudgetsQueryKey({ projectId }) });
-      await queryClient.invalidateQueries({ queryKey: getGetBudgetVsActualQueryKey({ projectId }) });
-      await queryClient.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
-
-      setEditing((e) => {
-        const next = { ...e };
-        delete next[cat];
-        return next;
+      await updateBudgetItem.mutateAsync({
+        id: projectId,
+        itemId: id,
+        data: {
+          workTypeCode: editingValues.workTypeCode,
+          workTypeName: editingValues.workTypeName,
+          supplierName: editingValues.supplierName,
+          contractAmount: ca,
+          initialBudget: ib,
+          revisedBudget: rb,
+        },
       });
-      toast({ title: "保存しました", description: `${CATEGORY_LABELS[cat]}の実行予算を更新しました。` });
+      invalidate();
+      setEditingId(null);
+      toast({ title: "保存しました" });
     } catch {
-      toast({ title: "保存エラー", description: "予算の更新に失敗しました。", variant: "destructive" });
+      toast({ title: "保存エラー", description: "更新に失敗しました。", variant: "destructive" });
     } finally {
-      setSaving((s) => ({ ...s, [cat]: false }));
+      setSavingId(null);
     }
-  };
+  }
 
-  const totalBudget = CATEGORIES.reduce((s, cat) => s + budgetByCategory(cat), 0);
-  const totalActual = CATEGORIES.reduce((s, cat) => s + actualByCategory(cat), 0);
-  const totalVariance = totalBudget - totalActual;
-  const totalUsageRate = totalBudget > 0 ? (totalActual / totalBudget) * 100 : 0;
+  async function handleDelete(id: number) {
+    if (!window.confirm("この明細を削除してもよいですか？")) return;
+    setDeletingId(id);
+    try {
+      await deleteBudgetItem.mutateAsync({ id: projectId, itemId: id });
+      invalidate();
+      toast({ title: "削除しました" });
+    } catch {
+      toast({ title: "削除エラー", description: "削除に失敗しました。", variant: "destructive" });
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function handleAddSave() {
+    if (!newRow.workTypeCode || !newRow.workTypeName) {
+      toast({ title: "入力エラー", description: "工種コードと工種名称は必須です。", variant: "destructive" });
+      return;
+    }
+    setAddSaving(true);
+    try {
+      await createBudgetItem.mutateAsync({
+        id: projectId,
+        data: {
+          workTypeCode: newRow.workTypeCode,
+          workTypeName: newRow.workTypeName,
+          supplierName: newRow.supplierName,
+          contractAmount: parseFloat(newRow.contractAmount) || 0,
+          initialBudget: parseFloat(newRow.initialBudget) || 0,
+          revisedBudget: parseFloat(newRow.revisedBudget) || 0,
+          sortOrder: items.length,
+        },
+      });
+      invalidate();
+      setAddingRow(false);
+      setNewRow({ workTypeCode: "", workTypeName: "", supplierName: "", contractAmount: "0", initialBudget: "0", revisedBudget: "0" });
+      toast({ title: "追加しました" });
+    } catch {
+      toast({ title: "追加エラー", description: "追加に失敗しました。", variant: "destructive" });
+    } finally {
+      setAddSaving(false);
+    }
+  }
 
   return (
-    <div className="space-y-6">
-      {/* サマリーカード */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="bg-slate-50 border-none">
+    <div className="space-y-4">
+      {/* ── サマリーKPI ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card className="bg-slate-50 border-none shadow-sm">
+          <CardHeader className="py-3 pb-1">
+            <CardTitle className="text-xs text-slate-500 font-medium">請負金額合計</CardTitle>
+          </CardHeader>
+          <CardContent className="pb-3">
+            <div className="text-lg font-bold text-slate-900">{formatCurrency(totalContractAmount)}</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-slate-50 border-none shadow-sm">
+          <CardHeader className="py-3 pb-1">
+            <CardTitle className="text-xs text-slate-500 font-medium">当初予算合計</CardTitle>
+          </CardHeader>
+          <CardContent className="pb-3">
+            <div className="text-lg font-bold text-blue-600">{formatCurrency(totalInitialBudget)}</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-slate-50 border-none shadow-sm">
           <CardHeader className="py-3 pb-1">
             <CardTitle className="text-xs text-slate-500 font-medium">実行予算合計</CardTitle>
           </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-xl font-bold text-slate-900">{formatCurrency(totalBudget)}</div>
+          <CardContent className="pb-3">
+            <div className="text-lg font-bold text-indigo-600">{formatCurrency(totalRevisedBudget)}</div>
           </CardContent>
         </Card>
-        <Card className="bg-slate-50 border-none">
+        <Card className={`border-none shadow-sm ${totalExpectedProfit < 0 ? "bg-red-50" : "bg-slate-50"}`}>
           <CardHeader className="py-3 pb-1">
-            <CardTitle className="text-xs text-slate-500 font-medium">実績原価合計</CardTitle>
+            <CardTitle className="text-xs text-slate-500 font-medium">予定利益率</CardTitle>
           </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-xl font-bold text-orange-600">{formatCurrency(totalActual)}</div>
-          </CardContent>
-        </Card>
-        <Card className="bg-slate-50 border-none">
-          <CardHeader className="py-3 pb-1">
-            <CardTitle className={`text-xs font-medium flex items-center gap-1 ${totalVariance < 0 ? "text-destructive" : "text-slate-500"}`}>
-              残予算（差異）{totalVariance < 0 && <AlertTriangle className="w-3 h-3" />}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className={`text-xl font-bold ${totalVariance < 0 ? "text-destructive" : "text-emerald-600"}`}>
-              {formatCurrency(totalVariance)}
+          <CardContent className="pb-3">
+            <div className={`text-lg font-bold ${totalExpectedProfit < 0 ? "text-destructive" : "text-emerald-600"}`}>
+              {formatPercent(totalExpectedProfitRate)}
+            </div>
+            <div className={`text-xs font-medium ${totalExpectedProfit < 0 ? "text-destructive" : "text-slate-500"}`}>
+              {formatCurrency(totalExpectedProfit)}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* 工種別予算テーブル */}
+      {/* 工種コード候補リスト（datalist） */}
+      <datalist id="work-type-codes">
+        {WORK_TYPE_MASTER.map((wt) => (
+          <option key={wt.code} value={wt.code}>{wt.name}</option>
+        ))}
+      </datalist>
+
+      {/* ── 実行予算グリッド ── */}
       <Card>
-        <CardHeader className="border-b py-3 bg-slate-50/50">
-          <CardTitle className="text-sm font-semibold text-slate-700">工種別実行予算</CardTitle>
-          <CardDescription className="text-xs">金額を直接入力して保存できます</CardDescription>
+        <CardHeader className="border-b py-3 bg-slate-50/50 flex flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle className="text-sm font-semibold text-slate-700">実行予算明細</CardTitle>
+            <CardDescription className="text-xs mt-0.5">工種コード・仕入先・金額を入力してください</CardDescription>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5 h-8"
+            onClick={() => { setAddingRow(true); }}
+            disabled={addingRow}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            行追加
+          </Button>
         </CardHeader>
-        <CardContent className="p-0">
+        <CardContent className="p-0 overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow className="bg-slate-50">
-                <TableHead className="w-[120px]">工種区分</TableHead>
-                <TableHead className="text-right w-[220px]">実行予算額（円）</TableHead>
-                <TableHead className="text-right">実績原価</TableHead>
-                <TableHead className="text-right">残予算</TableHead>
-                <TableHead className="text-center w-[200px]">消化率</TableHead>
+              <TableRow className="bg-slate-50 text-xs">
+                <TableHead className="w-[90px]">工種コード</TableHead>
+                <TableHead className="w-[140px]">工種名称</TableHead>
+                <TableHead className="w-[130px]">仕入先</TableHead>
+                <TableHead className="text-right w-[120px]">請負金額</TableHead>
+                <TableHead className="text-right w-[120px]">当初予算</TableHead>
+                <TableHead className="text-right w-[120px]">実行予算</TableHead>
+                <TableHead className="text-right w-[110px]">予定利益</TableHead>
+                <TableHead className="text-right w-[80px]">利益率</TableHead>
                 <TableHead className="w-[80px]"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                CATEGORIES.map((cat) => (
-                  <TableRow key={cat}>
-                    <TableCell colSpan={6}>
-                      <Skeleton className="h-8 w-full" />
-                    </TableCell>
+                [1, 2, 3].map((i) => (
+                  <TableRow key={i}>
+                    <TableCell colSpan={9}><Skeleton className="h-8 w-full" /></TableCell>
                   </TableRow>
                 ))
               ) : (
-                CATEGORIES.map((cat) => {
-                  const budget = budgetByCategory(cat);
-                  const actual = actualByCategory(cat);
-                  const variance = budget - actual;
-                  const usageRate = budget > 0 ? (actual / budget) * 100 : 0;
-                  const isEditing = cat in editing;
-                  const isSaving = saving[cat] ?? false;
+                <>
+                  {items.map((item) => {
+                    const isEditing = editingId === item.id;
+                    const isSaving = savingId === item.id;
+                    const isDeleting = deletingId === item.id;
+                    const expectedProfit = item.contractAmount - item.revisedBudget;
+                    const profitRate = item.contractAmount > 0 ? (expectedProfit / item.contractAmount) * 100 : 0;
 
-                  const rowHighlight =
-                    usageRate >= 100
-                      ? "bg-red-50 border-l-4 border-l-red-400"
-                      : usageRate >= 80
-                      ? "bg-yellow-50 border-l-4 border-l-yellow-400"
-                      : "hover:bg-slate-50/50";
-
-                  const rateTextColor =
-                    usageRate >= 100
-                      ? "text-red-600"
-                      : usageRate >= 80
-                      ? "text-yellow-600"
-                      : "text-slate-600";
-
-                  return (
-                    <TableRow key={cat} className={rowHighlight}>
-                      <TableCell>
-                        <Badge variant="outline" className={CATEGORY_COLORS[cat]}>
-                          {CATEGORY_LABELS[cat]}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
+                    return (
+                      <TableRow key={item.id} className={isEditing ? "bg-blue-50" : "hover:bg-slate-50/50"}>
                         {isEditing ? (
-                          <Input
-                            type="text"
-                            className="h-8 text-right w-48 font-medium"
-                            value={editing[cat]}
-                            onChange={(e) =>
-                              setEditing((prev) => ({ ...prev, [cat]: e.target.value }))
-                            }
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") handleSave(cat);
-                              if (e.key === "Escape")
-                                setEditing((prev) => {
-                                  const next = { ...prev };
-                                  delete next[cat];
-                                  return next;
-                                });
-                            }}
-                            autoFocus
-                          />
+                          <>
+                            <TableCell className="py-1.5">
+                              <Input
+                                className="h-7 text-xs font-mono"
+                                list="work-type-codes"
+                                value={editingValues.workTypeCode}
+                                onChange={(e) => {
+                                  const code = e.target.value;
+                                  setEditingValues((v) => ({ ...v, workTypeCode: code }));
+                                  const wt = WORK_TYPE_MASTER.find((w) => w.code === code);
+                                  if (wt) setEditingValues((v) => ({ ...v, workTypeCode: wt.code, workTypeName: wt.name }));
+                                }}
+                                placeholder="コード"
+                              />
+                            </TableCell>
+                            <TableCell className="py-1.5">
+                              <Input
+                                className="h-7 text-xs"
+                                value={editingValues.workTypeName}
+                                onChange={(e) => setEditingValues((v) => ({ ...v, workTypeName: e.target.value }))}
+                                placeholder="工種名称"
+                              />
+                            </TableCell>
+                            <TableCell className="py-1.5">
+                              <Input
+                                className="h-7 text-xs"
+                                value={editingValues.supplierName}
+                                onChange={(e) => setEditingValues((v) => ({ ...v, supplierName: e.target.value }))}
+                                placeholder="仕入先"
+                              />
+                            </TableCell>
+                            <TableCell className="py-1.5">
+                              <Input
+                                className="h-7 text-xs text-right"
+                                type="number"
+                                value={editingValues.contractAmount}
+                                onChange={(e) => setEditingValues((v) => ({ ...v, contractAmount: e.target.value }))}
+                              />
+                            </TableCell>
+                            <TableCell className="py-1.5">
+                              <Input
+                                className="h-7 text-xs text-right"
+                                type="number"
+                                value={editingValues.initialBudget}
+                                onChange={(e) => setEditingValues((v) => ({ ...v, initialBudget: e.target.value }))}
+                              />
+                            </TableCell>
+                            <TableCell className="py-1.5">
+                              <Input
+                                className="h-7 text-xs text-right"
+                                type="number"
+                                value={editingValues.revisedBudget}
+                                onChange={(e) => setEditingValues((v) => ({ ...v, revisedBudget: e.target.value }))}
+                                onKeyDown={(e) => { if (e.key === "Enter") saveEdit(item.id); if (e.key === "Escape") cancelEdit(); }}
+                                autoFocus
+                              />
+                            </TableCell>
+                            <TableCell className="text-right text-xs text-slate-400" colSpan={2}>—</TableCell>
+                            <TableCell className="py-1.5">
+                              <div className="flex gap-1">
+                                <Button size="icon" variant="default" className="h-7 w-7" onClick={() => saveEdit(item.id)} disabled={isSaving}>
+                                  {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                                </Button>
+                                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={cancelEdit}>
+                                  <X className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </>
                         ) : (
-                          <span
-                            className="font-medium text-blue-700 cursor-pointer hover:underline"
-                            onClick={() =>
-                              setEditing((prev) => ({ ...prev, [cat]: String(budget) }))
-                            }
-                            title="クリックして編集"
-                          >
-                            {formatCurrency(budget)}
-                          </span>
+                          <>
+                            <TableCell className="text-xs font-mono text-slate-600">{item.workTypeCode}</TableCell>
+                            <TableCell className="text-xs font-medium text-slate-800">{item.workTypeName}</TableCell>
+                            <TableCell className="text-xs text-slate-600">{item.supplierName || "—"}</TableCell>
+                            <TableCell className="text-xs text-right text-slate-700">{formatCurrency(item.contractAmount)}</TableCell>
+                            <TableCell className="text-xs text-right text-blue-600">{formatCurrency(item.initialBudget)}</TableCell>
+                            <TableCell className="text-xs text-right text-indigo-600 font-medium">{formatCurrency(item.revisedBudget)}</TableCell>
+                            <TableCell className={`text-xs text-right font-medium ${expectedProfit < 0 ? "text-destructive" : "text-emerald-600"}`}>
+                              {formatCurrency(expectedProfit)}
+                            </TableCell>
+                            <TableCell className={`text-xs text-right font-medium ${profitRate < 0 ? "text-destructive" : profitRate < 10 ? "text-yellow-600" : "text-emerald-600"}`}>
+                              {profitRate.toFixed(1)}%
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => startEdit(item)}>
+                                  <Edit className="w-3 h-3" />
+                                </Button>
+                                <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => handleDelete(item.id)} disabled={isDeleting}>
+                                  {isDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </>
                         )}
+                      </TableRow>
+                    );
+                  })}
+
+                  {/* 新規行追加フォーム */}
+                  {addingRow && (
+                    <TableRow className="bg-emerald-50">
+                      <TableCell className="py-1.5">
+                        <Input
+                          className="h-7 text-xs font-mono"
+                          list="work-type-codes"
+                          value={newRow.workTypeCode}
+                          onChange={(e) => {
+                            const code = e.target.value;
+                            setNewRow((r) => ({ ...r, workTypeCode: code }));
+                            const wt = WORK_TYPE_MASTER.find((w) => w.code === code);
+                            if (wt) setNewRow((r) => ({ ...r, workTypeCode: wt.code, workTypeName: wt.name }));
+                          }}
+                          placeholder="コード"
+                          autoFocus
+                        />
                       </TableCell>
-                      <TableCell className="text-right text-orange-700 font-medium">
-                        {formatCurrency(actual)}
+                      <TableCell className="py-1.5">
+                        <Input
+                          className="h-7 text-xs"
+                          value={newRow.workTypeName}
+                          onChange={(e) => setNewRow((r) => ({ ...r, workTypeName: e.target.value }))}
+                          placeholder="工種名称"
+                        />
                       </TableCell>
-                      <TableCell
-                        className={`text-right font-medium ${variance < 0 ? "text-destructive" : "text-emerald-600"}`}
-                      >
-                        {variance < 0 && <AlertTriangle className="w-3 h-3 inline mr-1" />}
-                        {formatCurrency(variance)}
+                      <TableCell className="py-1.5">
+                        <Input
+                          className="h-7 text-xs"
+                          value={newRow.supplierName}
+                          onChange={(e) => setNewRow((r) => ({ ...r, supplierName: e.target.value }))}
+                          placeholder="仕入先"
+                        />
                       </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Progress
-                            value={Math.min(usageRate, 100)}
-                            className="h-2 flex-1"
-                            indicatorClassName={
-                              usageRate >= 100
-                                ? "bg-red-500"
-                                : usageRate >= 80
-                                ? "bg-yellow-400"
-                                : "bg-primary"
-                            }
-                          />
-                          <span className={`text-xs font-medium w-9 text-right ${rateTextColor}`}>
-                            {usageRate.toFixed(1)}%
-                          </span>
+                      <TableCell className="py-1.5">
+                        <Input
+                          className="h-7 text-xs text-right"
+                          type="number"
+                          value={newRow.contractAmount}
+                          onChange={(e) => setNewRow((r) => ({ ...r, contractAmount: e.target.value }))}
+                        />
+                      </TableCell>
+                      <TableCell className="py-1.5">
+                        <Input
+                          className="h-7 text-xs text-right"
+                          type="number"
+                          value={newRow.initialBudget}
+                          onChange={(e) => setNewRow((r) => ({ ...r, initialBudget: e.target.value }))}
+                        />
+                      </TableCell>
+                      <TableCell className="py-1.5">
+                        <Input
+                          className="h-7 text-xs text-right"
+                          type="number"
+                          value={newRow.revisedBudget}
+                          onChange={(e) => setNewRow((r) => ({ ...r, revisedBudget: e.target.value }))}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleAddSave(); if (e.key === "Escape") setAddingRow(false); }}
+                        />
+                      </TableCell>
+                      <TableCell className="text-right text-xs text-slate-400" colSpan={2}>—</TableCell>
+                      <TableCell className="py-1.5">
+                        <div className="flex gap-1">
+                          <Button size="icon" variant="default" className="h-7 w-7 bg-emerald-600 hover:bg-emerald-700" onClick={handleAddSave} disabled={addSaving}>
+                            {addSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                          </Button>
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setAddingRow(false)}>
+                            <X className="w-3 h-3" />
+                          </Button>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        {isEditing ? (
-                          <div className="flex gap-1">
-                            <Button
-                              size="icon"
-                              variant="default"
-                              className="h-7 w-7"
-                              onClick={() => handleSave(cat)}
-                              disabled={isSaving}
-                            >
-                              {isSaving ? (
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                              ) : (
-                                <Save className="w-3 h-3" />
-                              )}
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-7 w-7"
-                              onClick={() =>
-                                setEditing((prev) => {
-                                  const next = { ...prev };
-                                  delete next[cat];
-                                  return next;
-                                })
-                              }
-                            >
-                              <X className="w-3 h-3" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-7 w-7"
-                            onClick={() =>
-                              setEditing((prev) => ({ ...prev, [cat]: String(budget) }))
-                            }
-                          >
-                            <Edit className="w-3 h-3" />
-                          </Button>
-                        )}
-                      </TableCell>
                     </TableRow>
-                  );
-                })
+                  )}
+                </>
               )}
 
               {/* 合計行 */}
-              {!isLoading && (
-                <TableRow className="bg-slate-50 font-bold border-t-2">
-                  <TableCell className="text-slate-700">合　計</TableCell>
-                  <TableCell className="text-right text-blue-700">{formatCurrency(totalBudget)}</TableCell>
-                  <TableCell className="text-right text-orange-700">{formatCurrency(totalActual)}</TableCell>
-                  <TableCell
-                    className={`text-right ${totalVariance < 0 ? "text-destructive" : "text-emerald-600"}`}
-                  >
-                    {formatCurrency(totalVariance)}
+              {!isLoading && items.length > 0 && (
+                <TableRow className="bg-slate-100 font-bold border-t-2 text-xs">
+                  <TableCell colSpan={3} className="text-slate-700">合　計</TableCell>
+                  <TableCell className="text-right text-slate-700">{formatCurrency(totalContractAmount)}</TableCell>
+                  <TableCell className="text-right text-blue-700">{formatCurrency(totalInitialBudget)}</TableCell>
+                  <TableCell className="text-right text-indigo-700">{formatCurrency(totalRevisedBudget)}</TableCell>
+                  <TableCell className={`text-right ${totalExpectedProfit < 0 ? "text-destructive" : "text-emerald-700"}`}>
+                    {formatCurrency(totalExpectedProfit)}
                   </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Progress
-                        value={Math.min(totalUsageRate, 100)}
-                        className="h-2 flex-1"
-                        indicatorClassName={totalUsageRate > 100 ? "bg-destructive" : "bg-primary"}
-                      />
-                      <span className={`text-xs font-medium w-9 text-right ${totalUsageRate > 100 ? "text-destructive" : "text-slate-600"}`}>
-                        {totalUsageRate.toFixed(1)}%
-                      </span>
-                    </div>
+                  <TableCell className={`text-right ${totalExpectedProfitRate < 0 ? "text-destructive" : "text-emerald-700"}`}>
+                    {totalExpectedProfitRate.toFixed(1)}%
                   </TableCell>
                   <TableCell />
+                </TableRow>
+              )}
+
+              {!isLoading && items.length === 0 && !addingRow && (
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center py-10 text-slate-400 text-sm">
+                    明細がありません。「行追加」ボタンから追加してください。
+                  </TableCell>
                 </TableRow>
               )}
             </TableBody>

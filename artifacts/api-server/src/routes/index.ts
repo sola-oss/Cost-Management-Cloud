@@ -3,6 +3,7 @@ import healthRouter from "./health";
 import projectsRouter from "./projects";
 import costItemsRouter from "./cost-items";
 import budgetsRouter from "./budgets";
+import budgetItemsRouter from "./budget-items";
 import dashboardRouter from "./dashboard";
 import paymentsRouter from "./payments";
 
@@ -10,6 +11,7 @@ const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use("/projects", projectsRouter);
+router.use("/projects/:id/budget-items", budgetItemsRouter);
 router.use("/cost-items", costItemsRouter);
 router.use("/budgets", budgetsRouter);
 router.use("/dashboard", dashboardRouter);
