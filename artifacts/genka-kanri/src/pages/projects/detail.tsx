@@ -1,258 +1,721 @@
-import { useParams, Link } from "wouter";
-import { 
-  useGetProject, useGetProjectSummary, useListCostItems, useGetBudgetVsActual,
-  getGetProjectQueryKey, getGetProjectSummaryQueryKey, getListCostItemsQueryKey, getGetBudgetVsActualQueryKey
+import { useState } from "react";
+import { useParams, Link, useLocation } from "wouter";
+import {
+  useGetProject, useUpdateProject,
+  useGetProjectSummary,
+  useListCostItems, useCreateCostItem, useUpdateCostItem, useDeleteCostItem,
+  useGetBudgetVsActual,
+  useListBudgets, useCreateBudget, useUpdateBudget,
+  getGetProjectQueryKey, getGetProjectSummaryQueryKey,
+  getListCostItemsQueryKey, getGetBudgetVsActualQueryKey, getListBudgetsQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { ArrowLeft, Edit, Plus, JapaneseYen, Calculator, TrendingUp, AlertTriangle } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+} from "recharts";
+import {
+  ArrowLeft, Edit, Plus, Save, X, AlertTriangle, CheckCircle, TrendingUp,
+  FileText, Calculator, BarChart2, ClipboardList, Loader2, Trash2,
+} from "lucide-react";
 import { formatCurrency, formatPercent } from "@/lib/utils";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import { useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 
-const STATUS_LABELS = {
+const STATUS_LABELS: Record<string, string> = {
   planning: "計画中",
   active: "施工中",
   completed: "完工",
   suspended: "中断",
 };
 
-const CATEGORY_LABELS = {
+const STATUS_COLORS: Record<string, string> = {
+  planning: "bg-slate-100 text-slate-700 border-slate-200",
+  active: "bg-orange-100 text-orange-700 border-orange-200",
+  completed: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  suspended: "bg-red-100 text-red-700 border-red-200",
+};
+
+const CATEGORIES = ["material", "labor", "subcontract", "expense"] as const;
+type Category = (typeof CATEGORIES)[number];
+
+const CATEGORY_LABELS: Record<Category, string> = {
   material: "材料費",
   labor: "労務費",
   subcontract: "外注費",
   expense: "経費",
 };
 
-export default function ProjectDetail() {
-  const { id } = useParams<{ id: string }>();
-  const projectId = parseInt(id || "0", 10);
+const CATEGORY_COLORS: Record<Category, string> = {
+  material: "bg-blue-100 text-blue-700",
+  labor: "bg-purple-100 text-purple-700",
+  subcontract: "bg-orange-100 text-orange-700",
+  expense: "bg-slate-100 text-slate-700",
+};
 
-  const { data: project, isLoading: projectLoading } = useGetProject(projectId, { 
-    query: { enabled: !!projectId, queryKey: getGetProjectQueryKey(projectId) } 
-  });
-  const { data: summary, isLoading: summaryLoading } = useGetProjectSummary(projectId, { 
-    query: { enabled: !!projectId, queryKey: getGetProjectSummaryQueryKey(projectId) } 
-  });
-  const { data: costItems, isLoading: costsLoading } = useListCostItems({ projectId }, { 
-    query: { enabled: !!projectId, queryKey: getListCostItemsQueryKey({ projectId }) } 
-  });
-  const { data: budgetVsActual, isLoading: chartLoading } = useGetBudgetVsActual({ projectId }, { 
-    query: { enabled: !!projectId, queryKey: getGetBudgetVsActualQueryKey({ projectId }) } 
-  });
+// ─── Schemas ────────────────────────────────────────────────────────────────
 
-  if (projectLoading) {
-    return <div className="p-6 max-w-7xl mx-auto space-y-6"><Skeleton className="h-40 w-full" /></div>;
-  }
+const projectEditSchema = z.object({
+  name: z.string().min(1, "工事名称は必須です"),
+  clientName: z.string().min(1, "発注者名は必須です"),
+  location: z.string().min(1, "工事場所は必須です"),
+  contractAmount: z.coerce.number().min(0, "0以上の値を入力してください"),
+  status: z.enum(["planning", "active", "completed", "suspended"]),
+  startDate: z.string().min(1, "着工日は必須です"),
+  endDate: z.string().min(1, "竣工予定日は必須です"),
+  description: z.string().optional(),
+});
 
-  if (!project) return <div className="p-6">Project not found</div>;
+const costItemSchema = z.object({
+  category: z.enum(["material", "labor", "subcontract", "expense"]),
+  description: z.string().min(1, "摘要は必須です"),
+  vendor: z.string().optional(),
+  quantity: z.coerce.number().optional().or(z.literal("")),
+  unit: z.string().optional(),
+  unitPrice: z.coerce.number().optional().or(z.literal("")),
+  amount: z.coerce.number().min(0, "金額は0以上である必要があります"),
+  incurredDate: z.string().min(1, "発生日は必須です"),
+  invoiceNumber: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+// ─── 実行予算インライン編集コンポーネント ─────────────────────────────────
+
+function BudgetTab({ projectId }: { projectId: number }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: budgets, isLoading } = useListBudgets(
+    { projectId },
+    { query: { enabled: !!projectId, queryKey: getListBudgetsQueryKey({ projectId }) } },
+  );
+  const { data: bva } = useGetBudgetVsActual(
+    { projectId },
+    { query: { enabled: !!projectId, queryKey: getGetBudgetVsActualQueryKey({ projectId }) } },
+  );
+
+  const createBudget = useCreateBudget();
+  const updateBudget = useUpdateBudget();
+
+  // ローカル編集状態（カテゴリ → 入力金額）
+  const [editing, setEditing] = useState<Partial<Record<Category, string>>>({});
+  const [saving, setSaving] = useState<Partial<Record<Category, boolean>>>({});
+
+  // カテゴリ別予算合計を計算
+  const budgetByCategory = (cat: Category) =>
+    budgets?.items.filter((b) => b.category === cat).reduce((s, b) => s + b.budgetAmount, 0) ?? 0;
+
+  // カテゴリ別実績合計
+  const actualByCategory = (cat: Category) =>
+    bva?.items.find((i) => i.category === cat)?.actual ?? 0;
+
+  const handleSave = async (cat: Category) => {
+    const rawVal = editing[cat];
+    if (rawVal === undefined) return;
+
+    const amount = Number(rawVal.replace(/,/g, ""));
+    if (isNaN(amount) || amount < 0) {
+      toast({ title: "入力エラー", description: "正しい金額を入力してください。", variant: "destructive" });
+      return;
+    }
+
+    setSaving((s) => ({ ...s, [cat]: true }));
+
+    const existing = budgets?.items.filter((b) => b.category === cat) ?? [];
+
+    try {
+      if (existing.length === 0) {
+        // 新規作成
+        await createBudget.mutateAsync({
+          data: { projectId, category: cat, description: CATEGORY_LABELS[cat], budgetAmount: amount },
+        });
+      } else if (existing.length === 1) {
+        // 既存1件を更新
+        await updateBudget.mutateAsync({
+          id: existing[0].id,
+          data: { budgetAmount: amount, description: existing[0].description },
+        });
+      } else {
+        // 複数あれば先頭を更新し、残りの予算は維持（合計を合わせるため先頭のみ調整）
+        const otherSum = existing.slice(1).reduce((s, b) => s + b.budgetAmount, 0);
+        const newFirst = Math.max(0, amount - otherSum);
+        await updateBudget.mutateAsync({
+          id: existing[0].id,
+          data: { budgetAmount: newFirst, description: existing[0].description },
+        });
+      }
+
+      await queryClient.invalidateQueries({ queryKey: getListBudgetsQueryKey({ projectId }) });
+      await queryClient.invalidateQueries({ queryKey: getGetBudgetVsActualQueryKey({ projectId }) });
+      await queryClient.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
+
+      setEditing((e) => {
+        const next = { ...e };
+        delete next[cat];
+        return next;
+      });
+      toast({ title: "保存しました", description: `${CATEGORY_LABELS[cat]}の実行予算を更新しました。` });
+    } catch {
+      toast({ title: "保存エラー", description: "予算の更新に失敗しました。", variant: "destructive" });
+    } finally {
+      setSaving((s) => ({ ...s, [cat]: false }));
+    }
+  };
+
+  const totalBudget = CATEGORIES.reduce((s, cat) => s + budgetByCategory(cat), 0);
+  const totalActual = CATEGORIES.reduce((s, cat) => s + actualByCategory(cat), 0);
+  const totalVariance = totalBudget - totalActual;
+  const totalUsageRate = totalBudget > 0 ? (totalActual / totalBudget) * 100 : 0;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center gap-4 mb-2">
-        <Button variant="outline" size="icon" asChild>
-          <Link href="/projects"><ArrowLeft className="w-4 h-4" /></Link>
-        </Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">{project.name}</h1>
-            <Badge variant={project.status === "active" ? "default" : "secondary"}>
-              {STATUS_LABELS[project.status as keyof typeof STATUS_LABELS]}
-            </Badge>
-          </div>
-          <p className="text-sm text-slate-500 mt-1">{project.projectCode} • {project.clientName}</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" asChild>
-            <Link href={`/projects/${project.id}/budgets`}>
-              <Calculator className="w-4 h-4 mr-2" />
-              予算管理
-            </Link>
-          </Button>
-          <Button asChild>
-            <Link href={`/projects/${project.id}/costs/new`}>
-              <Plus className="w-4 h-4 mr-2" />
-              原価入力
-            </Link>
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="bg-slate-50 border-none shadow-sm">
-          <CardHeader className="py-4">
-            <CardTitle className="text-sm text-slate-500 font-medium">請負金額</CardTitle>
+    <div className="space-y-6">
+      {/* サマリーカード */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="bg-slate-50 border-none">
+          <CardHeader className="py-3 pb-1">
+            <CardTitle className="text-xs text-slate-500 font-medium">実行予算合計</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(project.contractAmount)}</div>
+          <CardContent className="pb-4">
+            <div className="text-xl font-bold text-slate-900">{formatCurrency(totalBudget)}</div>
           </CardContent>
         </Card>
-        
-        {summaryLoading ? (
-          <>
-            <Card><CardContent className="p-6"><Skeleton className="h-10" /></CardContent></Card>
-            <Card><CardContent className="p-6"><Skeleton className="h-10" /></CardContent></Card>
-            <Card><CardContent className="p-6"><Skeleton className="h-10" /></CardContent></Card>
-          </>
-        ) : summary ? (
-          <>
-            <Card className="border-none shadow-sm shadow-emerald-100">
-              <CardHeader className="py-4">
-                <CardTitle className="text-sm text-slate-500 font-medium">予想粗利</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-end justify-between">
-                  <div className={`text-2xl font-bold ${summary.grossProfit < 0 ? 'text-destructive' : 'text-emerald-600'}`}>
-                    {formatCurrency(summary.grossProfit)}
-                  </div>
-                  <div className={`text-sm font-bold mb-1 ${summary.grossProfitRate < 10 ? 'text-destructive' : 'text-emerald-600'}`}>
-                    {formatPercent(summary.grossProfitRate)}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="border-none shadow-sm shadow-blue-100">
-              <CardHeader className="py-4">
-                <CardTitle className="text-sm text-slate-500 font-medium">予算合計</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-blue-600">{formatCurrency(summary.totalBudget)}</div>
-              </CardContent>
-            </Card>
-            <Card className="border-none shadow-sm shadow-orange-100">
-              <CardHeader className="py-4">
-                <CardTitle className="text-sm text-slate-500 font-medium flex items-center justify-between">
-                  実績原価
-                  {summary.budgetUsageRate > 100 && <AlertTriangle className="w-4 h-4 text-destructive" />}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-orange-600">{formatCurrency(summary.totalActualCost)}</div>
-                <div className="mt-2 flex items-center gap-2">
-                  <Progress 
-                    value={Math.min(summary.budgetUsageRate, 100)} 
-                    className="h-1.5 flex-1" 
-                    indicatorClassName={summary.budgetUsageRate > 100 ? "bg-destructive" : "bg-orange-500"} 
-                  />
-                  <span className={`text-xs font-medium ${summary.budgetUsageRate > 100 ? 'text-destructive' : 'text-slate-500'}`}>
-                    {summary.budgetUsageRate.toFixed(1)}%
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          </>
-        ) : null}
+        <Card className="bg-slate-50 border-none">
+          <CardHeader className="py-3 pb-1">
+            <CardTitle className="text-xs text-slate-500 font-medium">実績原価合計</CardTitle>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <div className="text-xl font-bold text-orange-600">{formatCurrency(totalActual)}</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-slate-50 border-none">
+          <CardHeader className="py-3 pb-1">
+            <CardTitle className={`text-xs font-medium flex items-center gap-1 ${totalVariance < 0 ? "text-destructive" : "text-slate-500"}`}>
+              残予算（差異）{totalVariance < 0 && <AlertTriangle className="w-3 h-3" />}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <div className={`text-xl font-bold ${totalVariance < 0 ? "text-destructive" : "text-emerald-600"}`}>
+              {formatCurrency(totalVariance)}
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-base">予算・実績推移</CardTitle>
-            <CardDescription>項目別の予算と実績の比較</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px] w-full">
-              {chartLoading ? (
-                <Skeleton className="h-full w-full" />
-              ) : budgetVsActual?.items ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={budgetVsActual.items} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
-                    <YAxis tickFormatter={(val) => `¥${(val/10000).toFixed(0)}万`} tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
-                    <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                    <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                    <Bar dataKey="budget" name="予算" fill="#0ea5e9" radius={[4, 4, 0, 0]} maxBarSize={50} />
-                    <Bar dataKey="actual" name="実績" fill="#f97316" radius={[4, 4, 0, 0]} maxBarSize={50} />
-                  </BarChart>
-                </ResponsiveContainer>
+      {/* 工種別予算テーブル */}
+      <Card>
+        <CardHeader className="border-b py-3 bg-slate-50/50">
+          <CardTitle className="text-sm font-semibold text-slate-700">工種別実行予算</CardTitle>
+          <CardDescription className="text-xs">金額を直接入力して保存できます</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-slate-50">
+                <TableHead className="w-[120px]">工種区分</TableHead>
+                <TableHead className="text-right w-[220px]">実行予算額（円）</TableHead>
+                <TableHead className="text-right">実績原価</TableHead>
+                <TableHead className="text-right">残予算</TableHead>
+                <TableHead className="text-center w-[200px]">消化率</TableHead>
+                <TableHead className="w-[80px]"></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                CATEGORIES.map((cat) => (
+                  <TableRow key={cat}>
+                    <TableCell colSpan={6}>
+                      <Skeleton className="h-8 w-full" />
+                    </TableCell>
+                  </TableRow>
+                ))
               ) : (
-                <div className="flex items-center justify-center h-full text-slate-500">データがありません</div>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+                CATEGORIES.map((cat) => {
+                  const budget = budgetByCategory(cat);
+                  const actual = actualByCategory(cat);
+                  const variance = budget - actual;
+                  const usageRate = budget > 0 ? (actual / budget) * 100 : 0;
+                  const isEditing = cat in editing;
+                  const isSaving = saving[cat] ?? false;
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">基本情報</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm">
-            <div>
-              <div className="text-slate-500 mb-1">工事場所</div>
-              <div className="font-medium">{project.location}</div>
+                  return (
+                    <TableRow key={cat} className="hover:bg-slate-50/50">
+                      <TableCell>
+                        <Badge variant="outline" className={CATEGORY_COLORS[cat]}>
+                          {CATEGORY_LABELS[cat]}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {isEditing ? (
+                          <Input
+                            type="text"
+                            className="h-8 text-right w-48 font-medium"
+                            value={editing[cat]}
+                            onChange={(e) =>
+                              setEditing((prev) => ({ ...prev, [cat]: e.target.value }))
+                            }
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleSave(cat);
+                              if (e.key === "Escape")
+                                setEditing((prev) => {
+                                  const next = { ...prev };
+                                  delete next[cat];
+                                  return next;
+                                });
+                            }}
+                            autoFocus
+                          />
+                        ) : (
+                          <span
+                            className="font-medium text-blue-700 cursor-pointer hover:underline"
+                            onClick={() =>
+                              setEditing((prev) => ({ ...prev, [cat]: String(budget) }))
+                            }
+                            title="クリックして編集"
+                          >
+                            {formatCurrency(budget)}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right text-orange-700 font-medium">
+                        {formatCurrency(actual)}
+                      </TableCell>
+                      <TableCell
+                        className={`text-right font-medium ${variance < 0 ? "text-destructive" : "text-emerald-600"}`}
+                      >
+                        {variance < 0 && <AlertTriangle className="w-3 h-3 inline mr-1" />}
+                        {formatCurrency(variance)}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Progress
+                            value={Math.min(usageRate, 100)}
+                            className="h-2 flex-1"
+                            indicatorClassName={usageRate > 100 ? "bg-destructive" : "bg-primary"}
+                          />
+                          <span
+                            className={`text-xs font-medium w-9 text-right ${usageRate > 100 ? "text-destructive" : "text-slate-600"}`}
+                          >
+                            {usageRate.toFixed(1)}%
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {isEditing ? (
+                          <div className="flex gap-1">
+                            <Button
+                              size="icon"
+                              variant="default"
+                              className="h-7 w-7"
+                              onClick={() => handleSave(cat)}
+                              disabled={isSaving}
+                            >
+                              {isSaving ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Save className="w-3 h-3" />
+                              )}
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              onClick={() =>
+                                setEditing((prev) => {
+                                  const next = { ...prev };
+                                  delete next[cat];
+                                  return next;
+                                })
+                              }
+                            >
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
+                            onClick={() =>
+                              setEditing((prev) => ({ ...prev, [cat]: String(budget) }))
+                            }
+                          >
+                            <Edit className="w-3 h-3" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+
+              {/* 合計行 */}
+              {!isLoading && (
+                <TableRow className="bg-slate-50 font-bold border-t-2">
+                  <TableCell className="text-slate-700">合　計</TableCell>
+                  <TableCell className="text-right text-blue-700">{formatCurrency(totalBudget)}</TableCell>
+                  <TableCell className="text-right text-orange-700">{formatCurrency(totalActual)}</TableCell>
+                  <TableCell
+                    className={`text-right ${totalVariance < 0 ? "text-destructive" : "text-emerald-600"}`}
+                  >
+                    {formatCurrency(totalVariance)}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Progress
+                        value={Math.min(totalUsageRate, 100)}
+                        className="h-2 flex-1"
+                        indicatorClassName={totalUsageRate > 100 ? "bg-destructive" : "bg-primary"}
+                      />
+                      <span className={`text-xs font-medium w-9 text-right ${totalUsageRate > 100 ? "text-destructive" : "text-slate-600"}`}>
+                        {totalUsageRate.toFixed(1)}%
+                      </span>
+                    </div>
+                  </TableCell>
+                  <TableCell />
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─── 原価明細タブ ────────────────────────────────────────────────────────────
+
+function CostItemsTab({ projectId }: { projectId: number }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [addOpen, setAddOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const { data: costItems, isLoading } = useListCostItems(
+    { projectId, limit: 100 },
+    { query: { enabled: !!projectId, queryKey: getListCostItemsQueryKey({ projectId, limit: 100 }) } },
+  );
+
+  const createCostItem = useCreateCostItem();
+  const deleteCostItem = useDeleteCostItem();
+
+  const form = useForm<z.infer<typeof costItemSchema>>({
+    resolver: zodResolver(costItemSchema),
+    defaultValues: {
+      category: "material",
+      description: "",
+      vendor: "",
+      quantity: "",
+      unit: "",
+      unitPrice: "",
+      amount: 0,
+      incurredDate: new Date().toISOString().split("T")[0],
+      invoiceNumber: "",
+      notes: "",
+    },
+  });
+
+  const updateAmount = () => {
+    const q = Number(form.getValues("quantity"));
+    const u = Number(form.getValues("unitPrice"));
+    if (!isNaN(q) && !isNaN(u) && q > 0 && u > 0) {
+      form.setValue("amount", q * u);
+    }
+  };
+
+  function onAddSubmit(values: z.infer<typeof costItemSchema>) {
+    const data = {
+      projectId,
+      ...values,
+      quantity: values.quantity === "" ? undefined : Number(values.quantity),
+      unitPrice: values.unitPrice === "" ? undefined : Number(values.unitPrice),
+    };
+    createCostItem.mutate(
+      { data },
+      {
+        onSuccess: () => {
+          toast({ title: "計上しました", description: "原価明細を登録しました。" });
+          queryClient.invalidateQueries({ queryKey: getListCostItemsQueryKey({ projectId, limit: 100 }) });
+          queryClient.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
+          queryClient.invalidateQueries({ queryKey: getGetBudgetVsActualQueryKey({ projectId }) });
+          setAddOpen(false);
+          form.reset({ ...form.formState.defaultValues, incurredDate: new Date().toISOString().split("T")[0] });
+        },
+        onError: () => {
+          toast({ title: "エラー", description: "原価の登録に失敗しました。", variant: "destructive" });
+        },
+      },
+    );
+  }
+
+  async function handleDelete(id: number) {
+    if (!window.confirm("この明細を削除してもよいですか？")) return;
+    setDeletingId(id);
+    try {
+      await deleteCostItem.mutateAsync({ id });
+      toast({ title: "削除しました" });
+      queryClient.invalidateQueries({ queryKey: getListCostItemsQueryKey({ projectId, limit: 100 }) });
+      queryClient.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
+      queryClient.invalidateQueries({ queryKey: getGetBudgetVsActualQueryKey({ projectId }) });
+    } catch {
+      toast({ title: "削除エラー", description: "削除に失敗しました。", variant: "destructive" });
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  const items = costItems?.items ?? [];
+
+  // カテゴリ別合計
+  const totalByCategory: Record<Category, number> = {
+    material: 0, labor: 0, subcontract: 0, expense: 0,
+  };
+  items.forEach((item) => {
+    if (item.category in totalByCategory) {
+      totalByCategory[item.category as Category] += item.amount;
+    }
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <div className="flex gap-3 flex-wrap">
+          {CATEGORIES.map((cat) => (
+            <div key={cat} className="flex items-center gap-1.5">
+              <Badge variant="outline" className={`${CATEGORY_COLORS[cat]} text-xs`}>
+                {CATEGORY_LABELS[cat]}
+              </Badge>
+              <span className="text-sm font-medium">{formatCurrency(totalByCategory[cat])}</span>
             </div>
-            <div>
-              <div className="text-slate-500 mb-1">工期</div>
-              <div className="font-medium">
-                {new Date(project.startDate).toLocaleDateString('ja-JP')} 〜 {new Date(project.endDate).toLocaleDateString('ja-JP')}
-              </div>
-            </div>
-            {project.description && (
-              <div>
-                <div className="text-slate-500 mb-1">備考</div>
-                <div className="font-medium whitespace-pre-wrap">{project.description}</div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+          ))}
+        </div>
+        <Dialog open={addOpen} onOpenChange={setAddOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm">
+              <Plus className="w-4 h-4 mr-1" />
+              明細追加
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>原価明細の追加</DialogTitle>
+            </DialogHeader>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onAddSubmit)} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="incurredDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>発生日 <span className="text-destructive">*</span></FormLabel>
+                        <FormControl><Input type="date" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="category"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>区分 <span className="text-destructive">*</span></FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="material">材料費</SelectItem>
+                            <SelectItem value="labor">労務費</SelectItem>
+                            <SelectItem value="subcontract">外注費</SelectItem>
+                            <SelectItem value="expense">経費</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="description"
+                    render={({ field }) => (
+                      <FormItem className="col-span-2">
+                        <FormLabel>摘要 <span className="text-destructive">*</span></FormLabel>
+                        <FormControl><Input placeholder="例: 生コンクリート 21-18-20" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="vendor"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>取引先</FormLabel>
+                        <FormControl><Input placeholder="例: 東京生コン株式会社" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="invoiceNumber"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>伝票番号</FormLabel>
+                        <FormControl><Input placeholder="例: INV-2024-001" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="quantity"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>数量</FormLabel>
+                        <FormControl>
+                          <Input type="number" placeholder="0" {...field}
+                            onBlur={(e) => { field.onBlur(); updateAmount(); }} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="unit"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>単位</FormLabel>
+                        <FormControl><Input placeholder="m3, 式, 人工" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="unitPrice"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>単価</FormLabel>
+                        <FormControl>
+                          <Input type="number" placeholder="0" {...field}
+                            onBlur={(e) => { field.onBlur(); updateAmount(); }} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="amount"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>金額（円） <span className="text-destructive">*</span></FormLabel>
+                        <FormControl>
+                          <Input type="number" placeholder="0" className="font-bold" {...field} />
+                        </FormControl>
+                        <FormDescription className="text-xs">数量×単価で自動計算</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>キャンセル</Button>
+                  <Button type="submit" disabled={createCostItem.isPending}>
+                    {createCostItem.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+                    計上する
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between border-b py-4">
-          <div>
-            <CardTitle className="text-base">最近の原価明細</CardTitle>
-            <CardDescription>直近に計上された原価</CardDescription>
-          </div>
-          <Button variant="outline" size="sm" asChild>
-            <Link href={`/projects/${project.id}/costs/new`}>明細追加</Link>
-          </Button>
-        </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader className="bg-slate-50">
                 <TableRow>
-                  <TableHead className="w-[120px]">発生日</TableHead>
-                  <TableHead className="w-[100px]">区分</TableHead>
+                  <TableHead className="w-[110px]">発生日</TableHead>
+                  <TableHead className="w-[90px]">区分</TableHead>
                   <TableHead>摘要</TableHead>
                   <TableHead>取引先</TableHead>
-                  <TableHead className="text-right">数量</TableHead>
+                  <TableHead className="text-right w-[80px]">数量</TableHead>
+                  <TableHead className="w-[60px]">単位</TableHead>
                   <TableHead className="text-right">単価</TableHead>
                   <TableHead className="text-right font-bold">金額</TableHead>
+                  <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {costsLoading ? (
-                  Array.from({ length: 3 }).map((_, i) => (
-                    <TableRow key={i}><TableCell colSpan={7} className="h-12"><Skeleton className="h-4 w-full" /></TableCell></TableRow>
+                {isLoading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <TableRow key={i}>
+                      <TableCell colSpan={9}>
+                        <Skeleton className="h-4 w-full" />
+                      </TableCell>
+                    </TableRow>
                   ))
-                ) : costItems?.items?.length === 0 ? (
+                ) : items.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center text-slate-500">原価明細がありません</TableCell>
+                    <TableCell colSpan={9} className="h-32 text-center text-slate-500">
+                      原価明細がありません。「明細追加」から計上してください。
+                    </TableCell>
                   </TableRow>
                 ) : (
-                  costItems?.items.slice(0, 10).map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="text-slate-600">{new Date(item.incurredDate).toLocaleDateString('ja-JP')}</TableCell>
+                  items.map((item) => (
+                    <TableRow key={item.id} className="hover:bg-slate-50/50">
+                      <TableCell className="text-slate-600 text-sm">
+                        {new Date(item.incurredDate).toLocaleDateString("ja-JP")}
+                      </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="font-normal">
-                          {CATEGORY_LABELS[item.category as keyof typeof CATEGORY_LABELS]}
+                        <Badge variant="outline" className={`${CATEGORY_COLORS[item.category as Category] ?? ""} text-xs`}>
+                          {CATEGORY_LABELS[item.category as Category] ?? item.category}
                         </Badge>
                       </TableCell>
-                      <TableCell className="font-medium">{item.description}</TableCell>
-                      <TableCell className="text-slate-600">{item.vendor || "-"}</TableCell>
-                      <TableCell className="text-right">
-                        {item.quantity ? `${item.quantity} ${item.unit || ''}` : "-"}
+                      <TableCell className="font-medium text-sm">{item.description}</TableCell>
+                      <TableCell className="text-slate-600 text-sm">{item.vendor || "-"}</TableCell>
+                      <TableCell className="text-right text-sm">
+                        {item.quantity ?? "-"}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-sm text-slate-500">{item.unit || ""}</TableCell>
+                      <TableCell className="text-right text-sm">
                         {item.unitPrice ? formatCurrency(item.unitPrice) : "-"}
                       </TableCell>
                       <TableCell className="text-right font-bold text-slate-900">
                         {formatCurrency(item.amount)}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-slate-400 hover:text-destructive"
+                          onClick={() => handleDelete(item.id)}
+                          disabled={deletingId === item.id}
+                        >
+                          {deletingId === item.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Trash2 className="w-3 h-3" />
+                          )}
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))
@@ -262,6 +725,551 @@ export default function ProjectDetail() {
           </div>
         </CardContent>
       </Card>
+
+      {items.length > 0 && (
+        <div className="text-right text-sm text-slate-500">
+          合計 {items.length} 件 ／ 原価合計:{" "}
+          <span className="font-bold text-slate-900">
+            {formatCurrency(items.reduce((s, i) => s + i.amount, 0))}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 収支状況タブ ─────────────────────────────────────────────────────────────
+
+function FinancialTab({ projectId, contractAmount }: { projectId: number; contractAmount: number }) {
+  const { data: summary } = useGetProjectSummary(projectId, {
+    query: { enabled: !!projectId, queryKey: getGetProjectSummaryQueryKey(projectId) },
+  });
+  const { data: bva, isLoading: chartLoading } = useGetBudgetVsActual(
+    { projectId },
+    { query: { enabled: !!projectId, queryKey: getGetBudgetVsActualQueryKey({ projectId }) } },
+  );
+
+  const chartData = bva?.items?.map((item) => ({
+    label: item.label,
+    予算: item.budget,
+    実績: item.actual,
+  })) ?? [];
+
+  return (
+    <div className="space-y-6">
+      {/* KPI */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="bg-slate-50 border-none">
+          <CardHeader className="py-3 pb-1">
+            <CardTitle className="text-xs text-slate-500 font-medium">請負金額</CardTitle>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <div className="text-lg font-bold">{formatCurrency(contractAmount)}</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-slate-50 border-none">
+          <CardHeader className="py-3 pb-1">
+            <CardTitle className="text-xs text-slate-500 font-medium">実行予算合計</CardTitle>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <div className="text-lg font-bold text-blue-600">{formatCurrency(summary?.totalBudget ?? 0)}</div>
+          </CardContent>
+        </Card>
+        <Card className="bg-slate-50 border-none">
+          <CardHeader className="py-3 pb-1">
+            <CardTitle className="text-xs text-slate-500 font-medium">実績原価</CardTitle>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <div className="text-lg font-bold text-orange-600">{formatCurrency(summary?.totalActualCost ?? 0)}</div>
+            {summary && summary.totalBudget > 0 && (
+              <div className="mt-1">
+                <Progress
+                  value={Math.min(summary.budgetUsageRate, 100)}
+                  className="h-1"
+                  indicatorClassName={summary.budgetUsageRate > 100 ? "bg-destructive" : "bg-orange-500"}
+                />
+                <div className="text-xs text-slate-500 mt-0.5">{summary.budgetUsageRate.toFixed(1)}%消化</div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+        <Card className={`border-none ${(summary?.grossProfit ?? 0) < 0 ? "bg-red-50" : "bg-emerald-50"}`}>
+          <CardHeader className="py-3 pb-1">
+            <CardTitle className="text-xs text-slate-500 font-medium">予想粗利</CardTitle>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <div className={`text-lg font-bold ${(summary?.grossProfit ?? 0) < 0 ? "text-destructive" : "text-emerald-600"}`}>
+              {formatCurrency(summary?.grossProfit ?? 0)}
+            </div>
+            <div className={`text-xs font-medium ${(summary?.grossProfitRate ?? 0) < 10 ? "text-destructive" : "text-emerald-600"}`}>
+              粗利率 {formatPercent(summary?.grossProfitRate ?? 0)}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* 予算実績グラフ */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">工種別 予算・実績比較</CardTitle>
+          <CardDescription>各工種区分の実行予算と実績原価の比較</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[280px]">
+            {chartLoading ? (
+              <Skeleton className="h-full w-full" />
+            ) : chartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 10, right: 20, left: 20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
+                  <YAxis
+                    tickFormatter={(val) => `¥${(val / 10000).toFixed(0)}万`}
+                    tick={{ fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+                  <Bar dataKey="予算" fill="#0ea5e9" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                  <Bar dataKey="実績" fill="#f97316" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full text-slate-500 text-sm">
+                予算・実績データがありません
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 収支明細テーブル */}
+      <Card>
+        <CardHeader className="border-b py-3">
+          <CardTitle className="text-sm font-semibold text-slate-700">工種別収支明細</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader className="bg-slate-50">
+              <TableRow>
+                <TableHead>工種区分</TableHead>
+                <TableHead className="text-right">予算金額</TableHead>
+                <TableHead className="text-right">実績原価</TableHead>
+                <TableHead className="text-right">差異</TableHead>
+                <TableHead className="text-center w-[180px]">消化率</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {bva?.items?.map((item) => (
+                <TableRow key={item.category} className="hover:bg-slate-50/50">
+                  <TableCell>
+                    <Badge variant="outline" className={CATEGORY_COLORS[item.category as Category] ?? ""}>
+                      {item.label}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right font-medium text-blue-700">{formatCurrency(item.budget)}</TableCell>
+                  <TableCell className="text-right font-medium text-orange-700">{formatCurrency(item.actual)}</TableCell>
+                  <TableCell className={`text-right font-medium ${item.variance < 0 ? "text-destructive" : "text-emerald-600"}`}>
+                    {item.variance < 0 && <AlertTriangle className="w-3 h-3 inline mr-1" />}
+                    {formatCurrency(item.variance)}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Progress
+                        value={Math.min(item.usageRate, 100)}
+                        className="h-2 flex-1"
+                        indicatorClassName={item.usageRate > 100 ? "bg-destructive" : "bg-primary"}
+                      />
+                      <span className={`text-xs font-medium w-9 text-right ${item.usageRate > 100 ? "text-destructive" : "text-slate-600"}`}>
+                        {item.usageRate.toFixed(1)}%
+                      </span>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─── 基本情報タブ ─────────────────────────────────────────────────────────────
+
+function BasicInfoTab({ project, projectId }: { project: NonNullable<ReturnType<typeof useGetProject>["data"]>; projectId: number }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [isEditing, setIsEditing] = useState(false);
+  const updateProject = useUpdateProject();
+
+  const form = useForm<z.infer<typeof projectEditSchema>>({
+    resolver: zodResolver(projectEditSchema),
+    defaultValues: {
+      name: project.name,
+      clientName: project.clientName,
+      location: project.location ?? "",
+      contractAmount: project.contractAmount,
+      status: project.status as "planning" | "active" | "completed" | "suspended",
+      startDate: project.startDate,
+      endDate: project.endDate,
+      description: project.description ?? "",
+    },
+  });
+
+  function onSubmit(values: z.infer<typeof projectEditSchema>) {
+    updateProject.mutate(
+      { id: projectId, data: values },
+      {
+        onSuccess: () => {
+          toast({ title: "更新しました", description: "工事情報を保存しました。" });
+          queryClient.invalidateQueries({ queryKey: getGetProjectQueryKey(projectId) });
+          queryClient.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
+          setIsEditing(false);
+        },
+        onError: () => {
+          toast({ title: "エラー", description: "更新に失敗しました。", variant: "destructive" });
+        },
+      },
+    );
+  }
+
+  if (isEditing) {
+    return (
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <Card>
+            <CardHeader className="py-4 border-b">
+              <CardTitle className="text-sm text-slate-700">基本情報を編集</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem className="md:col-span-2">
+                    <FormLabel>工事名称 <span className="text-destructive">*</span></FormLabel>
+                    <FormControl><Input {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="clientName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>発注者名 <span className="text-destructive">*</span></FormLabel>
+                    <FormControl><Input {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="location"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>工事場所 <span className="text-destructive">*</span></FormLabel>
+                    <FormControl><Input {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="contractAmount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>請負金額（円） <span className="text-destructive">*</span></FormLabel>
+                    <FormControl><Input type="number" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="status"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>ステータス <span className="text-destructive">*</span></FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="planning">計画中</SelectItem>
+                        <SelectItem value="active">施工中</SelectItem>
+                        <SelectItem value="completed">完工</SelectItem>
+                        <SelectItem value="suspended">中断</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="startDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>着工日 <span className="text-destructive">*</span></FormLabel>
+                    <FormControl><Input type="date" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="endDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>竣工予定日 <span className="text-destructive">*</span></FormLabel>
+                    <FormControl><Input type="date" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem className="md:col-span-2">
+                    <FormLabel>備考</FormLabel>
+                    <FormControl><Textarea placeholder="特記事項" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </CardContent>
+          </Card>
+          <div className="flex justify-end gap-3">
+            <Button type="button" variant="outline" onClick={() => { setIsEditing(false); form.reset(); }}>
+              <X className="w-4 h-4 mr-1" />キャンセル
+            </Button>
+            <Button type="submit" disabled={updateProject.isPending}>
+              {updateProject.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
+              保存する
+            </Button>
+          </div>
+        </form>
+      </Form>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
+          <Edit className="w-4 h-4 mr-1" />
+          編集
+        </Button>
+      </div>
+      <Card>
+        <CardContent className="pt-6">
+          <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5 text-sm">
+            <div>
+              <dt className="text-slate-500 mb-1">工事名称</dt>
+              <dd className="font-medium text-slate-900">{project.name}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500 mb-1">発注者名（得意先）</dt>
+              <dd className="font-medium text-slate-900">{project.clientName}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500 mb-1">工事場所</dt>
+              <dd className="font-medium text-slate-900">{project.location || "-"}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500 mb-1">ステータス</dt>
+              <dd>
+                <Badge variant="outline" className={STATUS_COLORS[project.status] ?? ""}>
+                  {STATUS_LABELS[project.status] ?? project.status}
+                </Badge>
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500 mb-1">請負金額</dt>
+              <dd className="font-bold text-slate-900">{formatCurrency(project.contractAmount)}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500 mb-1">工期</dt>
+              <dd className="font-medium text-slate-900">
+                {new Date(project.startDate).toLocaleDateString("ja-JP")} 〜{" "}
+                {new Date(project.endDate).toLocaleDateString("ja-JP")}
+              </dd>
+            </div>
+            {project.description && (
+              <div className="md:col-span-2">
+                <dt className="text-slate-500 mb-1">備考</dt>
+                <dd className="font-medium text-slate-900 whitespace-pre-wrap">{project.description}</dd>
+              </div>
+            )}
+          </dl>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─── メインコンポーネント ──────────────────────────────────────────────────────
+
+export default function ProjectDetail() {
+  const { id } = useParams<{ id: string }>();
+  const projectId = parseInt(id || "0", 10);
+
+  const { data: project, isLoading: projectLoading } = useGetProject(projectId, {
+    query: { enabled: !!projectId, queryKey: getGetProjectQueryKey(projectId) },
+  });
+  const { data: summary, isLoading: summaryLoading } = useGetProjectSummary(projectId, {
+    query: { enabled: !!projectId, queryKey: getGetProjectSummaryQueryKey(projectId) },
+  });
+
+  if (projectLoading) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <Skeleton className="h-12 w-80" />
+        <Skeleton className="h-24 w-full" />
+      </div>
+    );
+  }
+
+  if (!project) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto">
+        <p className="text-slate-500">工事が見つかりません。</p>
+        <Button variant="link" asChild className="mt-2 px-0">
+          <Link href="/projects">← 工事一覧へ戻る</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto space-y-5">
+      {/* ── ヘッダー ── */}
+      <div className="flex items-start gap-4">
+        <Button variant="outline" size="icon" asChild className="mt-1 shrink-0">
+          <Link href="/projects">
+            <ArrowLeft className="w-4 h-4" />
+          </Link>
+        </Button>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-bold tracking-tight text-slate-900 truncate">{project.name}</h1>
+            <Badge variant="outline" className={STATUS_COLORS[project.status] ?? ""}>
+              {STATUS_LABELS[project.status] ?? project.status}
+            </Badge>
+          </div>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {project.projectCode} ／ {project.clientName}
+          </p>
+        </div>
+      </div>
+
+      {/* ── KPI サマリー（常時表示） ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card className="bg-slate-50 border-none shadow-sm">
+          <CardHeader className="py-3 pb-1">
+            <CardTitle className="text-xs text-slate-500 font-medium">請負金額</CardTitle>
+          </CardHeader>
+          <CardContent className="pb-3">
+            <div className="text-lg font-bold">{formatCurrency(project.contractAmount)}</div>
+          </CardContent>
+        </Card>
+
+        {summaryLoading ? (
+          <>
+            <Card><CardContent className="p-4"><Skeleton className="h-8" /></CardContent></Card>
+            <Card><CardContent className="p-4"><Skeleton className="h-8" /></CardContent></Card>
+            <Card><CardContent className="p-4"><Skeleton className="h-8" /></CardContent></Card>
+          </>
+        ) : summary ? (
+          <>
+            <Card className="border-none shadow-sm">
+              <CardHeader className="py-3 pb-1">
+                <CardTitle className="text-xs text-slate-500 font-medium">実行予算</CardTitle>
+              </CardHeader>
+              <CardContent className="pb-3">
+                <div className="text-lg font-bold text-blue-600">{formatCurrency(summary.totalBudget)}</div>
+              </CardContent>
+            </Card>
+            <Card className="border-none shadow-sm">
+              <CardHeader className="py-3 pb-1">
+                <CardTitle className="text-xs text-slate-500 font-medium flex items-center gap-1">
+                  実績原価
+                  {summary.budgetUsageRate > 100 && <AlertTriangle className="w-3 h-3 text-destructive" />}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pb-3">
+                <div className="text-lg font-bold text-orange-600">{formatCurrency(summary.totalActualCost)}</div>
+                <div className="mt-1.5">
+                  <Progress
+                    value={Math.min(summary.budgetUsageRate, 100)}
+                    className="h-1"
+                    indicatorClassName={summary.budgetUsageRate > 100 ? "bg-destructive" : "bg-orange-500"}
+                  />
+                  <div className={`text-xs mt-0.5 ${summary.budgetUsageRate > 100 ? "text-destructive" : "text-slate-500"}`}>
+                    {summary.budgetUsageRate.toFixed(1)}%消化
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className={`border-none shadow-sm ${summary.grossProfit < 0 ? "bg-red-50" : ""}`}>
+              <CardHeader className="py-3 pb-1">
+                <CardTitle className="text-xs text-slate-500 font-medium">予想粗利</CardTitle>
+              </CardHeader>
+              <CardContent className="pb-3">
+                <div className={`text-lg font-bold ${summary.grossProfit < 0 ? "text-destructive" : "text-emerald-600"}`}>
+                  {formatCurrency(summary.grossProfit)}
+                </div>
+                <div className={`text-xs font-medium ${summary.grossProfitRate < 10 ? "text-destructive" : "text-emerald-600"}`}>
+                  粗利率 {formatPercent(summary.grossProfitRate)}
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        ) : null}
+      </div>
+
+      {/* ── タブ ── */}
+      <Tabs defaultValue="budget" className="w-full">
+        <TabsList className="grid w-full grid-cols-4 mb-2">
+          <TabsTrigger value="basic" className="text-xs sm:text-sm gap-1">
+            <FileText className="w-3.5 h-3.5 hidden sm:block" />
+            基本情報
+          </TabsTrigger>
+          <TabsTrigger value="budget" className="text-xs sm:text-sm gap-1">
+            <Calculator className="w-3.5 h-3.5 hidden sm:block" />
+            実行予算
+          </TabsTrigger>
+          <TabsTrigger value="costs" className="text-xs sm:text-sm gap-1">
+            <ClipboardList className="w-3.5 h-3.5 hidden sm:block" />
+            原価明細
+          </TabsTrigger>
+          <TabsTrigger value="financial" className="text-xs sm:text-sm gap-1">
+            <BarChart2 className="w-3.5 h-3.5 hidden sm:block" />
+            収支状況
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="basic">
+          <BasicInfoTab project={project} projectId={projectId} />
+        </TabsContent>
+
+        <TabsContent value="budget">
+          <BudgetTab projectId={projectId} />
+        </TabsContent>
+
+        <TabsContent value="costs">
+          <CostItemsTab projectId={projectId} />
+        </TabsContent>
+
+        <TabsContent value="financial">
+          <FinancialTab projectId={projectId} contractAmount={project.contractAmount} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
