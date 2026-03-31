@@ -1,22 +1,29 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: 建設業向け原価管理クラウドシステム API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: projects
+    description: 工事管理
+  - name: cost-items
+    description: 原価入力
+  - name: budgets
+    description: 予算管理
+  - name: dashboard
+    description: ダッシュボード・集計
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +31,344 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: 工事一覧取得
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [planning, active, completed, suspended]
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: 工事一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectListResponse"
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: 工事登録
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
+      responses:
+        "201":
+          description: 工事登録成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  /projects/{id}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      summary: 工事詳細取得
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 工事詳細
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updateProject
+      tags: [projects]
+      summary: 工事更新
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectRequest"
+      responses:
+        "200":
+          description: 工事更新成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      summary: 工事削除
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: 削除成功
+
+  /projects/{id}/summary:
+    get:
+      operationId: getProjectSummary
+      tags: [projects]
+      summary: 工事収支サマリ取得
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 工事収支サマリ
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectSummary"
+
+  /cost-items:
+    get:
+      operationId: listCostItems
+      tags: [cost-items]
+      summary: 原価項目一覧取得
+      parameters:
+        - in: query
+          name: projectId
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: category
+          schema:
+            type: string
+            enum: [material, labor, subcontract, expense]
+      responses:
+        "200":
+          description: 原価項目一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CostItemListResponse"
+    post:
+      operationId: createCostItem
+      tags: [cost-items]
+      summary: 原価項目登録
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCostItemRequest"
+      responses:
+        "201":
+          description: 登録成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CostItem"
+
+  /cost-items/{id}:
+    put:
+      operationId: updateCostItem
+      tags: [cost-items]
+      summary: 原価項目更新
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCostItemRequest"
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CostItem"
+    delete:
+      operationId: deleteCostItem
+      tags: [cost-items]
+      summary: 原価項目削除
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: 削除成功
+
+  /budgets:
+    get:
+      operationId: listBudgets
+      tags: [budgets]
+      summary: 予算一覧取得
+      parameters:
+        - in: query
+          name: projectId
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 予算一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetListResponse"
+    post:
+      operationId: createBudget
+      tags: [budgets]
+      summary: 予算登録
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBudgetRequest"
+      responses:
+        "201":
+          description: 登録成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Budget"
+
+  /budgets/{id}:
+    put:
+      operationId: updateBudget
+      tags: [budgets]
+      summary: 予算更新
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBudgetRequest"
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Budget"
+
+  /dashboard/overview:
+    get:
+      operationId: getDashboardOverview
+      tags: [dashboard]
+      summary: ダッシュボード概要取得
+      responses:
+        "200":
+          description: ダッシュボード概要
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardOverview"
+
+  /dashboard/cost-by-category:
+    get:
+      operationId: getCostByCategory
+      tags: [dashboard]
+      summary: カテゴリ別原価集計
+      parameters:
+        - in: query
+          name: projectId
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: カテゴリ別原価
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CostByCategoryResponse"
+
+  /dashboard/monthly-costs:
+    get:
+      operationId: getMonthlyCosts
+      tags: [dashboard]
+      summary: 月別原価推移取得
+      parameters:
+        - in: query
+          name: projectId
+          schema:
+            type: integer
+        - in: query
+          name: year
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 月別原価推移
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonthlyCostsResponse"
+
+  /dashboard/budget-vs-actual:
+    get:
+      operationId: getBudgetVsActual
+      tags: [dashboard]
+      summary: 予算実績対比取得
+      parameters:
+        - in: query
+          name: projectId
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 予算実績対比
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetVsActualResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +379,645 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        code:
+          type: string
+      required:
+        - message
+
+    Project:
+      type: object
+      properties:
+        id:
+          type: integer
+        projectCode:
+          type: string
+          description: 工事番号
+        name:
+          type: string
+          description: 工事名称
+        clientName:
+          type: string
+          description: 発注者名
+        location:
+          type: string
+          description: 工事場所
+        contractAmount:
+          type: number
+          description: 請負金額（円）
+        status:
+          type: string
+          enum: [planning, active, completed, suspended]
+          description: 工事状態
+        startDate:
+          type: string
+          format: date
+          description: 着工日
+        endDate:
+          type: string
+          format: date
+          description: 竣工予定日
+        completedDate:
+          type: string
+          format: date
+          nullable: true
+          description: 竣工日
+        description:
+          type: string
+          nullable: true
+          description: 備考
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - projectCode
+        - name
+        - clientName
+        - location
+        - contractAmount
+        - status
+        - startDate
+        - endDate
+        - createdAt
+        - updatedAt
+
+    ProjectDetail:
+      allOf:
+        - $ref: "#/components/schemas/Project"
+        - type: object
+          properties:
+            totalBudget:
+              type: number
+              description: 予算合計
+            totalActualCost:
+              type: number
+              description: 実績原価合計
+            grossProfit:
+              type: number
+              description: 粗利額
+            grossProfitRate:
+              type: number
+              description: 粗利率（%）
+            costItems:
+              type: array
+              items:
+                $ref: "#/components/schemas/CostItem"
+            budgets:
+              type: array
+              items:
+                $ref: "#/components/schemas/Budget"
+          required:
+            - totalBudget
+            - totalActualCost
+            - grossProfit
+            - grossProfitRate
+            - costItems
+            - budgets
+
+    ProjectListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectListItem"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required:
+        - items
+        - total
+        - page
+        - limit
+
+    ProjectListItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        projectCode:
+          type: string
+        name:
+          type: string
+        clientName:
+          type: string
+        contractAmount:
+          type: number
+        status:
+          type: string
+          enum: [planning, active, completed, suspended]
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        totalBudget:
+          type: number
+        totalActualCost:
+          type: number
+        budgetUsageRate:
+          type: number
+          description: 予算消化率（%）
+        grossProfitRate:
+          type: number
+          description: 粗利率（%）
+      required:
+        - id
+        - projectCode
+        - name
+        - clientName
+        - contractAmount
+        - status
+        - startDate
+        - endDate
+        - totalBudget
+        - totalActualCost
+        - budgetUsageRate
+        - grossProfitRate
+
+    ProjectSummary:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        contractAmount:
+          type: number
+        totalBudget:
+          type: number
+        totalActualCost:
+          type: number
+        grossProfit:
+          type: number
+        grossProfitRate:
+          type: number
+        budgetUsageRate:
+          type: number
+        costBreakdown:
+          type: object
+          properties:
+            material:
+              type: number
+            labor:
+              type: number
+            subcontract:
+              type: number
+            expense:
+              type: number
+          required:
+            - material
+            - labor
+            - subcontract
+            - expense
+      required:
+        - projectId
+        - contractAmount
+        - totalBudget
+        - totalActualCost
+        - grossProfit
+        - grossProfitRate
+        - budgetUsageRate
+        - costBreakdown
+
+    CreateProjectRequest:
+      type: object
+      properties:
+        projectCode:
+          type: string
+        name:
+          type: string
+        clientName:
+          type: string
+        location:
+          type: string
+        contractAmount:
+          type: number
+        status:
+          type: string
+          enum: [planning, active, completed, suspended]
+          default: planning
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        description:
+          type: string
+          nullable: true
+      required:
+        - projectCode
+        - name
+        - clientName
+        - location
+        - contractAmount
+        - startDate
+        - endDate
+
+    UpdateProjectRequest:
+      type: object
+      properties:
+        projectCode:
+          type: string
+        name:
+          type: string
+        clientName:
+          type: string
+        location:
+          type: string
+        contractAmount:
+          type: number
+        status:
+          type: string
+          enum: [planning, active, completed, suspended]
+        startDate:
+          type: string
+          format: date
+        endDate:
+          type: string
+          format: date
+        completedDate:
+          type: string
+          format: date
+          nullable: true
+        description:
+          type: string
+          nullable: true
+
+    CostItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        projectId:
+          type: integer
+        category:
+          type: string
+          enum: [material, labor, subcontract, expense]
+          description: 原価区分（材料費・労務費・外注費・経費）
+        description:
+          type: string
+          description: 摘要
+        vendor:
+          type: string
+          nullable: true
+          description: 取引先
+        quantity:
+          type: number
+          nullable: true
+          description: 数量
+        unit:
+          type: string
+          nullable: true
+          description: 単位
+        unitPrice:
+          type: number
+          nullable: true
+          description: 単価
+        amount:
+          type: number
+          description: 金額
+        incurredDate:
+          type: string
+          format: date
+          description: 発生日
+        invoiceNumber:
+          type: string
+          nullable: true
+          description: 伝票番号
+        notes:
+          type: string
+          nullable: true
+          description: 備考
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - projectId
+        - category
+        - description
+        - amount
+        - incurredDate
+        - createdAt
+        - updatedAt
+
+    CostItemListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CostItem"
+        total:
+          type: integer
+        totalAmount:
+          type: number
+      required:
+        - items
+        - total
+        - totalAmount
+
+    CreateCostItemRequest:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        category:
+          type: string
+          enum: [material, labor, subcontract, expense]
+        description:
+          type: string
+        vendor:
+          type: string
+          nullable: true
+        quantity:
+          type: number
+          nullable: true
+        unit:
+          type: string
+          nullable: true
+        unitPrice:
+          type: number
+          nullable: true
+        amount:
+          type: number
+        incurredDate:
+          type: string
+          format: date
+        invoiceNumber:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+      required:
+        - projectId
+        - category
+        - description
+        - amount
+        - incurredDate
+
+    UpdateCostItemRequest:
+      type: object
+      properties:
+        category:
+          type: string
+          enum: [material, labor, subcontract, expense]
+        description:
+          type: string
+        vendor:
+          type: string
+          nullable: true
+        quantity:
+          type: number
+          nullable: true
+        unit:
+          type: string
+          nullable: true
+        unitPrice:
+          type: number
+          nullable: true
+        amount:
+          type: number
+        incurredDate:
+          type: string
+          format: date
+        invoiceNumber:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+
+    Budget:
+      type: object
+      properties:
+        id:
+          type: integer
+        projectId:
+          type: integer
+        category:
+          type: string
+          enum: [material, labor, subcontract, expense]
+          description: 予算区分
+        description:
+          type: string
+          description: 内訳名称
+        budgetAmount:
+          type: number
+          description: 予算金額
+        actualAmount:
+          type: number
+          description: 実績金額
+        variance:
+          type: number
+          description: 差異（予算−実績）
+        usageRate:
+          type: number
+          description: 消化率（%）
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - projectId
+        - category
+        - description
+        - budgetAmount
+        - actualAmount
+        - variance
+        - usageRate
+        - createdAt
+        - updatedAt
+
+    BudgetListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Budget"
+        totalBudget:
+          type: number
+        totalActual:
+          type: number
+        totalVariance:
+          type: number
+      required:
+        - items
+        - totalBudget
+        - totalActual
+        - totalVariance
+
+    CreateBudgetRequest:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        category:
+          type: string
+          enum: [material, labor, subcontract, expense]
+        description:
+          type: string
+        budgetAmount:
+          type: number
+      required:
+        - projectId
+        - category
+        - description
+        - budgetAmount
+
+    UpdateBudgetRequest:
+      type: object
+      properties:
+        category:
+          type: string
+          enum: [material, labor, subcontract, expense]
+        description:
+          type: string
+        budgetAmount:
+          type: number
+
+    DashboardOverview:
+      type: object
+      properties:
+        totalProjects:
+          type: integer
+          description: 工事件数合計
+        activeProjects:
+          type: integer
+          description: 施工中工事件数
+        completedProjects:
+          type: integer
+          description: 完工工事件数
+        totalContractAmount:
+          type: number
+          description: 請負金額合計
+        totalActualCost:
+          type: number
+          description: 実績原価合計
+        averageGrossProfitRate:
+          type: number
+          description: 平均粗利率（%）
+        recentProjects:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectListItem"
+          description: 最近の工事一覧
+        alertProjects:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectListItem"
+          description: 予算超過リスク工事
+      required:
+        - totalProjects
+        - activeProjects
+        - completedProjects
+        - totalContractAmount
+        - totalActualCost
+        - averageGrossProfitRate
+        - recentProjects
+        - alertProjects
+
+    CostByCategoryResponse:
+      type: object
+      properties:
+        categories:
+          type: array
+          items:
+            type: object
+            properties:
+              category:
+                type: string
+              label:
+                type: string
+              amount:
+                type: number
+              percentage:
+                type: number
+            required:
+              - category
+              - label
+              - amount
+              - percentage
+      required:
+        - categories
+
+    MonthlyCostsResponse:
+      type: object
+      properties:
+        months:
+          type: array
+          items:
+            type: object
+            properties:
+              month:
+                type: string
+                description: YYYY-MM形式
+              material:
+                type: number
+              labor:
+                type: number
+              subcontract:
+                type: number
+              expense:
+                type: number
+              total:
+                type: number
+            required:
+              - month
+              - material
+              - labor
+              - subcontract
+              - expense
+              - total
+      required:
+        - months
+
+    BudgetVsActualResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              category:
+                type: string
+              label:
+                type: string
+              budget:
+                type: number
+              actual:
+                type: number
+              variance:
+                type: number
+              usageRate:
+                type: number
+            required:
+              - category
+              - label
+              - budget
+              - actual
+              - variance
+              - usageRate
+      required:
+        - items
