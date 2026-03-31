@@ -8,6 +8,18 @@ function parseNumeric(val: unknown): number {
   return typeof val === "string" ? parseFloat(val) : (val as number) ?? 0;
 }
 
+function toNumericString(val: unknown): string | null {
+  if (val === null || val === undefined || val === "") return null;
+  const n = typeof val === "string" ? parseFloat(val) : Number(val);
+  return isNaN(n) ? null : String(n);
+}
+
+function toDateString(val: unknown): string | null {
+  if (val === null || val === undefined) return null;
+  const s = String(val).trim();
+  return s === "" ? null : s;
+}
+
 function buildProjectListItem(project: typeof projectsTable.$inferSelect, totalBudget: number, totalActualCost: number) {
   const contractAmount = parseNumeric(project.contractAmount);
   const grossProfit = contractAmount - totalActualCost;
@@ -86,7 +98,12 @@ router.get("/", async (req, res) => {
 
 router.post("/", async (req, res) => {
   try {
-    const { projectCode, name, clientName, location, contractAmount, status = "planning", startDate, endDate, description } = req.body;
+    const {
+      projectCode, name, clientName, location, contractAmount, status = "planning", startDate, endDate, description,
+      shortName, estimateNumber, orderType, orderDate, taxRate, taxExcludedAmount, taxAmount, taxIncludedAmount,
+      overview, department, salesStaff, siteManager, category1, category2, category3,
+      handoverDate, progressRate, recognitionBasis,
+    } = req.body;
 
     const [project] = await db.insert(projectsTable).values({
       projectCode, name, clientName, location,
@@ -94,11 +111,33 @@ router.post("/", async (req, res) => {
       status,
       startDate, endDate,
       description: description ?? null,
+      shortName: shortName ?? null,
+      estimateNumber: estimateNumber ?? null,
+      orderType: orderType ?? null,
+      orderDate: toDateString(orderDate),
+      taxRate: toNumericString(taxRate),
+      taxExcludedAmount: toNumericString(taxExcludedAmount),
+      taxAmount: toNumericString(taxAmount),
+      taxIncludedAmount: toNumericString(taxIncludedAmount),
+      overview: overview ?? null,
+      department: department ?? null,
+      salesStaff: salesStaff ?? null,
+      siteManager: siteManager ?? null,
+      category1: category1 ?? null,
+      category2: category2 ?? null,
+      category3: category3 ?? null,
+      handoverDate: toDateString(handoverDate),
+      progressRate: progressRate ?? null,
+      recognitionBasis: recognitionBasis ?? null,
     }).returning();
 
     res.status(201).json({
       ...project,
       contractAmount: parseNumeric(project.contractAmount),
+      taxRate: project.taxRate != null ? parseNumeric(project.taxRate) : null,
+      taxExcludedAmount: project.taxExcludedAmount != null ? parseNumeric(project.taxExcludedAmount) : null,
+      taxAmount: project.taxAmount != null ? parseNumeric(project.taxAmount) : null,
+      taxIncludedAmount: project.taxIncludedAmount != null ? parseNumeric(project.taxIncludedAmount) : null,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to create project");
@@ -145,6 +184,10 @@ router.get("/:id", async (req, res) => {
     res.json({
       ...project,
       contractAmount,
+      taxRate: project.taxRate != null ? parseNumeric(project.taxRate) : null,
+      taxExcludedAmount: project.taxExcludedAmount != null ? parseNumeric(project.taxExcludedAmount) : null,
+      taxAmount: project.taxAmount != null ? parseNumeric(project.taxAmount) : null,
+      taxIncludedAmount: project.taxIncludedAmount != null ? parseNumeric(project.taxIncludedAmount) : null,
       totalBudget,
       totalActualCost,
       grossProfit,
@@ -166,7 +209,12 @@ router.get("/:id", async (req, res) => {
 router.put("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { projectCode, name, clientName, location, contractAmount, status, startDate, endDate, completedDate, description } = req.body;
+    const {
+      projectCode, name, clientName, location, contractAmount, status, startDate, endDate, completedDate, description,
+      shortName, estimateNumber, orderType, orderDate, taxRate, taxExcludedAmount, taxAmount, taxIncludedAmount,
+      overview, department, salesStaff, siteManager, category1, category2, category3,
+      handoverDate, progressRate, recognitionBasis,
+    } = req.body;
 
     const updateData: Partial<typeof projectsTable.$inferInsert> = {};
     if (projectCode !== undefined) updateData.projectCode = projectCode;
@@ -179,12 +227,37 @@ router.put("/:id", async (req, res) => {
     if (endDate !== undefined) updateData.endDate = endDate;
     if (completedDate !== undefined) updateData.completedDate = completedDate;
     if (description !== undefined) updateData.description = description;
+    if (shortName !== undefined) updateData.shortName = shortName;
+    if (estimateNumber !== undefined) updateData.estimateNumber = estimateNumber;
+    if (orderType !== undefined) updateData.orderType = orderType;
+    if (orderDate !== undefined) updateData.orderDate = toDateString(orderDate);
+    if (taxRate !== undefined) updateData.taxRate = toNumericString(taxRate);
+    if (taxExcludedAmount !== undefined) updateData.taxExcludedAmount = toNumericString(taxExcludedAmount);
+    if (taxAmount !== undefined) updateData.taxAmount = toNumericString(taxAmount);
+    if (taxIncludedAmount !== undefined) updateData.taxIncludedAmount = toNumericString(taxIncludedAmount);
+    if (overview !== undefined) updateData.overview = overview || null;
+    if (department !== undefined) updateData.department = department || null;
+    if (salesStaff !== undefined) updateData.salesStaff = salesStaff || null;
+    if (siteManager !== undefined) updateData.siteManager = siteManager || null;
+    if (category1 !== undefined) updateData.category1 = category1 || null;
+    if (category2 !== undefined) updateData.category2 = category2 || null;
+    if (category3 !== undefined) updateData.category3 = category3 || null;
+    if (handoverDate !== undefined) updateData.handoverDate = toDateString(handoverDate);
+    if (progressRate !== undefined) updateData.progressRate = progressRate;
+    if (recognitionBasis !== undefined) updateData.recognitionBasis = recognitionBasis;
     updateData.updatedAt = new Date();
 
     const [updated] = await db.update(projectsTable).set(updateData).where(eq(projectsTable.id, id)).returning();
     if (!updated) return res.status(404).json({ message: "工事が見つかりません" });
 
-    res.json({ ...updated, contractAmount: parseNumeric(updated.contractAmount) });
+    res.json({
+      ...updated,
+      contractAmount: parseNumeric(updated.contractAmount),
+      taxRate: updated.taxRate != null ? parseNumeric(updated.taxRate) : null,
+      taxExcludedAmount: updated.taxExcludedAmount != null ? parseNumeric(updated.taxExcludedAmount) : null,
+      taxAmount: updated.taxAmount != null ? parseNumeric(updated.taxAmount) : null,
+      taxIncludedAmount: updated.taxIncludedAmount != null ? parseNumeric(updated.taxIncludedAmount) : null,
+    });
   } catch (err) {
     req.log.error({ err }, "Failed to update project");
     res.status(500).json({ message: "Internal server error" });

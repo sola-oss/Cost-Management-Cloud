@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import {
   useGetProject, useUpdateProject,
@@ -69,8 +69,11 @@ const CATEGORY_COLORS: Record<Category, string> = {
 
 // ─── Schemas ────────────────────────────────────────────────────────────────
 
+const TAX_RATES = [0, 8, 10] as const;
+
 const projectEditSchema = z.object({
   name: z.string().min(1, "工事名称は必須です"),
+  shortName: z.string().optional(),
   clientName: z.string().min(1, "発注者名は必須です"),
   location: z.string().min(1, "工事場所は必須です"),
   contractAmount: z.coerce.number().min(0, "0以上の値を入力してください"),
@@ -78,6 +81,23 @@ const projectEditSchema = z.object({
   startDate: z.string().min(1, "着工日は必須です"),
   endDate: z.string().min(1, "竣工予定日は必須です"),
   description: z.string().optional(),
+  estimateNumber: z.string().optional(),
+  orderType: z.string().optional(),
+  overview: z.string().optional(),
+  taxExcludedAmount: z.coerce.number().min(0).optional().or(z.literal("")),
+  taxRate: z.coerce.number().optional().or(z.literal("")),
+  taxAmount: z.coerce.number().optional().or(z.literal("")),
+  taxIncludedAmount: z.coerce.number().optional().or(z.literal("")),
+  department: z.string().optional(),
+  salesStaff: z.string().optional(),
+  siteManager: z.string().optional(),
+  category1: z.string().optional(),
+  category2: z.string().optional(),
+  category3: z.string().optional(),
+  orderDate: z.string().optional(),
+  handoverDate: z.string().optional(),
+  progressRate: z.coerce.number().min(0).max(100).optional().or(z.literal("")),
+  recognitionBasis: z.string().optional(),
 });
 
 const costItemSchema = z.object({
@@ -1140,6 +1160,7 @@ function BasicInfoTab({ project, projectId }: { project: NonNullable<ReturnType<
     resolver: zodResolver(projectEditSchema),
     defaultValues: {
       name: project.name,
+      shortName: project.shortName ?? "",
       clientName: project.clientName,
       location: project.location ?? "",
       contractAmount: project.contractAmount,
@@ -1147,12 +1168,81 @@ function BasicInfoTab({ project, projectId }: { project: NonNullable<ReturnType<
       startDate: project.startDate,
       endDate: project.endDate,
       description: project.description ?? "",
+      estimateNumber: project.estimateNumber ?? "",
+      orderType: project.orderType ?? "",
+      overview: project.overview ?? "",
+      taxExcludedAmount: project.taxExcludedAmount != null ? project.taxExcludedAmount : "",
+      taxRate: project.taxRate != null ? project.taxRate : "",
+      taxAmount: project.taxAmount != null ? project.taxAmount : "",
+      taxIncludedAmount: project.taxIncludedAmount != null ? project.taxIncludedAmount : "",
+      department: project.department ?? "",
+      salesStaff: project.salesStaff ?? "",
+      siteManager: project.siteManager ?? "",
+      category1: project.category1 ?? "",
+      category2: project.category2 ?? "",
+      category3: project.category3 ?? "",
+      orderDate: project.orderDate ?? "",
+      handoverDate: project.handoverDate ?? "",
+      progressRate: project.progressRate ?? undefined,
+      recognitionBasis: project.recognitionBasis ?? "",
     },
   });
 
+  const taxExcludedAmount = form.watch("taxExcludedAmount");
+  const taxRate = form.watch("taxRate");
+
+  useEffect(() => {
+    const excluded = taxExcludedAmount === "" || taxExcludedAmount == null ? null : Number(taxExcludedAmount);
+    const rate = taxRate === "" || taxRate == null ? null : Number(taxRate);
+    if (excluded !== null && !isNaN(excluded) && rate !== null && !isNaN(rate)) {
+      const tax = Math.floor(excluded * rate / 100);
+      const included = excluded + tax;
+      form.setValue("taxAmount", tax);
+      form.setValue("taxIncludedAmount", included);
+      form.setValue("contractAmount", included);
+    }
+  }, [taxExcludedAmount, taxRate]);
+
   function onSubmit(values: z.infer<typeof projectEditSchema>) {
+    const normalizeDate = (v: string | undefined) => (typeof v === "string" && v.trim() !== "" ? v.trim() : undefined);
+    const normalizeStr = (v: string | undefined) => (typeof v === "string" && v.trim() !== "" ? v.trim() : undefined);
+    const normalizeNum = (v: number | string | undefined | null) => {
+      if (v === "" || v == null) return undefined;
+      const n = Number(v);
+      return isNaN(n) ? undefined : n;
+    };
+
+    const payload = {
+      name: values.name,
+      shortName: normalizeStr(values.shortName),
+      clientName: values.clientName,
+      location: values.location,
+      contractAmount: values.contractAmount,
+      status: values.status,
+      startDate: values.startDate,
+      endDate: values.endDate,
+      description: normalizeStr(values.description),
+      estimateNumber: normalizeStr(values.estimateNumber),
+      orderType: normalizeStr(values.orderType),
+      overview: normalizeStr(values.overview),
+      taxExcludedAmount: normalizeNum(values.taxExcludedAmount),
+      taxRate: normalizeNum(values.taxRate),
+      taxAmount: normalizeNum(values.taxAmount),
+      taxIncludedAmount: normalizeNum(values.taxIncludedAmount),
+      department: normalizeStr(values.department),
+      salesStaff: normalizeStr(values.salesStaff),
+      siteManager: normalizeStr(values.siteManager),
+      category1: normalizeStr(values.category1),
+      category2: normalizeStr(values.category2),
+      category3: normalizeStr(values.category3),
+      orderDate: normalizeDate(values.orderDate),
+      handoverDate: normalizeDate(values.handoverDate),
+      progressRate: normalizeNum(values.progressRate),
+      recognitionBasis: normalizeStr(values.recognitionBasis),
+    };
+
     updateProject.mutate(
-      { id: projectId, data: values },
+      { id: projectId, data: payload },
       {
         onSuccess: () => {
           toast({ title: "更新しました", description: "工事情報を保存しました。" });
@@ -1171,111 +1261,351 @@ function BasicInfoTab({ project, projectId }: { project: NonNullable<ReturnType<
     return (
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          <Card>
-            <CardHeader className="py-4 border-b">
-              <CardTitle className="text-sm text-slate-700">基本情報を編集</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem className="md:col-span-2">
-                    <FormLabel>工事名称 <span className="text-destructive">*</span></FormLabel>
-                    <FormControl><Input {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="clientName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>発注者名 <span className="text-destructive">*</span></FormLabel>
-                    <FormControl><Input {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="location"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>工事場所 <span className="text-destructive">*</span></FormLabel>
-                    <FormControl><Input {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="contractAmount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>請負金額（円） <span className="text-destructive">*</span></FormLabel>
-                    <FormControl><Input type="number" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="status"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>ステータス <span className="text-destructive">*</span></FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* 左カラム */}
+            <Card>
+              <CardHeader className="py-3 border-b bg-slate-50/60">
+                <CardTitle className="text-sm font-semibold text-slate-700">工事基本情報</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-5 space-y-4">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>工事名称 <span className="text-destructive">*</span></FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="shortName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>工事略称</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="estimateNumber"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>見積番号</FormLabel>
+                      <FormControl><Input placeholder="例: Q202401-001" {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="location"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>工事場所 <span className="text-destructive">*</span></FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="clientName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>得意先 <span className="text-destructive">*</span></FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="orderType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>受注区分</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || ""}>
+                        <FormControl>
+                          <SelectTrigger><SelectValue placeholder="選択してください" /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="元請">元請</SelectItem>
+                          <SelectItem value="下請">下請</SelectItem>
+                          <SelectItem value="直工事">直工事</SelectItem>
+                          <SelectItem value="その他">その他</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="overview"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>工事概要</FormLabel>
+                      <FormControl><Textarea rows={3} {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="space-y-3 rounded-md border border-slate-200 p-4 bg-slate-50/50">
+                  <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">請負金額</p>
+                  <FormField
+                    control={form.control}
+                    name="taxExcludedAmount"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>税抜金額（円）</FormLabel>
+                        <FormControl>
+                          <Input type="number" placeholder="0" {...field} value={field.value ?? ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="taxRate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>消費税率</FormLabel>
+                        <Select onValueChange={(v) => field.onChange(Number(v))} value={String(field.value ?? 10)}>
+                          <FormControl>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {TAX_RATES.map((r) => (
+                              <SelectItem key={r} value={String(r)}>{r}%</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <div className="grid grid-cols-2 gap-3">
+                    <FormField
+                      control={form.control}
+                      name="taxAmount"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>消費税額（円）</FormLabel>
+                          <FormControl>
+                            <Input type="number" readOnly className="bg-slate-100 text-slate-600" {...field} value={field.value ?? ""} />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="taxIncludedAmount"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>税込金額（円）</FormLabel>
+                          <FormControl>
+                            <Input type="number" readOnly className="bg-slate-100 font-semibold text-slate-800" {...field} value={field.value ?? ""} />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </div>
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>備考</FormLabel>
+                      <FormControl><Textarea rows={3} {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </CardContent>
+            </Card>
+
+            {/* 右カラム */}
+            <Card>
+              <CardHeader className="py-3 border-b bg-slate-50/60">
+                <CardTitle className="text-sm font-semibold text-slate-700">担当・分類・工期</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-5 space-y-4">
+                <FormField
+                  control={form.control}
+                  name="status"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>ステータス <span className="text-destructive">*</span></FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="planning">計画中</SelectItem>
+                          <SelectItem value="active">施工中</SelectItem>
+                          <SelectItem value="completed">完工</SelectItem>
+                          <SelectItem value="suspended">中断</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="department"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>工事部門</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="salesStaff"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>営業担当</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="siteManager"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>工事担当</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="category1"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>工事分類1</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="category2"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>工事分類2</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="category3"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>工事分類3</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="space-y-3 rounded-md border border-slate-200 p-4 bg-slate-50/50">
+                  <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">工期・日程</p>
+                  <FormField
+                    control={form.control}
+                    name="orderDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>受注日</FormLabel>
+                        <FormControl><Input type="date" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="startDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>着工日 <span className="text-destructive">*</span></FormLabel>
+                        <FormControl><Input type="date" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="endDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>竣工予定日 <span className="text-destructive">*</span></FormLabel>
+                        <FormControl><Input type="date" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="handoverDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>引渡日（予定）</FormLabel>
+                        <FormControl><Input type="date" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <FormField
+                  control={form.control}
+                  name="progressRate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>進捗率（%）</FormLabel>
                       <FormControl>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <Input type="number" min={0} max={100} placeholder="0〜100" {...field} value={field.value ?? ""} />
                       </FormControl>
-                      <SelectContent>
-                        <SelectItem value="planning">計画中</SelectItem>
-                        <SelectItem value="active">施工中</SelectItem>
-                        <SelectItem value="completed">完工</SelectItem>
-                        <SelectItem value="suspended">中断</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="startDate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>着工日 <span className="text-destructive">*</span></FormLabel>
-                    <FormControl><Input type="date" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="endDate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>竣工予定日 <span className="text-destructive">*</span></FormLabel>
-                    <FormControl><Input type="date" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem className="md:col-span-2">
-                    <FormLabel>備考</FormLabel>
-                    <FormControl><Textarea placeholder="特記事項" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </CardContent>
-          </Card>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="recognitionBasis"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>計上基準</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || ""}>
+                        <FormControl>
+                          <SelectTrigger><SelectValue placeholder="選択してください" /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="完成基準">完成基準</SelectItem>
+                          <SelectItem value="進行基準">進行基準</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </CardContent>
+            </Card>
+          </div>
           <div className="flex justify-end gap-3">
             <Button type="button" variant="outline" onClick={() => { setIsEditing(false); form.reset(); }}>
               <X className="w-4 h-4 mr-1" />キャンセル
@@ -1298,49 +1628,166 @@ function BasicInfoTab({ project, projectId }: { project: NonNullable<ReturnType<
           編集
         </Button>
       </div>
-      <Card>
-        <CardContent className="pt-6">
-          <dl className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5 text-sm">
-            <div>
-              <dt className="text-slate-500 mb-1">工事名称</dt>
-              <dd className="font-medium text-slate-900">{project.name}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500 mb-1">発注者名（得意先）</dt>
-              <dd className="font-medium text-slate-900">{project.clientName}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500 mb-1">工事場所</dt>
-              <dd className="font-medium text-slate-900">{project.location || "-"}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500 mb-1">ステータス</dt>
-              <dd>
-                <Badge variant="outline" className={STATUS_COLORS[project.status] ?? ""}>
-                  {STATUS_LABELS[project.status] ?? project.status}
-                </Badge>
-              </dd>
-            </div>
-            <div>
-              <dt className="text-slate-500 mb-1">請負金額</dt>
-              <dd className="font-bold text-slate-900">{formatCurrency(project.contractAmount)}</dd>
-            </div>
-            <div>
-              <dt className="text-slate-500 mb-1">工期</dt>
-              <dd className="font-medium text-slate-900">
-                {new Date(project.startDate).toLocaleDateString("ja-JP")} 〜{" "}
-                {new Date(project.endDate).toLocaleDateString("ja-JP")}
-              </dd>
-            </div>
-            {project.description && (
-              <div className="md:col-span-2">
-                <dt className="text-slate-500 mb-1">備考</dt>
-                <dd className="font-medium text-slate-900 whitespace-pre-wrap">{project.description}</dd>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* 左カラム */}
+        <Card>
+          <CardHeader className="py-3 border-b bg-slate-50/60">
+            <CardTitle className="text-sm font-semibold text-slate-700">工事基本情報</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <dl className="space-y-3 text-sm">
+              <div>
+                <dt className="text-slate-500 mb-0.5">工事名称</dt>
+                <dd className="font-medium text-slate-900">{project.name}</dd>
               </div>
-            )}
-          </dl>
-        </CardContent>
-      </Card>
+              {project.shortName && (
+                <div>
+                  <dt className="text-slate-500 mb-0.5">工事略称</dt>
+                  <dd className="font-medium text-slate-900">{project.shortName}</dd>
+                </div>
+              )}
+              {project.estimateNumber && (
+                <div>
+                  <dt className="text-slate-500 mb-0.5">見積番号</dt>
+                  <dd className="font-medium text-slate-900">{project.estimateNumber}</dd>
+                </div>
+              )}
+              <div>
+                <dt className="text-slate-500 mb-0.5">工事場所</dt>
+                <dd className="font-medium text-slate-900">{project.location || "-"}</dd>
+              </div>
+              <div>
+                <dt className="text-slate-500 mb-0.5">得意先</dt>
+                <dd className="font-medium text-slate-900">{project.clientName}</dd>
+              </div>
+              {project.orderType && (
+                <div>
+                  <dt className="text-slate-500 mb-0.5">受注区分</dt>
+                  <dd className="font-medium text-slate-900">{project.orderType}</dd>
+                </div>
+              )}
+              {project.overview && (
+                <div>
+                  <dt className="text-slate-500 mb-0.5">工事概要</dt>
+                  <dd className="font-medium text-slate-900 whitespace-pre-wrap">{project.overview}</dd>
+                </div>
+              )}
+              <div className="rounded-md bg-slate-50 border border-slate-200 p-3 space-y-2">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">請負金額</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {project.taxExcludedAmount != null && (
+                    <div>
+                      <dt className="text-slate-500 mb-0.5">税抜金額</dt>
+                      <dd className="font-medium text-slate-900">{formatCurrency(project.taxExcludedAmount)}</dd>
+                    </div>
+                  )}
+                  {project.taxRate != null && (
+                    <div>
+                      <dt className="text-slate-500 mb-0.5">消費税率</dt>
+                      <dd className="font-medium text-slate-900">{project.taxRate}%</dd>
+                    </div>
+                  )}
+                  {project.taxAmount != null && (
+                    <div>
+                      <dt className="text-slate-500 mb-0.5">消費税額</dt>
+                      <dd className="font-medium text-slate-900">{formatCurrency(project.taxAmount)}</dd>
+                    </div>
+                  )}
+                  <div>
+                    <dt className="text-slate-500 mb-0.5">税込金額（請負金額）</dt>
+                    <dd className="font-bold text-slate-900">{formatCurrency(project.contractAmount)}</dd>
+                  </div>
+                </div>
+              </div>
+              {project.description && (
+                <div>
+                  <dt className="text-slate-500 mb-0.5">備考</dt>
+                  <dd className="font-medium text-slate-900 whitespace-pre-wrap">{project.description}</dd>
+                </div>
+              )}
+            </dl>
+          </CardContent>
+        </Card>
+
+        {/* 右カラム */}
+        <Card>
+          <CardHeader className="py-3 border-b bg-slate-50/60">
+            <CardTitle className="text-sm font-semibold text-slate-700">担当・分類・工期</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <dl className="space-y-3 text-sm">
+              <div>
+                <dt className="text-slate-500 mb-0.5">ステータス</dt>
+                <dd>
+                  <Badge variant="outline" className={STATUS_COLORS[project.status] ?? ""}>
+                    {STATUS_LABELS[project.status] ?? project.status}
+                  </Badge>
+                </dd>
+              </div>
+              {project.department && (
+                <div>
+                  <dt className="text-slate-500 mb-0.5">工事部門</dt>
+                  <dd className="font-medium text-slate-900">{project.department}</dd>
+                </div>
+              )}
+              {project.salesStaff && (
+                <div>
+                  <dt className="text-slate-500 mb-0.5">営業担当</dt>
+                  <dd className="font-medium text-slate-900">{project.salesStaff}</dd>
+                </div>
+              )}
+              {project.siteManager && (
+                <div>
+                  <dt className="text-slate-500 mb-0.5">工事担当</dt>
+                  <dd className="font-medium text-slate-900">{project.siteManager}</dd>
+                </div>
+              )}
+              {(project.category1 || project.category2 || project.category3) && (
+                <div>
+                  <dt className="text-slate-500 mb-0.5">工事分類</dt>
+                  <dd className="font-medium text-slate-900">
+                    {[project.category1, project.category2, project.category3].filter(Boolean).join(" / ")}
+                  </dd>
+                </div>
+              )}
+              <div className="rounded-md bg-slate-50 border border-slate-200 p-3 space-y-2">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">工期・日程</p>
+                {project.orderDate && (
+                  <div>
+                    <dt className="text-slate-500 mb-0.5">受注日</dt>
+                    <dd className="font-medium text-slate-900">{new Date(project.orderDate).toLocaleDateString("ja-JP")}</dd>
+                  </div>
+                )}
+                <div>
+                  <dt className="text-slate-500 mb-0.5">着工〜竣工</dt>
+                  <dd className="font-medium text-slate-900">
+                    {new Date(project.startDate).toLocaleDateString("ja-JP")} 〜{" "}
+                    {new Date(project.endDate).toLocaleDateString("ja-JP")}
+                  </dd>
+                </div>
+                {project.handoverDate && (
+                  <div>
+                    <dt className="text-slate-500 mb-0.5">引渡予定日</dt>
+                    <dd className="font-medium text-slate-900">{new Date(project.handoverDate).toLocaleDateString("ja-JP")}</dd>
+                  </div>
+                )}
+              </div>
+              {project.progressRate != null && (
+                <div>
+                  <dt className="text-slate-500 mb-0.5">進捗率</dt>
+                  <dd className="font-medium text-slate-900">{project.progressRate}%</dd>
+                </div>
+              )}
+              {project.recognitionBasis && (
+                <div>
+                  <dt className="text-slate-500 mb-0.5">計上基準</dt>
+                  <dd className="font-medium text-slate-900">{project.recognitionBasis}</dd>
+                </div>
+              )}
+            </dl>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

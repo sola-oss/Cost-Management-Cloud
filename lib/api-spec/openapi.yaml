@@ -534,6 +534,80 @@ components:
         updatedAt:
           type: string
           format: date-time
+        shortName:
+          type: string
+          nullable: true
+          description: 工事略称
+        estimateNumber:
+          type: string
+          nullable: true
+          description: 見積番号
+        orderType:
+          type: string
+          nullable: true
+          description: 受注区分（元請/下請 等）
+        orderDate:
+          type: string
+          format: date
+          nullable: true
+          description: 受注日
+        taxRate:
+          type: number
+          nullable: true
+          description: 消費税率（%）
+        taxExcludedAmount:
+          type: number
+          nullable: true
+          description: 税抜金額
+        taxAmount:
+          type: number
+          nullable: true
+          description: 消費税額
+        taxIncludedAmount:
+          type: number
+          nullable: true
+          description: 税込金額
+        overview:
+          type: string
+          nullable: true
+          description: 工事概要
+        department:
+          type: string
+          nullable: true
+          description: 工事部門
+        salesStaff:
+          type: string
+          nullable: true
+          description: 営業担当
+        siteManager:
+          type: string
+          nullable: true
+          description: 工事担当
+        category1:
+          type: string
+          nullable: true
+          description: 工事分類1
+        category2:
+          type: string
+          nullable: true
+          description: 工事分類2
+        category3:
+          type: string
+          nullable: true
+          description: 工事分類3
+        handoverDate:
+          type: string
+          format: date
+          nullable: true
+          description: 引渡予定日
+        progressRate:
+          type: integer
+          nullable: true
+          description: 進捗率（%）
+        recognitionBasis:
+          type: string
+          nullable: true
+          description: 計上基準
       required:
         - id
         - projectCode
@@ -714,6 +788,62 @@ components:
         description:
           type: string
           nullable: true
+        shortName:
+          type: string
+          nullable: true
+        estimateNumber:
+          type: string
+          nullable: true
+        orderType:
+          type: string
+          nullable: true
+        orderDate:
+          type: string
+          format: date
+          nullable: true
+        taxRate:
+          type: number
+          nullable: true
+        taxExcludedAmount:
+          type: number
+          nullable: true
+        taxAmount:
+          type: number
+          nullable: true
+        taxIncludedAmount:
+          type: number
+          nullable: true
+        overview:
+          type: string
+          nullable: true
+        department:
+          type: string
+          nullable: true
+        salesStaff:
+          type: string
+          nullable: true
+        siteManager:
+          type: string
+          nullable: true
+        category1:
+          type: string
+          nullable: true
+        category2:
+          type: string
+          nullable: true
+        category3:
+          type: string
+          nullable: true
+        handoverDate:
+          type: string
+          format: date
+          nullable: true
+        progressRate:
+          type: integer
+          nullable: true
+        recognitionBasis:
+          type: string
+          nullable: true
       required:
         - projectCode
         - name
@@ -750,6 +880,62 @@ components:
           format: date
           nullable: true
         description:
+          type: string
+          nullable: true
+        shortName:
+          type: string
+          nullable: true
+        estimateNumber:
+          type: string
+          nullable: true
+        orderType:
+          type: string
+          nullable: true
+        orderDate:
+          type: string
+          format: date
+          nullable: true
+        taxRate:
+          type: number
+          nullable: true
+        taxExcludedAmount:
+          type: number
+          nullable: true
+        taxAmount:
+          type: number
+          nullable: true
+        taxIncludedAmount:
+          type: number
+          nullable: true
+        overview:
+          type: string
+          nullable: true
+        department:
+          type: string
+          nullable: true
+        salesStaff:
+          type: string
+          nullable: true
+        siteManager:
+          type: string
+          nullable: true
+        category1:
+          type: string
+          nullable: true
+        category2:
+          type: string
+          nullable: true
+        category3:
+          type: string
+          nullable: true
+        handoverDate:
+          type: string
+          format: date
+          nullable: true
+        progressRate:
+          type: integer
+          nullable: true
+        recognitionBasis:
           type: string
           nullable: true
 

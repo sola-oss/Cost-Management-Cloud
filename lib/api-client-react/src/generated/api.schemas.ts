@@ -50,6 +50,42 @@ export interface Project {
   description?: string | null;
   createdAt: string;
   updatedAt: string;
+  /** 工事略称 */
+  shortName?: string | null;
+  /** 見積番号 */
+  estimateNumber?: string | null;
+  /** 受注区分（元請/下請 等） */
+  orderType?: string | null;
+  /** 受注日 */
+  orderDate?: string | null;
+  /** 消費税率（%） */
+  taxRate?: number | null;
+  /** 税抜金額 */
+  taxExcludedAmount?: number | null;
+  /** 消費税額 */
+  taxAmount?: number | null;
+  /** 税込金額 */
+  taxIncludedAmount?: number | null;
+  /** 工事概要 */
+  overview?: string | null;
+  /** 工事部門 */
+  department?: string | null;
+  /** 営業担当 */
+  salesStaff?: string | null;
+  /** 工事担当 */
+  siteManager?: string | null;
+  /** 工事分類1 */
+  category1?: string | null;
+  /** 工事分類2 */
+  category2?: string | null;
+  /** 工事分類3 */
+  category3?: string | null;
+  /** 引渡予定日 */
+  handoverDate?: string | null;
+  /** 進捗率（%） */
+  progressRate?: number | null;
+  /** 計上基準 */
+  recognitionBasis?: string | null;
 }
 
 /**
@@ -209,6 +245,24 @@ export interface CreateProjectRequest {
   startDate: string;
   endDate: string;
   description?: string | null;
+  shortName?: string | null;
+  estimateNumber?: string | null;
+  orderType?: string | null;
+  orderDate?: string | null;
+  taxRate?: number | null;
+  taxExcludedAmount?: number | null;
+  taxAmount?: number | null;
+  taxIncludedAmount?: number | null;
+  overview?: string | null;
+  department?: string | null;
+  salesStaff?: string | null;
+  siteManager?: string | null;
+  category1?: string | null;
+  category2?: string | null;
+  category3?: string | null;
+  handoverDate?: string | null;
+  progressRate?: number | null;
+  recognitionBasis?: string | null;
 }
 
 export type UpdateProjectRequestStatus =
@@ -232,6 +286,24 @@ export interface UpdateProjectRequest {
   endDate?: string;
   completedDate?: string | null;
   description?: string | null;
+  shortName?: string | null;
+  estimateNumber?: string | null;
+  orderType?: string | null;
+  orderDate?: string | null;
+  taxRate?: number | null;
+  taxExcludedAmount?: number | null;
+  taxAmount?: number | null;
+  taxIncludedAmount?: number | null;
+  overview?: string | null;
+  department?: string | null;
+  salesStaff?: string | null;
+  siteManager?: string | null;
+  category1?: string | null;
+  category2?: string | null;
+  category3?: string | null;
+  handoverDate?: string | null;
+  progressRate?: number | null;
+  recognitionBasis?: string | null;
 }
 
 export interface CostItemListResponse {

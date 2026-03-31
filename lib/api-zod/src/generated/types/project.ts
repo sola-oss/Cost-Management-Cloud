@@ -31,4 +31,40 @@ export interface Project {
   description?: string | null;
   createdAt: Date;
   updatedAt: Date;
+  /** 工事略称 */
+  shortName?: string | null;
+  /** 見積番号 */
+  estimateNumber?: string | null;
+  /** 受注区分（元請/下請 等） */
+  orderType?: string | null;
+  /** 受注日 */
+  orderDate?: Date | null;
+  /** 消費税率（%） */
+  taxRate?: number | null;
+  /** 税抜金額 */
+  taxExcludedAmount?: number | null;
+  /** 消費税額 */
+  taxAmount?: number | null;
+  /** 税込金額 */
+  taxIncludedAmount?: number | null;
+  /** 工事概要 */
+  overview?: string | null;
+  /** 工事部門 */
+  department?: string | null;
+  /** 営業担当 */
+  salesStaff?: string | null;
+  /** 工事担当 */
+  siteManager?: string | null;
+  /** 工事分類1 */
+  category1?: string | null;
+  /** 工事分類2 */
+  category2?: string | null;
+  /** 工事分類3 */
+  category3?: string | null;
+  /** 引渡予定日 */
+  handoverDate?: Date | null;
+  /** 進捗率（%） */
+  progressRate?: number | null;
+  /** 計上基準 */
+  recognitionBasis?: string | null;
 }

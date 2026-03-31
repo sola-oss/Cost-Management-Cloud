@@ -17,4 +17,22 @@ export interface CreateProjectRequest {
   startDate: Date;
   endDate: Date;
   description?: string | null;
+  shortName?: string | null;
+  estimateNumber?: string | null;
+  orderType?: string | null;
+  orderDate?: Date | null;
+  taxRate?: number | null;
+  taxExcludedAmount?: number | null;
+  taxAmount?: number | null;
+  taxIncludedAmount?: number | null;
+  overview?: string | null;
+  department?: string | null;
+  salesStaff?: string | null;
+  siteManager?: string | null;
+  category1?: string | null;
+  category2?: string | null;
+  category3?: string | null;
+  handoverDate?: Date | null;
+  progressRate?: number | null;
+  recognitionBasis?: string | null;
 }
