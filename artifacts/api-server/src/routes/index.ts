@@ -4,6 +4,7 @@ import projectsRouter from "./projects";
 import costItemsRouter from "./cost-items";
 import budgetsRouter from "./budgets";
 import dashboardRouter from "./dashboard";
+import paymentsRouter from "./payments";
 
 const router: IRouter = Router();
 
@@ -12,5 +13,6 @@ router.use("/projects", projectsRouter);
 router.use("/cost-items", costItemsRouter);
 router.use("/budgets", budgetsRouter);
 router.use("/dashboard", dashboardRouter);
+router.use("/payments", paymentsRouter);
 
 export default router;

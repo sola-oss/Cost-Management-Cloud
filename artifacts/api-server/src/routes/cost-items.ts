@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { sql } from "drizzle-orm";
-import { db, costItemsTable } from "@workspace/db";
+import { db, costItemsTable, projectsTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -11,26 +11,57 @@ function parseNumeric(val: unknown): number {
 
 router.get("/", async (req, res) => {
   try {
-    const { projectId, category } = req.query as Record<string, string>;
-    if (!projectId) return res.status(400).json({ message: "projectId is required" });
+    const { projectId, category, limit: limitStr } = req.query as Record<string, string>;
+    const limitNum = limitStr ? Math.min(parseInt(limitStr), 500) : 100;
 
-    const conditions = [eq(costItemsTable.projectId, parseInt(projectId))];
-    if (category) conditions.push(eq(costItemsTable.category, category as any));
+    if (projectId) {
+      // プロジェクト別（既存動作）
+      const conditions = [eq(costItemsTable.projectId, parseInt(projectId))];
+      if (category) conditions.push(eq(costItemsTable.category, category as any));
 
-    const items = await db.select().from(costItemsTable)
-      .where(and(...conditions))
-      .orderBy(costItemsTable.incurredDate);
+      const items = await db.select().from(costItemsTable)
+        .where(and(...conditions))
+        .orderBy(desc(costItemsTable.incurredDate))
+        .limit(limitNum);
 
-    const totalAmount = items.reduce((sum, ci) => sum + parseNumeric(ci.amount), 0);
+      const totalAmount = items.reduce((sum, ci) => sum + parseNumeric(ci.amount), 0);
+      return res.json({
+        items: items.map(ci => ({
+          ...ci,
+          amount: parseNumeric(ci.amount),
+          quantity: ci.quantity ? parseNumeric(ci.quantity) : null,
+          unitPrice: ci.unitPrice ? parseNumeric(ci.unitPrice) : null,
+        })),
+        total: items.length,
+        totalAmount,
+      });
+    }
 
-    res.json({
-      items: items.map(ci => ({
-        ...ci,
-        amount: parseNumeric(ci.amount),
-        quantity: ci.quantity ? parseNumeric(ci.quantity) : null,
-        unitPrice: ci.unitPrice ? parseNumeric(ci.unitPrice) : null,
+    // 全工事の最近の仕入一覧（仕入入力ページ用）
+    const rows = await db
+      .select({
+        costItem: costItemsTable,
+        projectCode: projectsTable.projectCode,
+        projectName: projectsTable.name,
+        clientName: projectsTable.clientName,
+      })
+      .from(costItemsTable)
+      .innerJoin(projectsTable, eq(costItemsTable.projectId, projectsTable.id))
+      .orderBy(desc(costItemsTable.incurredDate))
+      .limit(limitNum);
+
+    const totalAmount = rows.reduce((sum, r) => sum + parseNumeric(r.costItem.amount), 0);
+    return res.json({
+      items: rows.map(r => ({
+        ...r.costItem,
+        amount: parseNumeric(r.costItem.amount),
+        quantity: r.costItem.quantity ? parseNumeric(r.costItem.quantity) : null,
+        unitPrice: r.costItem.unitPrice ? parseNumeric(r.costItem.unitPrice) : null,
+        projectCode: r.projectCode,
+        projectName: r.projectName,
+        clientName: r.clientName,
       })),
-      total: items.length,
+      total: rows.length,
       totalAmount,
     });
   } catch (err) {

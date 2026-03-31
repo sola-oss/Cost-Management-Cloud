@@ -26,7 +26,7 @@ import {
 } from "recharts";
 import {
   ArrowLeft, Edit, Plus, Save, X, AlertTriangle, CheckCircle, TrendingUp,
-  FileText, Calculator, BarChart2, ClipboardList, Loader2, Trash2,
+  FileText, Calculator, BarChart2, ClipboardList, Loader2, Trash2, Search,
 } from "lucide-react";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { useForm } from "react-hook-form";
@@ -397,11 +397,15 @@ function BudgetTab({ projectId }: { projectId: number }) {
 
 // ─── 原価明細タブ ────────────────────────────────────────────────────────────
 
+const COST_FILTER_OPTIONS: Array<Category | "all"> = ["all", "material", "labor", "subcontract", "expense"];
+
 function CostItemsTab({ projectId }: { projectId: number }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [filterCat, setFilterCat] = useState<Category | "all">("all");
+  const [searchText, setSearchText] = useState("");
 
   const { data: costItems, isLoading } = useListCostItems(
     { projectId, limit: 100 },
@@ -488,20 +492,35 @@ function CostItemsTab({ projectId }: { projectId: number }) {
     }
   });
 
+  // フィルタ適用
+  const filteredItems = items.filter((item) => {
+    const catMatch = filterCat === "all" || item.category === filterCat;
+    const q = searchText.trim().toLowerCase();
+    const textMatch =
+      !q ||
+      item.description.toLowerCase().includes(q) ||
+      (item.vendor?.toLowerCase().includes(q) ?? false) ||
+      (item.invoiceNumber?.toLowerCase().includes(q) ?? false);
+    return catMatch && textMatch;
+  });
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <div className="flex gap-3 flex-wrap">
-          {CATEGORIES.map((cat) => (
-            <div key={cat} className="flex items-center gap-1.5">
-              <Badge variant="outline" className={`${CATEGORY_COLORS[cat]} text-xs`}>
-                {CATEGORY_LABELS[cat]}
-              </Badge>
-              <span className="text-sm font-medium">{formatCurrency(totalByCategory[cat])}</span>
-            </div>
-          ))}
-        </div>
-        <Dialog open={addOpen} onOpenChange={setAddOpen}>
+      {/* カテゴリ合計バッジ + 検索 + 追加ボタン */}
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* カテゴリ別合計 */}
+          <div className="flex gap-3 flex-wrap">
+            {CATEGORIES.map((cat) => (
+              <div key={cat} className="flex items-center gap-1.5">
+                <Badge variant="outline" className={`${CATEGORY_COLORS[cat]} text-xs`}>
+                  {CATEGORY_LABELS[cat]}
+                </Badge>
+                <span className="text-sm font-medium">{formatCurrency(totalByCategory[cat])}</span>
+              </div>
+            ))}
+          </div>
+          <Dialog open={addOpen} onOpenChange={setAddOpen}>
           <DialogTrigger asChild>
             <Button size="sm">
               <Plus className="w-4 h-4 mr-1" />
@@ -645,6 +664,38 @@ function CostItemsTab({ projectId }: { projectId: number }) {
             </Form>
           </DialogContent>
         </Dialog>
+        </div>
+
+        {/* フィルタ + 検索バー */}
+        <div className="flex flex-wrap items-center gap-2">
+          {COST_FILTER_OPTIONS.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setFilterCat(cat)}
+              className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                filterCat === cat
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              {cat === "all" ? "全て" : CATEGORY_LABELS[cat]}
+              {cat !== "all" && (
+                <span className="ml-1 text-[10px] opacity-70">
+                  ({items.filter((i) => i.category === cat).length})
+                </span>
+              )}
+            </button>
+          ))}
+          <div className="relative ml-auto">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+            <Input
+              className="pl-8 h-8 w-[200px] text-sm"
+              placeholder="摘要・取引先で検索"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+            />
+          </div>
+        </div>
       </div>
 
       <Card>
@@ -673,14 +724,16 @@ function CostItemsTab({ projectId }: { projectId: number }) {
                       </TableCell>
                     </TableRow>
                   ))
-                ) : items.length === 0 ? (
+                ) : filteredItems.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={9} className="h-32 text-center text-slate-500">
-                      原価明細がありません。「明細追加」から計上してください。
+                      {items.length === 0
+                        ? "原価明細がありません。「明細追加」から計上してください。"
+                        : "条件に一致する明細がありません。"}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  items.map((item) => (
+                  filteredItems.map((item) => (
                     <TableRow key={item.id} className="hover:bg-slate-50/50">
                       <TableCell className="text-slate-600 text-sm">
                         {new Date(item.incurredDate).toLocaleDateString("ja-JP")}
@@ -726,11 +779,14 @@ function CostItemsTab({ projectId }: { projectId: number }) {
         </CardContent>
       </Card>
 
-      {items.length > 0 && (
-        <div className="text-right text-sm text-slate-500">
-          合計 {items.length} 件 ／ 原価合計:{" "}
-          <span className="font-bold text-slate-900">
-            {formatCurrency(items.reduce((s, i) => s + i.amount, 0))}
+      {filteredItems.length > 0 && (
+        <div className="flex items-center justify-between text-sm text-slate-500">
+          <span>{filteredItems.length} 件表示 / 全 {items.length} 件</span>
+          <span>
+            表示合計:{" "}
+            <span className="font-bold text-slate-900">
+              {formatCurrency(filteredItems.reduce((s, i) => s + i.amount, 0))}
+            </span>
           </span>
         </div>
       )}

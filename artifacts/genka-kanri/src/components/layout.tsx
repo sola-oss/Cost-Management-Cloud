@@ -1,15 +1,26 @@
 import { Link, useLocation } from "wouter";
-import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2 } from "lucide-react";
-import { Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarProvider, SidebarRail, SidebarTrigger } from "./ui/sidebar";
+import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, CreditCard } from "lucide-react";
+import { Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarProvider, SidebarRail, SidebarTrigger, SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from "./ui/sidebar";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
 
-  const navigation = [
+  const mainNav = [
     { title: "ダッシュボード", icon: LayoutDashboard, url: "/" },
     { title: "工事一覧", icon: FolderKanban, url: "/projects" },
+  ];
+
+  const operationNav = [
+    { title: "仕入入力", icon: ShoppingCart, url: "/purchases" },
+    { title: "支払管理", icon: CreditCard, url: "/payments" },
+  ];
+
+  const reportNav = [
     { title: "収支レポート", icon: FileSpreadsheet, url: "/reports" },
   ];
+
+  const isActive = (url: string) =>
+    url === "/" ? location === "/" : location.startsWith(url);
 
   return (
     <SidebarProvider>
@@ -25,26 +36,68 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             </Link>
           </SidebarHeader>
-          <SidebarContent className="p-2">
-            <SidebarMenu>
-              {navigation.map((item) => (
-                <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton 
-                    asChild 
-                    isActive={location === item.url || (item.url !== "/" && location.startsWith(item.url))}
-                  >
-                    <Link href={item.url} className="flex items-center gap-3">
-                      <item.icon className="w-4 h-4" />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
+
+          <SidebarContent className="p-2 space-y-1">
+            {/* メイン */}
+            <SidebarGroup>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {mainNav.map((item) => (
+                    <SidebarMenuItem key={item.url}>
+                      <SidebarMenuButton asChild isActive={isActive(item.url)}>
+                        <Link href={item.url} className="flex items-center gap-3">
+                          <item.icon className="w-4 h-4" />
+                          <span>{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            {/* 日次業務 */}
+            <SidebarGroup>
+              <SidebarGroupLabel className="text-xs text-slate-400 px-2 py-1">日次業務</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {operationNav.map((item) => (
+                    <SidebarMenuItem key={item.url}>
+                      <SidebarMenuButton asChild isActive={isActive(item.url)}>
+                        <Link href={item.url} className="flex items-center gap-3">
+                          <item.icon className="w-4 h-4" />
+                          <span>{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            {/* レポート */}
+            <SidebarGroup>
+              <SidebarGroupLabel className="text-xs text-slate-400 px-2 py-1">レポート</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {reportNav.map((item) => (
+                    <SidebarMenuItem key={item.url}>
+                      <SidebarMenuButton asChild isActive={isActive(item.url)}>
+                        <Link href={item.url} className="flex items-center gap-3">
+                          <item.icon className="w-4 h-4" />
+                          <span>{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
           </SidebarContent>
+
           <SidebarRail />
         </Sidebar>
-        
+
         <main className="flex-1 flex flex-col min-w-0">
           <header className="h-14 flex items-center gap-2 px-4 border-b bg-white shadow-sm shrink-0">
             <SidebarTrigger />
