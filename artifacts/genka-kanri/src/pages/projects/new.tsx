@@ -300,11 +300,11 @@ export default function NewProject() {
             </CardContent>
           </Card>
 
-          {/* ── メイン 2カラム ── */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* ── メイン 2カラム（左60% / 右40%） ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
 
-            {/* ── 左カラム ── */}
-            <div className="space-y-4">
+            {/* ── 左カラム (3/5 = 60%) ── */}
+            <div className="space-y-4 lg:col-span-3">
               <Card>
                 <CardHeader className="py-2 px-4 border-b bg-teal-700">
                   <CardTitle className="text-xs font-semibold text-white">工事基本情報</CardTitle>
@@ -513,39 +513,10 @@ export default function NewProject() {
                 </CardContent>
               </Card>
 
-              {/* 備考・メモ */}
-              <Card>
-                <CardContent className="pt-4 space-y-3">
-                  <FormField
-                    control={form.control}
-                    name="description"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs text-slate-600">備考</FormLabel>
-                        <FormControl>
-                          <Input className="text-sm" placeholder="特記事項があれば入力" {...field} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="memo"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs text-slate-600">メモ</FormLabel>
-                        <FormControl>
-                          <Textarea className="text-sm" rows={3} placeholder="自由記入メモ" {...field} />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                </CardContent>
-              </Card>
             </div>
 
-            {/* ── 右カラム ── */}
-            <div className="space-y-4">
+            {/* ── 右カラム (2/5 = 40%) ── */}
+            <div className="space-y-4 lg:col-span-2">
               <Card>
                 <CardHeader className="py-2 px-4 border-b bg-teal-700">
                   <CardTitle className="text-xs font-semibold text-white">担当・分類</CardTitle>
@@ -851,6 +822,38 @@ export default function NewProject() {
               </Card>
             </div>
           </div>
+
+          {/* ── 備考・メモ（全幅） ── */}
+          <Card>
+            <CardContent className="pt-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs text-slate-600">備考</FormLabel>
+                      <FormControl>
+                        <Input className="text-sm" placeholder="特記事項があれば入力" {...field} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="memo"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs text-slate-600">メモ</FormLabel>
+                      <FormControl>
+                        <Textarea className="text-sm" rows={2} placeholder="自由記入メモ" {...field} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </CardContent>
+          </Card>
 
           {/* ── 登録ボタン ── */}
           <div className="flex justify-end gap-3 pb-4">
