@@ -178,7 +178,8 @@ function SlipRowView({
             className="w-full h-6 px-1 text-xs bg-transparent outline-none border-none focus:bg-blue-50"
           >
             <option>通常</option>
-            <option>返品</option>
+            <option>入荷</option>
+            <option>締</option>
           </select>
         </td>
         {/* 科目コード */}
@@ -275,12 +276,12 @@ function SlipRowView({
         <td className={`border ${bdr} px-1 w-24 text-right text-[11px] font-mono text-blue-600`}>
           {row.tax > 0 ? row.tax.toLocaleString() : ""}
         </td>
-        {/* 工程コード / 部門コード */}
+        {/* 工種コード / 部門コード */}
         <td className={`border ${bdr} p-0 w-32`}>
-          <CellInput value={row.workTypeCode} onChange={v => onChange("workTypeCode", v)} placeholder="工程コード" className="font-mono text-[10px]" />
+          <CellInput value={row.workTypeCode} onChange={v => onChange("workTypeCode", v)} placeholder="工種コード" className="font-mono text-[10px]" />
           <CellInput value={row.departmentCode} onChange={v => onChange("departmentCode", v)} placeholder="部門コード" className="font-mono text-[10px]" />
         </td>
-        {/* 工程名 / 部門名 */}
+        {/* 工種名 / 部門名 */}
         <td className={`border ${bdr} px-1 min-w-[120px]`}>
           <div className="text-[10px] text-slate-500">{row.workTypeName || "—"}</div>
           <div className="text-[10px] text-slate-500">{row.departmentName || "—"}</div>
@@ -662,11 +663,11 @@ export default function Purchases() {
               <th className="border border-teal-600 px-1 py-1 w-16">属性<br />入荷簿</th>
               <th className="border border-teal-600 px-1 py-1 w-20">科目コード<br />科目名</th>
               <th className="border border-teal-600 px-1 py-1 w-40">商品コード<br />商品名<br />仕様摘要</th>
-              <th className="border border-teal-600 px-1 py-1 w-14">単位<br />数量残</th>
+              <th className="border border-teal-600 px-1 py-1 w-14">単位<br />数量<br />残</th>
               <th className="border border-teal-600 px-1 py-1 w-24">単価<br />税区分/税率</th>
               <th className="border border-teal-600 px-1 py-1 w-24">金額<br />消費税</th>
-              <th className="border border-teal-600 px-1 py-1 w-36">工事コード<br />工程コード<br />部門コード</th>
-              <th className="border border-teal-600 px-1 py-1">工事名<br />工程名<br />部門名</th>
+              <th className="border border-teal-600 px-1 py-1 w-36">工事コード<br />工種コード<br />部門コード</th>
+              <th className="border border-teal-600 px-1 py-1">工事名<br />工種名<br />部門名</th>
             </tr>
           </thead>
           <tbody>
