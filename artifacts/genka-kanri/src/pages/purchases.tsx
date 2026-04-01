@@ -10,6 +10,17 @@ import { Loader2 } from "lucide-react";
 // ── 定数 ──────────────────────────────────────────────────────────────────────
 const TODAY = new Date().toISOString().split("T")[0];
 
+// 伝票番号自動採番（ST-YYYYMMDD-連番 形式、localStorage で日付別管理）
+function generateSlipNumber(): string {
+  const d = new Date();
+  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+  const key = `slip_seq_${ymd}`;
+  const current = parseInt(localStorage.getItem(key) ?? "0", 10);
+  const next = current + 1;
+  localStorage.setItem(key, String(next));
+  return `ST-${ymd}-${String(next).padStart(4, "0")}`;
+}
+
 const CATEGORY_MASTER = [
   { code: "610", name: "材料費", value: "material" as const },
   { code: "620", name: "外注費", value: "subcontract" as const },
@@ -291,7 +302,7 @@ export default function Purchases() {
   const [saving, setSaving] = useState(false);
 
   // ── ヘッダー状態 ──
-  const [slipNumber, setSlipNumber] = useState("");
+  const [slipNumber, setSlipNumber] = useState(() => generateSlipNumber());
   const [purchaseDate, setPurchaseDate] = useState(TODAY);
   const [vendorCode, setVendorCode] = useState("");
   const [vendorName, setVendorName] = useState("");
@@ -368,7 +379,7 @@ export default function Purchases() {
   };
 
   const newSlip = () => {
-    setSlipNumber(""); setPurchaseDate(TODAY); setVendorCode(""); setVendorName("");
+    setSlipNumber(generateSlipNumber()); setPurchaseDate(TODAY); setVendorCode(""); setVendorName("");
     setPaymentDueDate(""); setVendorDept(""); setEstimateNumber(""); setOrderNumber("");
     setSecondCategory(""); setTaxCalcType("外税明細単位"); setTaxFraction("切捨て");
     setAmountFraction("切捨て"); setTaxpayerType("課税事業者");
@@ -499,7 +510,14 @@ export default function Purchases() {
             <tr>
               <Lbl>伝票番号</Lbl>
               <Cell>
-                <Input value={slipNumber} onChange={e => setSlipNumber(e.target.value)} className={hi} />
+                <div className="flex items-center gap-1">
+                  <Input
+                    value={slipNumber}
+                    onChange={e => setSlipNumber(e.target.value)}
+                    className={`${hi} font-mono bg-yellow-50`}
+                  />
+                  <span className="text-[9px] text-slate-400 whitespace-nowrap pr-0.5">自動</span>
+                </div>
               </Cell>
               <Lbl>見積番号</Lbl>
               <Cell>
