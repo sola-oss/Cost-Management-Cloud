@@ -15,11 +15,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
-  ArrowLeft, Save, Trash2, Plus, RefreshCw,
+  ArrowLeft, Save, Trash2, Plus, RefreshCw, Settings2, Copy, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+
+type WorkType = { id: number; code: string; name: string };
 
 type RowState = {
   id?: number;
@@ -47,9 +49,12 @@ function parseN(s: string) {
   return parseFloat(s.replace(/,/g, "")) || 0;
 }
 
+const NUMERIC_COLS = ["contractAmount", "initialBudget", "revisedBudget"] as const;
+const TEXT_COLS = ["workTypeCode", "workTypeName", "supplierCode", "supplierName"] as const;
+
 const COLS: { key: keyof RowState; label: string; width: string; align: "left" | "right"; numeric?: boolean }[] = [
-  { key: "workTypeCode",   label: "工種コード",   width: "80px",  align: "left" },
-  { key: "workTypeName",   label: "工種名",       width: "120px", align: "left" },
+  { key: "workTypeCode",   label: "工種コード",   width: "100px", align: "left" },
+  { key: "workTypeName",   label: "工種名",       width: "140px", align: "left" },
   { key: "supplierCode",   label: "仕入先コード", width: "90px",  align: "left" },
   { key: "supplierName",   label: "仕入先名",     width: "150px", align: "left" },
   { key: "contractAmount", label: "請負金額",     width: "110px", align: "right", numeric: true },
@@ -57,12 +62,112 @@ const COLS: { key: keyof RowState; label: string; width: string; align: "left" |
   { key: "revisedBudget",  label: "実行予算",     width: "110px", align: "right", numeric: true },
 ];
 
+function useWorkTypes() {
+  const [workTypes, setWorkTypes] = useState<WorkType[]>([]);
+  useEffect(() => {
+    fetch("/api/work-types")
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) setWorkTypes(data);
+      })
+      .catch(() => {});
+  }, []);
+  return workTypes;
+}
+
+type ComboBoxProps = {
+  value: string;
+  onChange: (value: string) => void;
+  onSelectWorkType: (wt: WorkType) => void;
+  workTypes: WorkType[];
+  filterField: "code" | "name";
+  inputRef?: (el: HTMLInputElement | null) => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  placeholder?: string;
+};
+
+function WorkTypeComboBox({
+  value, onChange, onSelectWorkType, workTypes, filterField,
+  inputRef, onKeyDown, placeholder,
+}: ComboBoxProps) {
+  const [open, setOpen] = useState(false);
+  const [inputValue, setInputValue] = useState(value);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { setInputValue(value); }, [value]);
+
+  const filtered = inputValue.length > 0
+    ? workTypes.filter(wt => {
+        const v = inputValue.toLowerCase();
+        return filterField === "code"
+          ? wt.code.toLowerCase().includes(v)
+          : wt.name.toLowerCase().includes(v);
+      })
+    : workTypes;
+
+  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setInputValue(e.target.value);
+    onChange(e.target.value);
+    setOpen(true);
+  }
+
+  function handleSelect(wt: WorkType) {
+    onSelectWorkType(wt);
+    setOpen(false);
+  }
+
+  function handleBlur(e: React.FocusEvent) {
+    if (containerRef.current?.contains(e.relatedTarget as Node)) return;
+    setOpen(false);
+  }
+
+  function handleFocus() {
+    setOpen(true);
+  }
+
+  return (
+    <div ref={containerRef} className="relative w-full" onBlur={handleBlur}>
+      <input
+        ref={inputRef}
+        type="text"
+        value={inputValue}
+        onChange={handleInputChange}
+        onFocus={handleFocus}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") { setOpen(false); }
+          if (onKeyDown) onKeyDown(e);
+        }}
+        placeholder={placeholder}
+        className="w-full h-full px-2 py-1 bg-transparent outline-none focus:bg-teal-50 focus:ring-1 focus:ring-teal-400 text-xs"
+        style={{ minHeight: "28px" }}
+      />
+      {open && filtered.length > 0 && (
+        <div className="absolute z-50 top-full left-0 min-w-[200px] max-h-48 overflow-y-auto bg-white border border-slate-200 rounded shadow-lg">
+          {filtered.slice(0, 20).map(wt => (
+            <button
+              key={wt.id}
+              type="button"
+              tabIndex={-1}
+              onMouseDown={() => handleSelect(wt)}
+              className="w-full text-left px-2 py-1.5 text-xs hover:bg-teal-50 flex gap-2"
+            >
+              <span className="text-slate-500 font-mono w-8 shrink-0">{wt.code}</span>
+              <span className="text-slate-800">{wt.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function BudgetManagement() {
   const { id } = useParams<{ id: string }>();
   const projectId = parseInt(id || "0", 10);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const workTypes = useWorkTypes();
 
   const { data: project } = useGetProject(projectId, {
     query: { enabled: !!projectId, queryKey: getGetProjectQueryKey(projectId) },
@@ -87,6 +192,9 @@ export default function BudgetManagement() {
   const [showExpectedProfit, setShowExpectedProfit] = useState(true);
   const [regForm, setRegForm] = useState("工種別仕入先毎");
   const [budgetInput, setBudgetInput] = useState("すべて");
+  const [showDisplaySettings, setShowDisplaySettings] = useState(false);
+  const [showProgress, setShowProgress] = useState(false);
+  const [showTax, setShowTax] = useState(false);
 
   const cellRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -114,6 +222,12 @@ export default function BudgetManagement() {
     ));
   }
 
+  function handleSelectWorkType(rowIdx: number, wt: WorkType) {
+    setRows(prev => prev.map((r, i) =>
+      i === rowIdx ? { ...r, workTypeCode: wt.code, workTypeName: wt.name, isDirty: true } : r
+    ));
+  }
+
   function handleAddRow() {
     const newRow: RowState = {
       workTypeCode: "", workTypeName: "",
@@ -127,6 +241,24 @@ export default function BudgetManagement() {
       const ref = cellRefs.current[`${idx}-workTypeCode`];
       if (ref) ref.focus();
     }, 50);
+  }
+
+  function handleCopyRow(rowIdx: number) {
+    if (rowIdx === 0) return;
+    const prev = rows[rowIdx - 1];
+    setRows(old => old.map((r, i) =>
+      i === rowIdx ? {
+        ...r,
+        workTypeCode: prev.workTypeCode,
+        workTypeName: prev.workTypeName,
+        supplierCode: prev.supplierCode,
+        supplierName: prev.supplierName,
+        contractAmount: prev.contractAmount,
+        initialBudget: prev.initialBudget,
+        revisedBudget: prev.revisedBudget,
+        isDirty: true,
+      } : r
+    ));
   }
 
   function handleToggleRow(rowIdx: number) {
@@ -168,20 +300,7 @@ export default function BudgetManagement() {
     if (e.key === "Enter" && e.ctrlKey) {
       e.preventDefault();
       if (rowIdx > 0) {
-        const prev = rows[rowIdx - 1];
-        setRows(old => old.map((r, i) =>
-          i === rowIdx ? {
-            ...r,
-            workTypeCode: prev.workTypeCode,
-            workTypeName: prev.workTypeName,
-            supplierCode: prev.supplierCode,
-            supplierName: prev.supplierName,
-            contractAmount: prev.contractAmount,
-            initialBudget: prev.initialBudget,
-            revisedBudget: prev.revisedBudget,
-            isDirty: true,
-          } : r
-        ));
+        handleCopyRow(rowIdx);
       }
       return;
     }
@@ -250,16 +369,18 @@ export default function BudgetManagement() {
     if (errorCount > 0) {
       toast({ title: "一部保存失敗", description: `${errorCount} 行の保存に失敗しました。`, variant: "destructive" });
     } else {
-      toast({ title: "確定しました", description: "実行予算を保存しました。" });
+      toast({ title: "保存しました", description: "実行予算を保存しました。" });
     }
   }
 
-  const totalContractAmount = rows.reduce((s, r) => s + parseN(r.contractAmount), 0);
-  const totalInitialBudget  = rows.reduce((s, r) => s + parseN(r.initialBudget), 0);
+  const contractAmountFromProject = project?.contractAmount ?? 0;
   const totalRevisedBudget  = rows.reduce((s, r) => s + parseN(r.revisedBudget), 0);
-  const totalExpectedProfit = totalContractAmount - totalRevisedBudget;
+  const totalInitialBudget  = rows.reduce((s, r) => s + parseN(r.initialBudget), 0);
+  const totalContractAmount = rows.reduce((s, r) => s + parseN(r.contractAmount), 0);
+  const totalExpectedProfit = contractAmountFromProject - totalRevisedBudget;
+  const orderAmount = summary?.totalActualCost ?? 0;
   const actualCost  = summary?.totalActualCost ?? 0;
-  const actualProfit = totalContractAmount - actualCost;
+  const actualProfit = contractAmountFromProject - actualCost;
 
   const hasDirty = rows.some(r => r.isDirty || r.isNew);
 
@@ -277,7 +398,7 @@ export default function BudgetManagement() {
         <div className="h-4 w-px bg-slate-500 mx-1" />
         <Button variant="ghost" size="sm" className="text-white hover:bg-slate-600 h-7 px-2"
           onClick={() => queryClient.invalidateQueries({ queryKey: getListBudgetItemsQueryKey(projectId) })}>
-          <RefreshCw className="w-3.5 h-3.5 mr-1" />F5 更新
+          <RefreshCw className="w-3.5 h-3.5 mr-1" />更新
         </Button>
         <div className="flex-1" />
         <Button size="sm"
@@ -285,7 +406,7 @@ export default function BudgetManagement() {
           onClick={handleSave}
           disabled={saving}>
           <Save className="w-3.5 h-3.5 mr-1" />
-          {saving ? "保存中..." : "F12 確定"}
+          {saving ? "保存中..." : "保存する"}
         </Button>
         {hasDirty && <Badge className="bg-orange-500 text-white text-xs">未保存の変更あり</Badge>}
       </div>
@@ -349,12 +470,12 @@ export default function BudgetManagement() {
           {/* ── サマリーKPIバー ── */}
           <div className="grid grid-cols-6 border border-slate-300 rounded overflow-hidden text-sm">
             {[
-              { label: "請負金額",   value: totalContractAmount, pct: null,                    color: "bg-slate-600" },
-              { label: "実行予算",   value: totalRevisedBudget,  pct: pct(totalRevisedBudget,  totalContractAmount), color: "bg-teal-700" },
-              { label: "予定利益",   value: totalExpectedProfit, pct: pct(totalExpectedProfit, totalContractAmount), color: "bg-teal-600" },
-              { label: "発注",       value: totalRevisedBudget,  pct: pct(totalRevisedBudget,  totalRevisedBudget || 1), color: "bg-blue-600" },
-              { label: "原価",       value: actualCost,          pct: pct(actualCost,          totalContractAmount), color: "bg-orange-600" },
-              { label: "利益",       value: actualProfit,        pct: pct(actualProfit,        totalContractAmount), color: "bg-emerald-600" },
+              { label: "請負金額", value: contractAmountFromProject, pct: null, color: "bg-slate-600" },
+              { label: "実行予算", value: totalRevisedBudget,       pct: pct(totalRevisedBudget, contractAmountFromProject), color: "bg-teal-700" },
+              { label: "予定利益", value: totalExpectedProfit,      pct: pct(totalExpectedProfit, contractAmountFromProject), color: "bg-teal-600" },
+              { label: "発注",     value: orderAmount,              pct: pct(orderAmount, contractAmountFromProject), color: "bg-blue-600" },
+              { label: "原価",     value: actualCost,               pct: pct(actualCost, contractAmountFromProject), color: "bg-orange-600" },
+              { label: "利益",     value: actualProfit,             pct: pct(actualProfit, contractAmountFromProject), color: "bg-emerald-600" },
             ].map(({ label, value, pct: p, color }) => (
               <div key={label} className={`${color} text-white text-center py-2`}>
                 <div className="text-xs opacity-80 mb-0.5">{label}</div>
@@ -408,17 +529,41 @@ export default function BudgetManagement() {
                   </Select>
                 </div>
                 <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
-                  <Checkbox className="h-3.5 w-3.5" /> 進捗入力
-                </label>
-                <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
-                  <Checkbox className="h-3.5 w-3.5" /> 消費税入力
-                </label>
-                <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
-                  <Checkbox className="h-3.5 w-3.5" defaultChecked
+                  <Checkbox className="h-3.5 w-3.5"
                     checked={showExpectedProfit}
                     onCheckedChange={v => setShowExpectedProfit(!!v)} />
                   予定利益表示＊
                 </label>
+
+                {/* 表示設定コラプシブル */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowDisplaySettings(v => !v)}
+                    className="flex items-center gap-1 px-2 py-1 text-xs border border-slate-300 rounded bg-white hover:bg-slate-50 text-slate-600"
+                  >
+                    <Settings2 className="w-3 h-3" />
+                    表示設定
+                    {showDisplaySettings ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                  </button>
+                  {showDisplaySettings && (
+                    <div className="absolute top-full left-0 mt-1 z-20 bg-white border border-slate-200 rounded shadow-lg p-3 flex flex-col gap-2 min-w-[140px]">
+                      <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                        <Checkbox className="h-3.5 w-3.5"
+                          checked={showProgress}
+                          onCheckedChange={v => setShowProgress(!!v)} />
+                        進捗入力
+                      </label>
+                      <label className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
+                        <Checkbox className="h-3.5 w-3.5"
+                          checked={showTax}
+                          onCheckedChange={v => setShowTax(!!v)} />
+                        消費税入力
+                      </label>
+                    </div>
+                  )}
+                </div>
+
                 <div className="ml-auto flex gap-2">
                   <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={handleAddRow}>
                     <Plus className="w-3.5 h-3.5 mr-1" /> 行追加
@@ -454,20 +599,21 @@ export default function BudgetManagement() {
                           <th className="border border-teal-600 px-2 py-1.5 text-right font-semibold" style={{ width: "80px" }}>予定利益率</th>
                         </>
                       )}
+                      <th className="border border-teal-600 px-1 py-1.5 text-center" style={{ width: "36px" }} title="上の行を複写">複写</th>
                     </tr>
                   </thead>
                   <tbody>
                     {isLoading ? (
                       Array.from({ length: 5 }).map((_, i) => (
                         <tr key={i} className="border-b border-slate-100">
-                          <td colSpan={COLS.length + 3} className="px-2 py-1.5">
+                          <td colSpan={COLS.length + 4} className="px-2 py-1.5">
                             <Skeleton className="h-4 w-full" />
                           </td>
                         </tr>
                       ))
                     ) : rows.length === 0 ? (
                       <tr>
-                        <td colSpan={COLS.length + 3} className="py-6 text-center text-slate-400 text-sm">
+                        <td colSpan={COLS.length + 4} className="py-6 text-center text-slate-400 text-sm">
                           明細がありません。「行追加」から追加してください。
                         </td>
                       </tr>
@@ -490,17 +636,41 @@ export default function BudgetManagement() {
                             {COLS.map(col => (
                               <td key={col.key}
                                 className={`border border-slate-100 p-0 ${col.align === "right" ? "text-right" : ""}`}>
-                                <input
-                                  ref={el => { cellRefs.current[`${rowIdx}-${col.key}`] = el; }}
-                                  type={col.numeric ? "number" : "text"}
-                                  value={row[col.key] as string}
-                                  onChange={e => handleCellChange(rowIdx, col.key, e.target.value)}
-                                  onKeyDown={e => handleKeyDown(e, rowIdx, col.key)}
-                                  className={`w-full h-full px-2 py-1 bg-transparent outline-none focus:bg-teal-50 focus:ring-1 focus:ring-teal-400 text-xs
-                                    ${col.numeric ? "text-right" : ""}
-                                    ${col.key === "contractAmount" ? "text-slate-600" : ""}`}
-                                  style={{ minHeight: "28px" }}
-                                />
+                                {col.key === "workTypeCode" ? (
+                                  <WorkTypeComboBox
+                                    value={row.workTypeCode}
+                                    onChange={v => handleCellChange(rowIdx, "workTypeCode", v)}
+                                    onSelectWorkType={wt => handleSelectWorkType(rowIdx, wt)}
+                                    workTypes={workTypes}
+                                    filterField="code"
+                                    inputRef={el => { cellRefs.current[`${rowIdx}-workTypeCode`] = el; }}
+                                    onKeyDown={e => handleKeyDown(e, rowIdx, "workTypeCode")}
+                                    placeholder="コード"
+                                  />
+                                ) : col.key === "workTypeName" ? (
+                                  <WorkTypeComboBox
+                                    value={row.workTypeName}
+                                    onChange={v => handleCellChange(rowIdx, "workTypeName", v)}
+                                    onSelectWorkType={wt => handleSelectWorkType(rowIdx, wt)}
+                                    workTypes={workTypes}
+                                    filterField="name"
+                                    inputRef={el => { cellRefs.current[`${rowIdx}-workTypeName`] = el; }}
+                                    onKeyDown={e => handleKeyDown(e, rowIdx, "workTypeName")}
+                                    placeholder="工種名"
+                                  />
+                                ) : (
+                                  <input
+                                    ref={el => { cellRefs.current[`${rowIdx}-${col.key}`] = el; }}
+                                    type={col.numeric ? "number" : "text"}
+                                    value={row[col.key] as string}
+                                    onChange={e => handleCellChange(rowIdx, col.key, e.target.value)}
+                                    onKeyDown={e => handleKeyDown(e, rowIdx, col.key)}
+                                    className={`w-full h-full px-2 py-1 bg-transparent outline-none focus:bg-teal-50 focus:ring-1 focus:ring-teal-400 text-xs
+                                      ${col.numeric ? "text-right" : ""}
+                                      ${col.key === "contractAmount" ? "text-slate-600" : ""}`}
+                                    style={{ minHeight: "28px" }}
+                                  />
+                                )}
                               </td>
                             ))}
                             {showExpectedProfit && (
@@ -513,6 +683,17 @@ export default function BudgetManagement() {
                                 </td>
                               </>
                             )}
+                            <td className="border border-slate-100 px-1 py-0.5 text-center">
+                              <button
+                                type="button"
+                                title="上の行を複写"
+                                disabled={rowIdx === 0}
+                                onClick={() => handleCopyRow(rowIdx)}
+                                className={`p-1 rounded transition-colors ${rowIdx === 0 ? "text-slate-200 cursor-not-allowed" : "text-slate-400 hover:text-teal-600 hover:bg-teal-50"}`}
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
+                            </td>
                           </tr>
                         );
                       })
@@ -538,19 +719,15 @@ export default function BudgetManagement() {
                               {fmt(totalExpectedProfit)}
                             </td>
                             <td className={`border border-slate-200 px-2 py-1.5 text-right ${totalExpectedProfit < 0 ? "text-red-600" : "text-slate-700"}`}>
-                              {pct(totalExpectedProfit, totalContractAmount)}
+                              {pct(totalExpectedProfit, contractAmountFromProject)}
                             </td>
                           </>
                         )}
+                        <td className="border border-slate-200 px-1 py-1.5" />
                       </tr>
                     </tfoot>
                   )}
                 </table>
-              </div>
-
-              {/* フッターヒント */}
-              <div className="px-3 py-2 text-xs text-slate-500 border-t border-slate-100 bg-slate-50">
-                工種コードを入力してください。上項目複写：Ctrl+Enter
               </div>
             </TabsContent>
 
@@ -601,19 +778,14 @@ export default function BudgetManagement() {
       </div>
 
       {/* ── 下部固定ボタンバー ── */}
-      <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-2 flex justify-between items-center">
-        <span className="text-xs text-slate-500">
-          工種コードを入力してください。上項目複写：Ctrl+Enter
-        </span>
-        <div className="flex gap-2">
-          <Button variant="outline" asChild>
-            <Link href={`/projects/${projectId}`}>キャンセル</Link>
-          </Button>
-          <Button className="bg-teal-600 hover:bg-teal-700" onClick={handleSave} disabled={saving}>
-            <Save className="w-4 h-4 mr-2" />
-            {saving ? "保存中..." : "F12 確定"}
-          </Button>
-        </div>
+      <div className="shrink-0 border-t border-slate-200 bg-white px-4 py-2 flex justify-end items-center gap-2">
+        <Button variant="outline" asChild>
+          <Link href={`/projects/${projectId}`}>キャンセル</Link>
+        </Button>
+        <Button className="bg-teal-600 hover:bg-teal-700" onClick={handleSave} disabled={saving}>
+          <Save className="w-4 h-4 mr-2" />
+          {saving ? "保存中..." : "保存する"}
+        </Button>
       </div>
 
     </div>
