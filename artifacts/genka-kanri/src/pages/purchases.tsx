@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -97,6 +98,7 @@ export default function Purchases() {
   const [orderNumber,     setOrderNumber]     = useState("");
   const [taxCalcType,     setTaxCalcType]     = useState("外税明細単位");
   const [isDraft,         setIsDraft]         = useState(false);
+  const [memo,            setMemo]            = useState("");
 
   // ── 明細行状態 ───────────────────────────────────────────────────────────
   const [rows, setRows] = useState<DetailRow[]>([createRow()]);
@@ -142,6 +144,7 @@ export default function Purchases() {
     setOrderNumber("");
     setTaxCalcType("外税明細単位");
     setIsDraft(false);
+    setMemo("");
     setRows([createRow()]);
   };
 
@@ -514,56 +517,75 @@ export default function Purchases() {
         </CardContent>
       </Card>
 
-      {/* ── フッター：合計 + 登録ボタン ── */}
-      <div className="flex items-end justify-between gap-4">
-        {/* 合計 */}
-        <Card className="flex-shrink-0">
-          <CardContent className="pt-3 pb-3 px-5">
-            <div className="flex items-center gap-8">
-              <div className="text-center">
-                <p className="text-xs text-slate-500 mb-0.5">税抜合計</p>
-                <p className="text-lg font-bold font-mono text-slate-800">
-                  ¥{totalAmount.toLocaleString()}
-                </p>
-              </div>
-              <div className="text-center">
-                <p className="text-xs text-slate-500 mb-0.5">消費税</p>
-                <p className="text-lg font-bold font-mono text-blue-600">
-                  ¥{totalTax.toLocaleString()}
-                </p>
-              </div>
-              <div className="text-center border-l border-slate-200 pl-8">
-                <p className="text-xs text-slate-500 mb-0.5">税込合計</p>
-                <p className="text-xl font-bold font-mono text-teal-700">
-                  ¥{totalGross.toLocaleString()}
-                </p>
-              </div>
+      {/* ── フッター ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        {/* 左：備考 */}
+        <Card>
+          <CardHeader className="py-2 px-4 border-b bg-teal-700">
+            <CardTitle className="text-xs font-semibold text-white">備考</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-3 pb-3">
+            <Textarea
+              value={memo}
+              onChange={e => setMemo(e.target.value)}
+              placeholder="備考・特記事項を入力"
+              className="text-sm resize-none"
+              rows={4}
+            />
+          </CardContent>
+        </Card>
+
+        {/* 右：合計金額 */}
+        <Card>
+          <CardHeader className="py-2 px-4 border-b bg-teal-700">
+            <CardTitle className="text-xs font-semibold text-white">合計金額</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4 pb-4 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <span className="text-sm text-slate-500">税抜金額</span>
+              <span className="text-xl font-bold font-mono text-slate-700">
+                ¥{totalAmount.toLocaleString()}
+              </span>
+            </div>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <span className="text-sm text-slate-500">消費税額</span>
+              <span className="text-xl font-bold font-mono text-blue-500">
+                ¥{totalTax.toLocaleString()}
+              </span>
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-base font-semibold text-slate-700">合計金額</span>
+              <span className="text-3xl font-bold font-mono text-teal-700">
+                ¥{totalGross.toLocaleString()}
+              </span>
             </div>
           </CardContent>
         </Card>
 
-        {/* アクション */}
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={newSlip}>
-            クリア
-          </Button>
-          <Button
-            size="sm"
-            className="bg-teal-600 hover:bg-teal-700 text-white px-6"
-            onClick={handleRegister}
-            disabled={saving}
-          >
-            {saving ? (
-              <span className="flex items-center gap-1.5">
-                <span className="animate-spin inline-block">⏳</span>登録中...
-              </span>
-            ) : (
-              <span className="flex items-center gap-1.5">
-                <Save className="w-4 h-4" />登録する
-              </span>
-            )}
-          </Button>
-        </div>
+      </div>
+
+      {/* ── アクションボタン ── */}
+      <div className="flex items-center justify-end gap-3 pb-6">
+        <Button variant="outline" size="default" onClick={newSlip} className="px-6">
+          キャンセル
+        </Button>
+        <Button
+          size="default"
+          className="bg-orange-500 hover:bg-orange-600 text-white px-8"
+          onClick={handleRegister}
+          disabled={saving}
+        >
+          {saving ? (
+            <span className="flex items-center gap-1.5">
+              <span className="animate-spin inline-block">⏳</span>登録中...
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              <Save className="w-4 h-4" />登録する
+            </span>
+          )}
+        </Button>
       </div>
 
     </div>
