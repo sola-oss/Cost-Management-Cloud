@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, CreditCard } from "lucide-react";
+import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, CreditCard, Calculator, Users, Layers } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarProvider, SidebarRail, SidebarTrigger, SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from "./ui/sidebar";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
@@ -13,10 +13,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const operationNav = [
     { title: "仕入入力", icon: ShoppingCart, url: "/purchases" },
     { title: "支払管理", icon: CreditCard, url: "/payments" },
+    { title: "支払査定", icon: Calculator, url: "/payment-assessment" },
   ];
 
   const reportNav = [
     { title: "収支レポート", icon: FileSpreadsheet, url: "/reports" },
+  ];
+
+  const masterNav = [
+    { title: "仕入先マスタ", icon: Users, url: "/vendors" },
+    { title: "仕入先グループ", icon: Layers, url: "/vendor-groups" },
   ];
 
   const isActive = (url: string) =>
@@ -81,6 +87,25 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <SidebarGroupContent>
                 <SidebarMenu>
                   {reportNav.map((item) => (
+                    <SidebarMenuItem key={item.url}>
+                      <SidebarMenuButton asChild isActive={isActive(item.url)}>
+                        <Link href={item.url} className="flex items-center gap-3">
+                          <item.icon className="w-4 h-4" />
+                          <span>{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            {/* マスタ管理 */}
+            <SidebarGroup>
+              <SidebarGroupLabel className="text-xs text-slate-400 px-2 py-1">マスタ管理</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {masterNav.map((item) => (
                     <SidebarMenuItem key={item.url}>
                       <SidebarMenuButton asChild isActive={isActive(item.url)}>
                         <Link href={item.url} className="flex items-center gap-3">

@@ -15,6 +15,9 @@ import BudgetManagement from "@/pages/projects/budgets";
 import Reports from "@/pages/reports";
 import Purchases from "@/pages/purchases";
 import Payments from "@/pages/payments";
+import VendorGroups from "@/pages/vendor-groups";
+import Vendors from "@/pages/vendors";
+import PaymentAssessment from "@/pages/payment-assessment";
 
 const queryClient = new QueryClient();
 
@@ -31,6 +34,9 @@ function Router() {
         <Route path="/reports" component={Reports} />
         <Route path="/purchases" component={Purchases} />
         <Route path="/payments" component={Payments} />
+        <Route path="/payment-assessment" component={PaymentAssessment} />
+        <Route path="/vendors" component={Vendors} />
+        <Route path="/vendor-groups" component={VendorGroups} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>

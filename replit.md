@@ -36,7 +36,8 @@ artifacts-monorepo/
 │           ├── cost-items.ts   # 原価項目テーブル
 │           ├── budgets.ts      # 予算テーブル（旧4区分固定・後方互換のため保持）
 │           ├── budget-items.ts # 実行予算明細テーブル（工種コード・仕入先管理）
-│           └── payments.ts     # 支払管理テーブル
+│           ├── payments.ts     # 支払管理テーブル（source: manual/assessment フィールド含む）
+│           └── vendors.ts      # 仕入先マスタ・仕入先グループテーブル
 ├── scripts/                # Utility scripts
 └── ...
 ```
@@ -51,8 +52,11 @@ artifacts-monorepo/
   - **原価明細タブ** — 原価明細一覧（モーダル追加・削除）、カテゴリ別フィルタ・テキスト検索、件数・合計表示
   - **収支状況タブ** — KPI、工種別予算実績グラフ（BarChart）、収支明細テーブル
 - **収支レポート** — 工事間比較BarChart、要注意工事リスト
-- **仕入入力** (/purchases) — 全工事共通の原価計上フォーム（数量×単価自動計算）、直近50件の全工事仕入一覧、カテゴリフィルタ
-- **支払管理** (/payments) — 支払一覧・KPI（総額・未払・支払済・支払率）、ステータスフィルタ、工事別絞り込み、支払済マーク・取消・削除
+- **仕入入力** (/purchases) — 全工事共通の原価計上フォーム（数量×単価自動計算）、直近50件の全工事仕入一覧、カテゴリフィルタ。仕入先マスタからオートコンプリート対応
+- **支払管理** (/payments) — 支払一覧・KPI（総額・未払・支払済・支払率）、ステータスフィルタ、工事別絞り込み、支払済マーク・取消・削除。査定由来レコードは「査定」バッジ表示
+- **支払査定** (/payment-assessment) — 仕入データ（cost_items）から支払金額を自動集計。条件設定（対象期間・仕入先グループ・査定方式）→ 集計実行 → 保留金手動入力 → 査定確定で payments テーブルに書込み
+- **仕入先マスタ** (/vendors) — 仕入先のCRUD（グループ・締日・支払サイト管理）
+- **仕入先グループマスタ** (/vendor-groups) — 仕入先グループのCRUD
 
 ## API Routes
 
@@ -77,6 +81,16 @@ artifacts-monorepo/
 - `GET /api/dashboard/cost-by-category` — カテゴリ別原価集計
 - `GET /api/dashboard/monthly-costs` — 月別原価推移
 - `GET /api/dashboard/budget-vs-actual` — 予算実績対比
+- `GET /api/vendor-groups` — 仕入先グループ一覧
+- `POST /api/vendor-groups` — 仕入先グループ登録
+- `PATCH /api/vendor-groups/:id` — 仕入先グループ更新
+- `DELETE /api/vendor-groups/:id` — 仕入先グループ削除
+- `GET /api/vendors` — 仕入先一覧（グループ名含む）
+- `POST /api/vendors` — 仕入先登録
+- `PATCH /api/vendors/:id` — 仕入先更新
+- `DELETE /api/vendors/:id` — 仕入先削除
+- `POST /api/payment-assessments/calculate` — 支払査定集計（期間・グループ・査定方式）
+- `POST /api/payment-assessments/confirm` — 査定確定（payments テーブルへの書込み）
 
 ## TypeScript & Composite Projects
 

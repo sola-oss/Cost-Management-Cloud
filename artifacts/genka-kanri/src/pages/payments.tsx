@@ -33,6 +33,7 @@ interface PaymentItem {
   dueDate: string | null;
   paidDate: string | null;
   status: "pending" | "paid" | "partial";
+  source: "manual" | "assessment";
   invoiceNumber: string | null;
   notes: string | null;
   createdAt: string;
@@ -618,7 +619,12 @@ export default function Payments() {
                         </TableCell>
                         <TableCell className="font-medium text-sm">{item.vendor}</TableCell>
                         <TableCell className="text-sm text-slate-700">
-                          {item.description}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {item.description}
+                            {item.source === "assessment" && (
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-blue-50 text-blue-600 border-blue-200">査定</Badge>
+                            )}
+                          </div>
                           {item.invoiceNumber && (
                             <div className="text-xs text-slate-400">{item.invoiceNumber}</div>
                           )}

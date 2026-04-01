@@ -6,6 +6,9 @@ import { projectsTable } from "./projects";
 export const paymentStatusEnum = ["pending", "paid", "partial"] as const;
 export type PaymentStatus = (typeof paymentStatusEnum)[number];
 
+export const paymentSourceEnum = ["manual", "assessment"] as const;
+export type PaymentSource = (typeof paymentSourceEnum)[number];
+
 export const paymentsTable = pgTable("payments", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projectsTable.id, { onDelete: "cascade" }),
@@ -16,6 +19,7 @@ export const paymentsTable = pgTable("payments", {
   dueDate: date("due_date"),
   paidDate: date("paid_date"),
   status: text("status").$type<PaymentStatus>().notNull().default("pending"),
+  source: text("source").$type<PaymentSource>().notNull().default("manual"),
   invoiceNumber: text("invoice_number"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

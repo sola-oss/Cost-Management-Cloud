@@ -6,6 +6,9 @@ import budgetsRouter from "./budgets";
 import budgetItemsRouter from "./budget-items";
 import dashboardRouter from "./dashboard";
 import paymentsRouter from "./payments";
+import vendorGroupsRouter from "./vendor-groups";
+import vendorsRouter from "./vendors";
+import paymentAssessmentsRouter from "./payment-assessments";
 
 const router: IRouter = Router();
 
@@ -16,5 +19,8 @@ router.use("/cost-items", costItemsRouter);
 router.use("/budgets", budgetsRouter);
 router.use("/dashboard", dashboardRouter);
 router.use("/payments", paymentsRouter);
+router.use("/vendor-groups", vendorGroupsRouter);
+router.use("/vendors", vendorsRouter);
+router.use("/payment-assessments", paymentAssessmentsRouter);
 
 export default router;

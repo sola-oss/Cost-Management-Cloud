@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { useListProjects, useCreateCostItem, getListProjectsQueryKey } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -77,6 +77,22 @@ function recalc(row: DetailRow): DetailRow {
   return { ...row, amount, tax };
 }
 
+interface VendorItem {
+  id: number;
+  name: string;
+}
+
+function useVendors() {
+  return useQuery({
+    queryKey: ["/api/vendors"],
+    queryFn: async () => {
+      const res = await fetch("/api/vendors");
+      if (!res.ok) throw new Error("Failed to fetch vendors");
+      return res.json() as Promise<{ items: VendorItem[] }>;
+    },
+  });
+}
+
 // ── メインコンポーネント ──────────────────────────────────────────────────────
 export default function Purchases() {
   const { toast } = useToast();
@@ -86,6 +102,8 @@ export default function Purchases() {
     query: { queryKey: getListProjectsQueryKey() },
   });
   const projects = projectsData?.items ?? [];
+  const { data: vendorsData } = useVendors();
+  const vendorNames = vendorsData?.items?.map((v) => v.name) ?? [];
   const createCostItem = useCreateCostItem();
   const [saving, setSaving] = useState(false);
 
@@ -308,7 +326,13 @@ export default function Purchases() {
                   onChange={e => setVendorName(e.target.value)}
                   placeholder="例: 山田建材株式会社"
                   className="text-sm"
+                  list="vendor-suggestions"
                 />
+                <datalist id="vendor-suggestions">
+                  {vendorNames.map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
               </div>
 
               {/* 支払予定日 */}
