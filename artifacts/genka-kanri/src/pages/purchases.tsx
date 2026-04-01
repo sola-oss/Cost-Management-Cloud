@@ -100,6 +100,9 @@ export default function Purchases() {
   const [isDraft,         setIsDraft]         = useState(false);
   const [memo,            setMemo]            = useState("");
 
+  // ── 支払予定生成フラグ ────────────────────────────────────────────────────
+  const [createPayment, setCreatePayment] = useState(true);
+
   // ── 明細行状態 ───────────────────────────────────────────────────────────
   const [rows, setRows] = useState<DetailRow[]>([createRow()]);
 
@@ -145,6 +148,7 @@ export default function Purchases() {
     setTaxCalcType("外税明細単位");
     setIsDraft(false);
     setMemo("");
+    setCreatePayment(true);
     setRows([createRow()]);
   };
 
@@ -184,7 +188,37 @@ export default function Purchases() {
           })
         )
       );
-      toast({ title: "登録完了", description: `${validRows.length}件の仕入明細を登録しました。` });
+
+      let paymentCreated = false;
+      if (createPayment) {
+        const res = await fetch("/api/payments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId: parseInt(selectedProject),
+            vendor: vendorName || "（仕入先未入力）",
+            description: `仕入伝票 ${slipNumber}`,
+            amount: totalGross,
+            dueDate: paymentDueDate || undefined,
+            invoiceNumber: slipNumber,
+          }),
+        });
+        if (res.ok) {
+          paymentCreated = true;
+          queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
+        } else {
+          toast({
+            title: "支払予定の登録に失敗しました",
+            description: "仕入明細は登録済みです。支払管理画面から手動で追加してください。",
+            variant: "destructive",
+          });
+        }
+      }
+
+      const desc = paymentCreated
+        ? `${validRows.length}件の仕入明細を登録しました。支払予定も登録しました。`
+        : `${validRows.length}件の仕入明細を登録しました。`;
+      toast({ title: "登録完了", description: desc });
       queryClient.invalidateQueries({ queryKey: ["/api/cost-items"] });
       newSlip();
     } catch {
@@ -348,6 +382,19 @@ export default function Purchases() {
                 />
                 <Label htmlFor="isDraft" className="text-sm text-slate-700 cursor-pointer">
                   仮伝票として保存する
+                </Label>
+              </div>
+
+              {/* 支払予定を作成する */}
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="createPayment"
+                  checked={createPayment}
+                  onCheckedChange={v => setCreatePayment(!!v)}
+                  className="accent-teal-600"
+                />
+                <Label htmlFor="createPayment" className="text-sm text-slate-700 cursor-pointer">
+                  支払予定も作成する
                 </Label>
               </div>
             </div>
