@@ -1,16 +1,19 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import { useListProjects, useCreateCostItem, getListProjectsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2 } from "lucide-react";
+import { Plus, Trash2, Save, Copy, FileText } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
-// ── 定数 ──────────────────────────────────────────────────────────────────────
+// ── 定数 ─────────────────────────────────────────────────────────────────────
 const TODAY = new Date().toISOString().split("T")[0];
 
-// 伝票番号自動採番（ST-YYYYMMDD-連番 形式、localStorage で日付別管理）
 function generateSlipNumber(): string {
   const d = new Date();
   const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
@@ -21,379 +24,136 @@ function generateSlipNumber(): string {
   return `ST-${ymd}-${String(next).padStart(4, "0")}`;
 }
 
-const CATEGORY_MASTER = [
-  { code: "610", name: "材料費", value: "material" as const },
-  { code: "620", name: "外注費", value: "subcontract" as const },
-  { code: "630", name: "労務費", value: "labor" as const },
-  { code: "640", name: "経費", value: "expense" as const },
+const CATEGORY_OPTIONS = [
+  { code: "610", name: "材料費",  value: "material"    as const },
+  { code: "620", name: "外注費",  value: "subcontract" as const },
+  { code: "630", name: "労務費",  value: "labor"       as const },
+  { code: "640", name: "経費",    value: "expense"     as const },
 ];
 
-const TAX_TYPES = ["課税仕", "非課税", "不課税", "免税"];
+const TAX_RATE_OPTIONS = [
+  { value: 10, label: "10%" },
+  { value: 8,  label: "8%（軽減）" },
+  { value: 0,  label: "非課税" },
+];
 
-// ── 型 ────────────────────────────────────────────────────────────────────────
-interface SlipRow {
+// ── 型 ───────────────────────────────────────────────────────────────────────
+interface DetailRow {
   id: string;
-  attribute: string;
-  receiptBook: string;
   categoryCode: string;
-  productCode: string;
   productName: string;
   spec: string;
   unit: string;
   quantity: string;
   unitPrice: string;
-  taxType: string;
   taxRate: number;
   amount: number;
   tax: number;
-  projectCode: string;
-  projectId: number | null;
-  projectName: string;
   workTypeCode: string;
-  workTypeName: string;
-  departmentCode: string;
-  departmentName: string;
 }
 
-function createRow(): SlipRow {
+function createRow(): DetailRow {
   return {
     id: crypto.randomUUID(),
-    attribute: "通常",
-    receiptBook: "",
     categoryCode: "620",
-    productCode: "",
     productName: "",
     spec: "",
     unit: "式",
-    quantity: "",
+    quantity: "1",
     unitPrice: "",
-    taxType: "課税仕",
     taxRate: 10,
     amount: 0,
     tax: 0,
-    projectCode: "",
-    projectId: null,
-    projectName: "",
     workTypeCode: "",
-    workTypeName: "",
-    departmentCode: "",
-    departmentName: "",
   };
 }
 
-function recalc(row: SlipRow): SlipRow {
+function recalc(row: DetailRow): DetailRow {
   const q = parseFloat(row.quantity) || 0;
   const u = parseFloat(row.unitPrice) || 0;
   const amount = Math.floor(q * u);
-  const tax = row.taxType === "課税仕" ? Math.floor(amount * row.taxRate / 100) : 0;
+  const tax = row.taxRate > 0 ? Math.floor(amount * row.taxRate / 100) : 0;
   return { ...row, amount, tax };
 }
 
-// ── ヘルパーコンポーネント ─────────────────────────────────────────────────────
-function FuncKey({
-  label, onClick, disabled = false, variant = "default",
-}: {
-  label: string; onClick: () => void; disabled?: boolean; variant?: "default" | "primary" | "danger";
-}) {
-  const cls =
-    variant === "primary" ? "bg-teal-600 hover:bg-teal-700 text-white border-teal-700" :
-    variant === "danger"  ? "text-red-600 border-red-200 hover:bg-red-50" :
-    "bg-white hover:bg-slate-50 text-slate-700";
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={`h-8 px-3 text-xs border border-slate-300 rounded font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${cls}`}
-    >
-      {label}
-    </button>
-  );
-}
-
-function HCell({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return (
-    <td className={`border border-slate-300 px-2 py-0.5 bg-teal-700 text-white text-[11px] font-medium whitespace-nowrap ${className}`}>
-      {children}
-    </td>
-  );
-}
-
-function VCell({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return (
-    <td className={`border border-slate-300 p-0 ${className}`}>
-      {children}
-    </td>
-  );
-}
-
-function CellInput({
-  value, onChange, placeholder = "", type = "text", className = "", readOnly = false,
-}: {
-  value: string; onChange?: (v: string) => void; placeholder?: string;
-  type?: string; className?: string; readOnly?: boolean;
-}) {
-  return (
-    <input
-      type={type}
-      value={value}
-      readOnly={readOnly}
-      placeholder={placeholder}
-      onChange={e => onChange?.(e.target.value)}
-      className={`w-full h-6 px-1 text-xs bg-transparent outline-none border-none focus:bg-blue-50 ${className}`}
-    />
-  );
-}
-
-// ── 明細行コンポーネント ────────────────────────────────────────────────────────
-function SlipRowView({
-  row, idx, selected, projects, onSelect, onChange,
-}: {
-  row: SlipRow;
-  idx: number;
-  selected: boolean;
-  projects: Array<{ id: number; projectCode: string; name: string }>;
-  onSelect: () => void;
-  onChange: (field: keyof SlipRow, value: string | number) => void;
-}) {
-  const bg = selected ? "bg-blue-50" : idx % 2 === 0 ? "bg-white" : "bg-slate-50/50";
-  const bdr = "border-slate-200";
-
-  const cat = CATEGORY_MASTER.find(c => c.code === row.categoryCode);
-
-  return (
-    <>
-      {/* ── Sub-row 1: コード・数値行 ── */}
-      <tr className={`${bg} cursor-pointer`} onClick={onSelect}>
-        {/* No */}
-        <td className={`border ${bdr} text-center text-[11px] text-slate-500 font-mono w-8`} rowSpan={2}>
-          {idx + 1}
-        </td>
-        {/* 属性 */}
-        <td className={`border ${bdr} p-0 w-14`}>
-          <select
-            value={row.attribute}
-            onChange={e => onChange("attribute", e.target.value)}
-            onClick={onSelect}
-            className="w-full h-6 px-1 text-xs bg-transparent outline-none border-none focus:bg-blue-50"
-          >
-            <option>通常</option>
-            <option>入荷</option>
-            <option>締</option>
-          </select>
-        </td>
-        {/* 科目コード */}
-        <td className={`border ${bdr} p-0 w-16`}>
-          <CellInput
-            value={row.categoryCode}
-            onChange={v => onChange("categoryCode", v)}
-            className="font-mono"
-          />
-        </td>
-        {/* 商品コード */}
-        <td className={`border ${bdr} p-0 w-28`}>
-          <CellInput
-            value={row.productCode}
-            onChange={v => onChange("productCode", v)}
-            className="font-mono"
-          />
-        </td>
-        {/* 単位 */}
-        <td className={`border ${bdr} p-0 w-12 text-center`}>
-          <CellInput value={row.unit} onChange={v => onChange("unit", v)} className="text-center" />
-        </td>
-        {/* 単価 */}
-        <td className={`border ${bdr} p-0 w-24`}>
-          <CellInput
-            value={row.unitPrice}
-            onChange={v => onChange("unitPrice", v)}
-            type="number"
-            className="text-right"
-          />
-        </td>
-        {/* 金額 */}
-        <td className={`border ${bdr} px-1 w-24 text-right text-xs font-mono text-slate-800`}>
-          {row.amount > 0 ? row.amount.toLocaleString() : ""}
-        </td>
-        {/* 工事コード */}
-        <td className={`border ${bdr} p-0 w-32`}>
-          <CellInput
-            value={row.projectCode}
-            onChange={v => onChange("projectCode", v)}
-            placeholder="工事コード"
-            className="font-mono"
-          />
-        </td>
-        {/* 工事名 */}
-        <td className={`border ${bdr} px-1 text-xs text-slate-700 min-w-[120px]`}>
-          {row.projectName || <span className="text-slate-300">—</span>}
-        </td>
-      </tr>
-
-      {/* ── Sub-row 2: 名称・摘要・税行 ── */}
-      <tr className={`${bg} cursor-pointer border-b border-slate-300`} onClick={onSelect}>
-        {/* 入荷簿 */}
-        <td className={`border ${bdr} p-0 w-14`}>
-          <CellInput value={row.receiptBook} onChange={v => onChange("receiptBook", v)} placeholder="入荷簿" className="text-slate-500" />
-        </td>
-        {/* 科目名 */}
-        <td className={`border ${bdr} px-1 text-[11px] text-slate-600 w-16`}>
-          {cat?.name ?? ""}
-        </td>
-        {/* 商品名 + 仕様摘要 */}
-        <td className={`border ${bdr} p-0 w-28`}>
-          <CellInput value={row.productName} onChange={v => onChange("productName", v)} placeholder="商品名" />
-          <CellInput value={row.spec} onChange={v => onChange("spec", v)} placeholder="仕様摘要" className="text-slate-400" />
-        </td>
-        {/* 数量 */}
-        <td className={`border ${bdr} p-0 w-12`}>
-          <CellInput value={row.quantity} onChange={v => onChange("quantity", v)} type="number" className="text-right" />
-        </td>
-        {/* 税区分/税率 */}
-        <td className={`border ${bdr} p-0 w-24`}>
-          <div className="flex items-center gap-0.5 px-0.5">
-            <select
-              value={row.taxType}
-              onChange={e => onChange("taxType", e.target.value)}
-              onClick={onSelect}
-              className="flex-1 h-6 text-[10px] bg-transparent outline-none border-none focus:bg-blue-50"
-            >
-              {TAX_TYPES.map(t => <option key={t}>{t}</option>)}
-            </select>
-            <select
-              value={row.taxRate}
-              onChange={e => onChange("taxRate", Number(e.target.value))}
-              onClick={onSelect}
-              className="w-10 h-6 text-[10px] bg-transparent outline-none border-none focus:bg-blue-50"
-            >
-              <option value={10}>10%</option>
-              <option value={8}>8%</option>
-              <option value={0}>0%</option>
-            </select>
-          </div>
-        </td>
-        {/* 消費税 */}
-        <td className={`border ${bdr} px-1 w-24 text-right text-[11px] font-mono text-blue-600`}>
-          {row.tax > 0 ? row.tax.toLocaleString() : ""}
-        </td>
-        {/* 工種コード / 部門コード */}
-        <td className={`border ${bdr} p-0 w-32`}>
-          <CellInput value={row.workTypeCode} onChange={v => onChange("workTypeCode", v)} placeholder="工種コード" className="font-mono text-[10px]" />
-          <CellInput value={row.departmentCode} onChange={v => onChange("departmentCode", v)} placeholder="部門コード" className="font-mono text-[10px]" />
-        </td>
-        {/* 工種名 / 部門名 */}
-        <td className={`border ${bdr} px-1 min-w-[120px]`}>
-          <div className="text-[10px] text-slate-500">{row.workTypeName || "—"}</div>
-          <div className="text-[10px] text-slate-500">{row.departmentName || "—"}</div>
-        </td>
-      </tr>
-    </>
-  );
-}
-
-// ── メインコンポーネント ───────────────────────────────────────────────────────
+// ── メインコンポーネント ──────────────────────────────────────────────────────
 export default function Purchases() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: projects } = useListProjects(undefined, {
+  const { data: projectsData } = useListProjects(undefined, {
     query: { queryKey: getListProjectsQueryKey() },
   });
+  const projects = projectsData?.items ?? [];
   const createCostItem = useCreateCostItem();
   const [saving, setSaving] = useState(false);
 
-  // ── ヘッダー状態 ──
-  const [slipNumber, setSlipNumber] = useState(() => generateSlipNumber());
-  const [purchaseDate, setPurchaseDate] = useState(TODAY);
-  const [vendorCode, setVendorCode] = useState("");
-  const [vendorName, setVendorName] = useState("");
-  const [paymentDueDate, setPaymentDueDate] = useState("");
-  const [vendorDept, setVendorDept] = useState("");
-  const [estimateNumber, setEstimateNumber] = useState("");
-  const [orderNumber, setOrderNumber] = useState("");
-  const [secondCategory, setSecondCategory] = useState("");
-  const [taxCalcType, setTaxCalcType] = useState("外税明細単位");
-  const [taxFraction, setTaxFraction] = useState("切捨て");
-  const [amountFraction, setAmountFraction] = useState("切捨て");
-  const [taxpayerType, setTaxpayerType] = useState("課税事業者");
-  const [isDraft, setIsDraft] = useState(false);
-  const [noTransfer, setNoTransfer] = useState(false);
-  const [transferred, setTransferred] = useState(false);
-  const [paymentCopied, setPaymentCopied] = useState(false);
-  const [stampKa, setStampKa] = useState("");
-  const [stampKakari, setStampKakari] = useState("");
-  const [stampTan, setStampTan] = useState("");
+  // ── ヘッダー状態 ─────────────────────────────────────────────────────────
+  const [slipNumber]      = useState(() => generateSlipNumber());
+  const [purchaseDate,    setPurchaseDate]    = useState(TODAY);
+  const [vendorName,      setVendorName]      = useState("");
+  const [paymentDueDate,  setPaymentDueDate]  = useState("");
+  const [selectedProject, setSelectedProject] = useState<string>("");
+  const [orderNumber,     setOrderNumber]     = useState("");
+  const [taxCalcType,     setTaxCalcType]     = useState("外税明細単位");
+  const [isDraft,         setIsDraft]         = useState(false);
 
-  // ── 明細行状態 ──
-  const [rows, setRows] = useState<SlipRow[]>([createRow()]);
-  const [selectedRow, setSelectedRow] = useState(0);
+  // ── 明細行状態 ───────────────────────────────────────────────────────────
+  const [rows, setRows] = useState<DetailRow[]>([createRow()]);
 
-  // ── 行変更ハンドラ ──
-  const handleRowChange = useCallback((idx: number, field: keyof SlipRow, value: string | number) => {
+  // ── 選択中工事 ───────────────────────────────────────────────────────────
+  const currentProject = projects.find(p => String(p.id) === selectedProject);
+
+  // ── 行変更ハンドラ ────────────────────────────────────────────────────────
+  const handleRowChange = useCallback((idx: number, field: keyof DetailRow, value: string | number) => {
     setRows(prev => {
       const next = [...prev];
-      let row: SlipRow = { ...next[idx], [field]: value };
-
-      if (field === "projectCode") {
-        const proj = prev[idx]; // current state
-        const match = (projects?.items ?? []).find(
-          p => p.projectCode?.toLowerCase() === String(value).toLowerCase()
-        );
-        row.projectId = match?.id ?? null;
-        row.projectName = match?.name ?? "";
-      }
-
-      if (["quantity", "unitPrice", "taxType", "taxRate"].includes(field as string)) {
+      let row: DetailRow = { ...next[idx], [field]: value };
+      if (["quantity", "unitPrice", "taxRate"].includes(field as string)) {
         row = recalc(row);
       }
-
       next[idx] = row;
       return next;
     });
-  }, [projects]);
+  }, []);
 
-  // ── 行操作 ──
-  const insertRow = () => {
-    setRows(prev => {
-      const next = [...prev];
-      next.splice(selectedRow, 0, createRow());
-      return next;
-    });
-  };
+  const addRow = () => setRows(prev => [...prev, createRow()]);
 
-  const deleteRow = () => {
+  const deleteRow = (idx: number) => {
     setRows(prev => {
       if (prev.length === 1) return [createRow()];
-      const next = prev.filter((_, i) => i !== selectedRow);
-      setSelectedRow(s => Math.min(s, next.length - 1));
-      return next;
+      return prev.filter((_, i) => i !== idx);
     });
   };
 
-  const duplicateRow = () => {
+  const duplicateRow = (idx: number) => {
     setRows(prev => {
       const next = [...prev];
-      next.splice(selectedRow + 1, 0, { ...prev[selectedRow], id: crypto.randomUUID() });
-      setSelectedRow(selectedRow + 1);
+      next.splice(idx + 1, 0, { ...prev[idx], id: crypto.randomUUID() });
       return next;
     });
   };
 
   const newSlip = () => {
-    setSlipNumber(generateSlipNumber()); setPurchaseDate(TODAY); setVendorCode(""); setVendorName("");
-    setPaymentDueDate(""); setVendorDept(""); setEstimateNumber(""); setOrderNumber("");
-    setSecondCategory(""); setTaxCalcType("外税明細単位"); setTaxFraction("切捨て");
-    setAmountFraction("切捨て"); setTaxpayerType("課税事業者");
-    setIsDraft(false); setNoTransfer(false); setTransferred(false); setPaymentCopied(false);
-    setStampKa(""); setStampKakari(""); setStampTan("");
-    setRows([createRow()]); setSelectedRow(0);
+    setPurchaseDate(TODAY);
+    setVendorName("");
+    setPaymentDueDate("");
+    setSelectedProject("");
+    setOrderNumber("");
+    setTaxCalcType("外税明細単位");
+    setIsDraft(false);
+    setRows([createRow()]);
   };
 
-  // ── F12 登録 ──
+  // ── 登録 ─────────────────────────────────────────────────────────────────
   const handleRegister = async () => {
-    const validRows = rows.filter(r => r.projectId && (r.amount > 0 || r.productName));
+    if (!selectedProject) {
+      toast({ title: "入力エラー", description: "工事を選択してください。", variant: "destructive" });
+      return;
+    }
+    const validRows = rows.filter(r => r.amount > 0 || r.productName.trim());
     if (validRows.length === 0) {
-      toast({ title: "入力エラー", description: "工事コードと金額が入力された明細が必要です。", variant: "destructive" });
+      toast({ title: "入力エラー", description: "明細を1件以上入力してください。", variant: "destructive" });
       return;
     }
 
@@ -407,7 +167,7 @@ export default function Purchases() {
         validRows.map(row =>
           createCostItem.mutateAsync({
             data: {
-              projectId: row.projectId!,
+              projectId: parseInt(selectedProject),
               category: categoryMap[row.categoryCode] ?? "expense",
               incurredDate: purchaseDate,
               description: [row.productName, row.spec].filter(Boolean).join(" ") || "（摘要なし）",
@@ -425,295 +185,402 @@ export default function Purchases() {
       queryClient.invalidateQueries({ queryKey: ["/api/cost-items"] });
       newSlip();
     } catch {
-      toast({ title: "登録エラー", description: "登録に失敗しました。入力内容を確認してください。", variant: "destructive" });
+      toast({ title: "登録エラー", description: "登録に失敗しました。内容を確認してください。", variant: "destructive" });
     } finally {
       setSaving(false);
     }
   };
 
-  // ── 合計 ──
+  // ── 合計 ─────────────────────────────────────────────────────────────────
   const totalAmount = rows.reduce((s, r) => s + r.amount, 0);
   const totalTax    = rows.reduce((s, r) => s + r.tax, 0);
   const totalGross  = totalAmount + totalTax;
 
-  // ── 小コンポーネント (inline) ──
-  const Lbl = ({ children, w = "" }: { children: React.ReactNode; w?: string }) => (
-    <td className={`border border-slate-300 px-2 py-0.5 bg-teal-700 text-white text-[11px] font-medium whitespace-nowrap ${w}`}>
-      {children}
-    </td>
-  );
-
-  const Cell = ({ children, colSpan = 1, className = "" }: { children: React.ReactNode; colSpan?: number; className?: string }) => (
-    <td colSpan={colSpan} className={`border border-slate-300 p-0.5 ${className}`}>
-      {children}
-    </td>
-  );
-
-  const hi = "h-6 text-xs border-none shadow-none p-0.5 focus:bg-blue-50";
-  const si = "h-6 text-xs border-none shadow-none p-0 focus:bg-blue-50";
-
-  const FlagCheck = ({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) => (
-    <label className="flex items-center gap-1 cursor-pointer select-none">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={e => onChange(e.target.checked)}
-        className="w-3 h-3 accent-teal-600"
-      />
-      <span className="text-[11px]">{label}</span>
-    </label>
-  );
-
   return (
-    <div className="flex flex-col h-full bg-slate-100 min-h-screen">
+    <div className="p-4 max-w-7xl mx-auto space-y-4">
 
-      {/* ── ファンクションキーバー ── */}
-      <div className="bg-slate-200 border-b border-slate-300 px-3 py-2 flex items-center gap-1.5 flex-wrap shrink-0">
-        <span className="text-sm font-bold text-slate-700 mr-2">仕入伝票【新規】</span>
-        <FuncKey label="F2 新規"     onClick={newSlip} />
-        <FuncKey label="F4 支払"     onClick={() => {}} />
-        <FuncKey label="F5 予算確認" onClick={() => {}} />
-        <FuncKey label="F6 複写"     onClick={() => {}} disabled />
-        <FuncKey label="F7 検索"     onClick={() => {}} disabled />
-        <FuncKey label="F8 参照"     onClick={() => {}} disabled />
-        <FuncKey label="F9 削除"     onClick={() => {}} disabled variant="danger" />
-        <div className="flex-1" />
-        <FuncKey
-          label={saving ? "登録中…" : "F12 登録"}
-          onClick={handleRegister}
-          disabled={saving}
-          variant="primary"
-        />
-        <FuncKey label="閉じる" onClick={newSlip} />
-      </div>
-
-      {/* ── タイトル ── */}
-      <div className="flex justify-center pt-2 pb-1 bg-white border-b shrink-0">
-        <div className="border-2 border-teal-600 bg-teal-50 px-16 py-0.5 text-center text-base font-bold text-teal-800 tracking-widest">
-          仕入伝票
+      {/* ── ページヘッダー ── */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <FileText className="w-5 h-5 text-teal-700" />
+          <h1 className="text-xl font-bold text-slate-900">仕入入力</h1>
+          {isDraft && (
+            <Badge variant="outline" className="text-amber-600 border-amber-400 bg-amber-50">
+              仮伝票
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={newSlip}>
+            新規
+          </Button>
+          <Button
+            size="sm"
+            className="bg-teal-600 hover:bg-teal-700 text-white"
+            onClick={handleRegister}
+            disabled={saving}
+          >
+            {saving ? (
+              <span className="flex items-center gap-1.5"><span className="animate-spin">⏳</span>登録中...</span>
+            ) : (
+              <span className="flex items-center gap-1.5"><Save className="w-3.5 h-3.5" />登録</span>
+            )}
+          </Button>
         </div>
       </div>
 
-      {/* ── ヘッダー ── */}
-      <div className="bg-white border-b px-3 py-2 flex gap-3 shrink-0">
-        {/* ヘッダーグリッドテーブル */}
-        <table className="flex-1 text-xs border-collapse">
-          <colgroup>
-            <col className="w-[72px]" />
-            <col className="w-[130px]" />
-            <col className="w-[64px]" />
-            <col className="w-[130px]" />
-            <col className="w-[64px]" />
-            <col />
-          </colgroup>
-          <tbody>
-            {/* Row 1: 伝票番号 / 見積番号 / スタンプ */}
-            <tr>
-              <Lbl>伝票番号</Lbl>
-              <Cell>
-                <div className="flex items-center gap-1">
+      {/* ── 基本情報カード（2カラム） ── */}
+      <Card>
+        <CardHeader className="py-2 px-4 border-b bg-teal-700">
+          <CardTitle className="text-xs font-semibold text-white">基本情報</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-4 pb-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-3">
+
+            {/* ── 左カラム ── */}
+            <div className="space-y-3">
+              {/* 伝票番号 */}
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-600">伝票番号</Label>
+                <div className="flex items-center gap-2">
                   <Input
                     value={slipNumber}
-                    onChange={e => setSlipNumber(e.target.value)}
-                    className={`${hi} font-mono bg-yellow-50`}
+                    readOnly
+                    className="text-sm font-mono bg-slate-50 text-slate-600 cursor-default"
                   />
-                  <span className="text-[9px] text-slate-400 whitespace-nowrap pr-0.5">自動</span>
+                  <span className="text-[10px] text-slate-400 whitespace-nowrap">自動採番</span>
                 </div>
-              </Cell>
-              <Lbl>見積番号</Lbl>
-              <Cell>
-                <Input value={estimateNumber} onChange={e => setEstimateNumber(e.target.value)} className={hi} />
-              </Cell>
-              <Lbl>スタンプ</Lbl>
-              <Cell>
-                <div className="flex items-center gap-1 flex-wrap">
-                  <span className="text-[10px] text-slate-500">課</span>
-                  <Input value={stampKa} onChange={e => setStampKa(e.target.value)} className={`${hi} w-10`} />
-                  <span className="text-[10px] text-slate-500">係</span>
-                  <Input value={stampKakari} onChange={e => setStampKakari(e.target.value)} className={`${hi} w-10`} />
-                  <span className="text-[10px] text-red-500">担</span>
-                  <Input value={stampTan} onChange={e => setStampTan(e.target.value)} className={`${hi} w-10`} />
-                  <button className="h-6 px-2 text-[10px] border border-slate-300 rounded bg-white hover:bg-slate-50">承認</button>
-                  <button className="h-6 px-2 text-[10px] border border-slate-300 rounded bg-white hover:bg-slate-50">履歴</button>
-                </div>
-              </Cell>
-            </tr>
-            {/* Row 2: 仕入日 / 注文番号 / 第2区分 */}
-            <tr>
-              <Lbl>仕入日</Lbl>
-              <Cell>
-                <Input type="date" value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} className={hi} />
-              </Cell>
-              <Lbl>注文番号</Lbl>
-              <Cell>
-                <Input value={orderNumber} onChange={e => setOrderNumber(e.target.value)} className={hi} />
-              </Cell>
-              <Lbl>第2区分</Lbl>
-              <Cell>
-                <Input value={secondCategory} onChange={e => setSecondCategory(e.target.value)} className={`${hi} w-20`} />
-              </Cell>
-            </tr>
-            {/* Row 3: 仕入先 / 税計算 / 仮伝票 */}
-            <tr>
-              <Lbl>仕入先</Lbl>
-              <Cell colSpan={1}>
-                <div className="flex gap-1">
-                  <Input value={vendorCode} onChange={e => setVendorCode(e.target.value)} placeholder="コード" className={`${hi} w-16`} />
-                  <Input value={vendorName} onChange={e => setVendorName(e.target.value)} placeholder="仕入先名称" className={`${hi} flex-1`} />
-                </div>
-              </Cell>
-              <Lbl>税計算</Lbl>
-              <Cell>
-                <select value={taxCalcType} onChange={e => setTaxCalcType(e.target.value)} className="w-full h-6 text-xs px-1 bg-transparent outline-none border-none focus:bg-blue-50">
-                  <option>外税明細単位</option>
-                  <option>外税伝票単位</option>
-                  <option>内税</option>
-                  <option>不課税</option>
-                </select>
-              </Cell>
-              <td className="border border-slate-300 p-1.5">
-                <FlagCheck checked={isDraft} onChange={setIsDraft} label="仮伝票" />
-              </td>
-            </tr>
-            {/* Row 4: 支払予定日 / 税端数 / 非転記 */}
-            <tr>
-              <Lbl>支払予定日</Lbl>
-              <Cell>
-                <Input type="date" value={paymentDueDate} onChange={e => setPaymentDueDate(e.target.value)} className={hi} />
-              </Cell>
-              <Lbl>税端数</Lbl>
-              <Cell>
-                <select value={taxFraction} onChange={e => setTaxFraction(e.target.value)} className="w-full h-6 text-xs px-1 bg-transparent outline-none border-none focus:bg-blue-50">
-                  <option>切捨て</option>
-                  <option>切上げ</option>
-                  <option>四捨五入</option>
-                </select>
-              </Cell>
-              <td className="border border-slate-300 p-1.5">
-                <FlagCheck checked={noTransfer} onChange={setNoTransfer} label="非転記" />
-              </td>
-            </tr>
-            {/* Row 5: 仕入先部門 / 金額端数 / 転記済 */}
-            <tr>
-              <Lbl>仕入先部門</Lbl>
-              <Cell>
-                <Input value={vendorDept} onChange={e => setVendorDept(e.target.value)} className={hi} />
-              </Cell>
-              <Lbl>金額端数</Lbl>
-              <Cell>
-                <select value={amountFraction} onChange={e => setAmountFraction(e.target.value)} className="w-full h-6 text-xs px-1 bg-transparent outline-none border-none focus:bg-blue-50">
-                  <option>切捨て</option>
-                  <option>切上げ</option>
-                  <option>四捨五入</option>
-                </select>
-              </Cell>
-              <td className="border border-slate-300 p-1.5">
-                <FlagCheck checked={transferred} onChange={setTransferred} label="転記済" />
-              </td>
-            </tr>
-            {/* Row 6: (空) / 事業者種類 / 支払複写済 */}
-            <tr>
-              <td className="border border-slate-300" />
-              <td className="border border-slate-300" />
-              <Lbl>事業者種類</Lbl>
-              <Cell>
-                <select value={taxpayerType} onChange={e => setTaxpayerType(e.target.value)} className="w-full h-6 text-xs px-1 bg-transparent outline-none border-none focus:bg-blue-50">
-                  <option>課税事業者</option>
-                  <option>免税事業者</option>
-                </select>
-              </Cell>
-              <td className="border border-slate-300 p-1.5">
-                <FlagCheck checked={paymentCopied} onChange={setPaymentCopied} label="支払複写済" />
-              </td>
-            </tr>
-          </tbody>
-        </table>
+              </div>
 
-        {/* 右サイドパネル */}
-        <div className="flex flex-col gap-2 shrink-0 justify-between">
-          <div className="flex flex-col gap-1">
-            <button className="h-7 px-3 text-xs border border-slate-300 rounded bg-white hover:bg-slate-50 text-left">
-              税端数調整
-            </button>
-            <button className="text-xs text-blue-600 underline text-left px-0.5">税端数調整について</button>
+              {/* 仕入日 */}
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-600">仕入日 <span className="text-red-500">*</span></Label>
+                <Input
+                  type="date"
+                  value={purchaseDate}
+                  onChange={e => setPurchaseDate(e.target.value)}
+                  className="text-sm"
+                />
+              </div>
+
+              {/* 仕入先 */}
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-600">仕入先</Label>
+                <Input
+                  value={vendorName}
+                  onChange={e => setVendorName(e.target.value)}
+                  placeholder="例: 山田建材株式会社"
+                  className="text-sm"
+                />
+              </div>
+
+              {/* 支払予定日 */}
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-600">支払予定日</Label>
+                <Input
+                  type="date"
+                  value={paymentDueDate}
+                  onChange={e => setPaymentDueDate(e.target.value)}
+                  className="text-sm"
+                />
+              </div>
+            </div>
+
+            {/* ── 右カラム ── */}
+            <div className="space-y-3">
+              {/* 工事選択 */}
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-600">工事 <span className="text-red-500">*</span></Label>
+                <Select value={selectedProject} onValueChange={setSelectedProject}>
+                  <SelectTrigger className="text-sm">
+                    <SelectValue placeholder="工事を選択してください" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projects.map(p => (
+                      <SelectItem key={p.id} value={String(p.id)}>
+                        {p.projectCode} {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {currentProject && (
+                  <p className="text-[11px] text-teal-700">{currentProject.name}</p>
+                )}
+              </div>
+
+              {/* 注文番号 */}
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-600">注文番号</Label>
+                <Input
+                  value={orderNumber}
+                  onChange={e => setOrderNumber(e.target.value)}
+                  placeholder="例: PO-20260401-001"
+                  className="text-sm"
+                />
+              </div>
+
+              {/* 税計算方式 */}
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-600">税計算方式</Label>
+                <Select value={taxCalcType} onValueChange={setTaxCalcType}>
+                  <SelectTrigger className="text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="外税明細単位">外税明細単位</SelectItem>
+                    <SelectItem value="外税伝票単位">外税伝票単位</SelectItem>
+                    <SelectItem value="内税">内税</SelectItem>
+                    <SelectItem value="非課税">非課税</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 仮伝票 */}
+              <div className="flex items-center gap-2 pt-1">
+                <Checkbox
+                  id="isDraft"
+                  checked={isDraft}
+                  onCheckedChange={v => setIsDraft(!!v)}
+                  className="accent-teal-600"
+                />
+                <Label htmlFor="isDraft" className="text-sm text-slate-700 cursor-pointer">
+                  仮伝票として保存する
+                </Label>
+              </div>
+            </div>
+
           </div>
-          <div className="flex gap-1">
-            <button
-              onClick={insertRow}
-              className="h-7 px-3 text-xs border border-slate-300 rounded bg-white hover:bg-slate-50 font-medium"
-            >行挿</button>
-            <button
-              onClick={deleteRow}
-              className="h-7 px-3 text-xs border border-slate-300 rounded bg-white hover:bg-red-50 text-red-600 font-medium"
-            >行削</button>
-            <button
-              onClick={duplicateRow}
-              className="h-7 px-3 text-xs border border-slate-300 rounded bg-white hover:bg-slate-50 font-medium"
-            >行複</button>
+        </CardContent>
+      </Card>
+
+      {/* ── 明細カード ── */}
+      <Card>
+        <CardHeader className="py-2 px-4 border-b bg-teal-700 flex flex-row items-center justify-between">
+          <CardTitle className="text-xs font-semibold text-white">明細</CardTitle>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-white hover:bg-teal-600 text-xs"
+            onClick={addRow}
+          >
+            <Plus className="w-3 h-3 mr-1" />行を追加
+          </Button>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="bg-slate-50 text-slate-600 text-xs border-b border-slate-200">
+                  <th className="px-3 py-2 text-center w-8 font-medium">No</th>
+                  <th className="px-3 py-2 text-left w-28 font-medium">科目</th>
+                  <th className="px-3 py-2 text-left font-medium">品名・摘要</th>
+                  <th className="px-3 py-2 text-center w-14 font-medium">単位</th>
+                  <th className="px-3 py-2 text-right w-24 font-medium">数量</th>
+                  <th className="px-3 py-2 text-right w-28 font-medium">単価</th>
+                  <th className="px-3 py-2 text-right w-28 font-medium">金額</th>
+                  <th className="px-3 py-2 text-center w-24 font-medium">税率</th>
+                  <th className="px-3 py-2 text-right w-24 font-medium">消費税</th>
+                  <th className="px-3 py-2 text-left w-28 font-medium">工種コード</th>
+                  <th className="px-3 py-2 text-center w-16 font-medium">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, idx) => {
+                  const cat = CATEGORY_OPTIONS.find(c => c.code === row.categoryCode);
+                  return (
+                    <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50/60 group">
+                      {/* No */}
+                      <td className="px-3 py-2 text-center text-xs text-slate-400 font-mono">
+                        {idx + 1}
+                      </td>
+                      {/* 科目 */}
+                      <td className="px-2 py-1.5">
+                        <Select
+                          value={row.categoryCode}
+                          onValueChange={v => handleRowChange(idx, "categoryCode", v)}
+                        >
+                          <SelectTrigger className="h-8 text-xs border-slate-200">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {CATEGORY_OPTIONS.map(c => (
+                              <SelectItem key={c.code} value={c.code} className="text-xs">
+                                {c.code} {c.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </td>
+                      {/* 品名・摘要 */}
+                      <td className="px-2 py-1.5">
+                        <Input
+                          value={row.productName}
+                          onChange={e => handleRowChange(idx, "productName", e.target.value)}
+                          placeholder="品名"
+                          className="h-8 text-xs mb-1"
+                        />
+                        <Input
+                          value={row.spec}
+                          onChange={e => handleRowChange(idx, "spec", e.target.value)}
+                          placeholder="仕様・摘要"
+                          className="h-7 text-xs text-slate-500"
+                        />
+                      </td>
+                      {/* 単位 */}
+                      <td className="px-2 py-1.5">
+                        <Input
+                          value={row.unit}
+                          onChange={e => handleRowChange(idx, "unit", e.target.value)}
+                          className="h-8 text-xs text-center"
+                        />
+                      </td>
+                      {/* 数量 */}
+                      <td className="px-2 py-1.5">
+                        <Input
+                          type="number"
+                          value={row.quantity}
+                          onChange={e => handleRowChange(idx, "quantity", e.target.value)}
+                          className="h-8 text-xs text-right"
+                        />
+                      </td>
+                      {/* 単価 */}
+                      <td className="px-2 py-1.5">
+                        <Input
+                          type="number"
+                          value={row.unitPrice}
+                          onChange={e => handleRowChange(idx, "unitPrice", e.target.value)}
+                          placeholder="0"
+                          className="h-8 text-xs text-right"
+                        />
+                      </td>
+                      {/* 金額 */}
+                      <td className="px-3 py-2 text-right text-sm font-mono text-slate-800">
+                        {row.amount > 0 ? row.amount.toLocaleString() : <span className="text-slate-300">—</span>}
+                      </td>
+                      {/* 税率 */}
+                      <td className="px-2 py-1.5">
+                        <Select
+                          value={String(row.taxRate)}
+                          onValueChange={v => handleRowChange(idx, "taxRate", Number(v))}
+                        >
+                          <SelectTrigger className="h-8 text-xs border-slate-200">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {TAX_RATE_OPTIONS.map(t => (
+                              <SelectItem key={t.value} value={String(t.value)} className="text-xs">
+                                {t.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </td>
+                      {/* 消費税 */}
+                      <td className="px-3 py-2 text-right text-sm font-mono text-blue-600">
+                        {row.tax > 0 ? row.tax.toLocaleString() : <span className="text-slate-300">—</span>}
+                      </td>
+                      {/* 工種コード */}
+                      <td className="px-2 py-1.5">
+                        <Input
+                          value={row.workTypeCode}
+                          onChange={e => handleRowChange(idx, "workTypeCode", e.target.value)}
+                          placeholder="工種コード"
+                          className="h-8 text-xs font-mono"
+                        />
+                      </td>
+                      {/* 操作 */}
+                      <td className="px-2 py-1.5">
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            type="button"
+                            onClick={() => duplicateRow(idx)}
+                            title="行を複写"
+                            className="p-1 rounded text-slate-400 hover:text-teal-600 hover:bg-teal-50"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteRow(idx)}
+                            title="行を削除"
+                            className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
+
+          {/* 行追加ボタン */}
+          <button
+            type="button"
+            onClick={addRow}
+            className="w-full py-2.5 text-xs text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition-colors border-t border-dashed border-slate-200"
+          >
+            <Plus className="w-3 h-3 inline mr-1" />
+            クリックして行を追加
+          </button>
+        </CardContent>
+      </Card>
+
+      {/* ── フッター：合計 + 登録ボタン ── */}
+      <div className="flex items-end justify-between gap-4">
+        {/* 合計 */}
+        <Card className="flex-shrink-0">
+          <CardContent className="pt-3 pb-3 px-5">
+            <div className="flex items-center gap-8">
+              <div className="text-center">
+                <p className="text-xs text-slate-500 mb-0.5">税抜合計</p>
+                <p className="text-lg font-bold font-mono text-slate-800">
+                  ¥{totalAmount.toLocaleString()}
+                </p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-slate-500 mb-0.5">消費税</p>
+                <p className="text-lg font-bold font-mono text-blue-600">
+                  ¥{totalTax.toLocaleString()}
+                </p>
+              </div>
+              <div className="text-center border-l border-slate-200 pl-8">
+                <p className="text-xs text-slate-500 mb-0.5">税込合計</p>
+                <p className="text-xl font-bold font-mono text-teal-700">
+                  ¥{totalGross.toLocaleString()}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* アクション */}
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={newSlip}>
+            クリア
+          </Button>
+          <Button
+            size="sm"
+            className="bg-teal-600 hover:bg-teal-700 text-white px-6"
+            onClick={handleRegister}
+            disabled={saving}
+          >
+            {saving ? (
+              <span className="flex items-center gap-1.5">
+                <span className="animate-spin inline-block">⏳</span>登録中...
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5">
+                <Save className="w-4 h-4" />登録する
+              </span>
+            )}
+          </Button>
         </div>
       </div>
 
-      {/* ── 明細テーブル ── */}
-      <div className="flex-1 overflow-auto">
-        <table className="w-full border-collapse text-xs" style={{ minWidth: "1100px" }}>
-          <thead className="sticky top-0 z-10">
-            <tr className="bg-teal-700 text-white text-center text-[11px]">
-              <th className="border border-teal-600 px-1 py-1 w-8">No</th>
-              <th className="border border-teal-600 px-1 py-1 w-16">属性<br />入荷簿</th>
-              <th className="border border-teal-600 px-1 py-1 w-20">科目コード<br />科目名</th>
-              <th className="border border-teal-600 px-1 py-1 w-40">商品コード<br />商品名<br />仕様摘要</th>
-              <th className="border border-teal-600 px-1 py-1 w-14">単位<br />数量<br />残</th>
-              <th className="border border-teal-600 px-1 py-1 w-24">単価<br />税区分/税率</th>
-              <th className="border border-teal-600 px-1 py-1 w-24">金額<br />消費税</th>
-              <th className="border border-teal-600 px-1 py-1 w-36">工事コード<br />工種コード<br />部門コード</th>
-              <th className="border border-teal-600 px-1 py-1">工事名<br />工種名<br />部門名</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, idx) => (
-              <SlipRowView
-                key={row.id}
-                row={row}
-                idx={idx}
-                selected={selectedRow === idx}
-                projects={projects?.items ?? []}
-                onSelect={() => setSelectedRow(idx)}
-                onChange={(field, value) => handleRowChange(idx, field, value)}
-              />
-            ))}
-            {/* 空行クリック → 行追加 */}
-            <tr
-              className="cursor-pointer hover:bg-slate-50"
-              onClick={() => setRows(r => [...r, createRow()])}
-            >
-              <td colSpan={9} className="border border-slate-200 py-3 text-center text-slate-400 text-xs">
-                + クリックして行を追加
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      {/* ── フッター ── */}
-      <div className="bg-white border-t px-4 py-2 flex items-center justify-between shrink-0">
-        <button className="text-xs text-blue-600 underline">工事入力形式の切替について</button>
-        <div className="flex border border-slate-300 text-xs overflow-hidden rounded">
-          <div className="bg-teal-700 text-white px-4 py-1.5 font-medium">税抜金額</div>
-          <div className="bg-teal-700 text-white px-4 py-1.5 font-medium border-x border-teal-600">消費税額</div>
-          <div className="bg-teal-700 text-white px-4 py-1.5 font-medium">合計金額</div>
-          <div className="w-px bg-slate-300" />
-          <div className="px-4 py-1.5 text-right font-mono min-w-[90px] bg-white">
-            {totalAmount.toLocaleString()}
-          </div>
-          <div className="px-4 py-1.5 text-right font-mono min-w-[80px] bg-white border-x border-slate-200 text-blue-600">
-            {totalTax.toLocaleString()}
-          </div>
-          <div className="px-4 py-1.5 text-right font-mono min-w-[90px] bg-white font-bold">
-            {totalGross.toLocaleString()}
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
