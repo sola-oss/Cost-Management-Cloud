@@ -234,6 +234,7 @@ export default function Payments() {
   const { toast } = useToast();
   const [statusFilter, setStatusFilter] = useState("all");
   const [projectFilter, setProjectFilter] = useState("all");
+  const [overdueOnly, setOverdueOnly] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
 
   const { data: payments, isLoading, refetch } = usePayments(statusFilter, projectFilter);
@@ -298,17 +299,25 @@ export default function Payments() {
     }
   }
 
-  const items = payments?.items ?? [];
+  const allItems = payments?.items ?? [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-  const dueSoonCount = items.filter((i) => {
+  const items = overdueOnly
+    ? allItems.filter(
+        (i) => i.status === "pending" && i.dueDate && new Date(i.dueDate) < today
+      )
+    : allItems;
+
+  const dueSoonCount = allItems.filter((i) => {
     if (i.status !== "pending" || !i.dueDate) return false;
     const days = (new Date(i.dueDate).getTime() - Date.now()) / 86400000;
     return days >= 0 && days <= 7;
   }).length;
 
-  const overdueCount = items.filter((i) => {
+  const overdueCount = allItems.filter((i) => {
     if (i.status !== "pending" || !i.dueDate) return false;
-    return new Date(i.dueDate) < new Date();
+    return new Date(i.dueDate) < today;
   }).length;
 
   return (
@@ -487,7 +496,7 @@ export default function Payments() {
       <Card>
         <CardHeader className="border-b py-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               {/* ステータスフィルタ */}
               {[
                 { value: "all", label: "すべて" },
@@ -497,9 +506,9 @@ export default function Payments() {
               ].map((opt) => (
                 <button
                   key={opt.value}
-                  onClick={() => setStatusFilter(opt.value)}
+                  onClick={() => { setStatusFilter(opt.value); setOverdueOnly(false); }}
                   className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-                    statusFilter === opt.value
+                    statusFilter === opt.value && !overdueOnly
                       ? "bg-primary text-primary-foreground border-primary"
                       : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
                   }`}
@@ -507,6 +516,18 @@ export default function Payments() {
                   {opt.label}
                 </button>
               ))}
+              {/* 期日超過フィルタ */}
+              <button
+                onClick={() => { setOverdueOnly(!overdueOnly); if (!overdueOnly) setStatusFilter("all"); }}
+                className={`text-xs px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1 ${
+                  overdueOnly
+                    ? "bg-red-600 text-white border-red-600"
+                    : "bg-white text-red-600 border-red-300 hover:bg-red-50"
+                }`}
+              >
+                <AlertCircle className="w-3 h-3" />
+                期日超過{overdueCount > 0 && <span className={`ml-0.5 font-bold ${overdueOnly ? "text-white" : "text-red-600"}`}>（{overdueCount}）</span>}
+              </button>
             </div>
             <div className="flex items-center gap-2">
               {/* 工事フィルタ */}
@@ -575,7 +596,21 @@ export default function Payments() {
                         className={`hover:bg-slate-50/50 ${isOverdue ? "bg-red-50/50" : ""}`}
                       >
                         <TableCell>
-                          <StatusBadge status={item.status} />
+                          <div className="flex flex-col gap-1">
+                            <StatusBadge status={item.status} />
+                            {isOverdue && (
+                              <Badge variant="outline" className="bg-red-100 text-red-700 border-red-300 gap-1 text-xs w-fit">
+                                <AlertCircle className="w-3 h-3" />
+                                期日超過
+                              </Badge>
+                            )}
+                            {isDueSoon && !isOverdue && (
+                              <Badge variant="outline" className="bg-orange-50 text-orange-600 border-orange-200 gap-1 text-xs w-fit">
+                                <Clock className="w-3 h-3" />
+                                今週期限
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           <div className="text-sm font-medium truncate max-w-[120px]">{item.projectName}</div>
