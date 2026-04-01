@@ -5,6 +5,7 @@
  * 建設業向け原価管理クラウドシステム API
  * OpenAPI spec version: 0.1.0
  */
+import type { ContractLine } from "./contractLine";
 import type { ProjectStatus } from "./projectStatus";
 
 export interface Project {
@@ -67,4 +68,22 @@ export interface Project {
   progressRate?: number | null;
   /** 計上基準 */
   recognitionBasis?: string | null;
+  /** 工事コード枝番 */
+  projectCodeBranch?: string | null;
+  /** 着工日（実施） */
+  startDateActual?: Date | null;
+  /** 竣工日（実施） */
+  endDateActual?: Date | null;
+  /** 引渡日（実施） */
+  handoverDateActual?: Date | null;
+  /** 床面積（坪） */
+  floorAreaTsubo?: number | null;
+  /** 床面積（㎡） */
+  floorAreaSqm?: number | null;
+  /** メモ */
+  memo?: string | null;
+  /** 完成フラグ */
+  isCompleted?: boolean | null;
+  /** 請負金額明細（最大8行） */
+  contractLines?: ContractLine[] | null;
 }

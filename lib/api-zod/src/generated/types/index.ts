@@ -13,6 +13,7 @@ export * from "./budgetItemListResponse";
 export * from "./budgetListResponse";
 export * from "./budgetVsActualResponse";
 export * from "./budgetVsActualResponseItemsItem";
+export * from "./contractLine";
 export * from "./costByCategoryResponse";
 export * from "./costByCategoryResponseCategoriesItem";
 export * from "./costItem";

@@ -26,6 +26,11 @@ export const ProjectStatus = {
   suspended: "suspended",
 } as const;
 
+export interface ContractLine {
+  contractDate?: string | null;
+  taxExcludedAmount?: number | null;
+}
+
 export interface Project {
   id: number;
   /** 工事番号 */
@@ -86,6 +91,24 @@ export interface Project {
   progressRate?: number | null;
   /** 計上基準 */
   recognitionBasis?: string | null;
+  /** 工事コード枝番 */
+  projectCodeBranch?: string | null;
+  /** 着工日（実施） */
+  startDateActual?: string | null;
+  /** 竣工日（実施） */
+  endDateActual?: string | null;
+  /** 引渡日（実施） */
+  handoverDateActual?: string | null;
+  /** 床面積（坪） */
+  floorAreaTsubo?: number | null;
+  /** 床面積（㎡） */
+  floorAreaSqm?: number | null;
+  /** メモ */
+  memo?: string | null;
+  /** 完成フラグ */
+  isCompleted?: boolean | null;
+  /** 請負金額明細（最大8行） */
+  contractLines?: ContractLine[] | null;
 }
 
 /**
@@ -263,6 +286,15 @@ export interface CreateProjectRequest {
   handoverDate?: string | null;
   progressRate?: number | null;
   recognitionBasis?: string | null;
+  projectCodeBranch?: string | null;
+  startDateActual?: string | null;
+  endDateActual?: string | null;
+  handoverDateActual?: string | null;
+  floorAreaTsubo?: number | null;
+  floorAreaSqm?: number | null;
+  memo?: string | null;
+  isCompleted?: boolean | null;
+  contractLines?: ContractLine[] | null;
 }
 
 export type UpdateProjectRequestStatus =
@@ -304,6 +336,15 @@ export interface UpdateProjectRequest {
   handoverDate?: string | null;
   progressRate?: number | null;
   recognitionBasis?: string | null;
+  projectCodeBranch?: string | null;
+  startDateActual?: string | null;
+  endDateActual?: string | null;
+  handoverDateActual?: string | null;
+  floorAreaTsubo?: number | null;
+  floorAreaSqm?: number | null;
+  memo?: string | null;
+  isCompleted?: boolean | null;
+  contractLines?: ContractLine[] | null;
 }
 
 export interface CostItemListResponse {

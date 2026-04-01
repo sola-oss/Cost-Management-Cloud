@@ -103,6 +103,8 @@ router.post("/", async (req, res) => {
       shortName, estimateNumber, orderType, orderDate, taxRate, taxExcludedAmount, taxAmount, taxIncludedAmount,
       overview, department, salesStaff, siteManager, category1, category2, category3,
       handoverDate, progressRate, recognitionBasis,
+      projectCodeBranch, startDateActual, endDateActual, handoverDateActual,
+      floorAreaTsubo, floorAreaSqm, memo, isCompleted, contractLines,
     } = req.body;
 
     const [project] = await db.insert(projectsTable).values({
@@ -129,6 +131,15 @@ router.post("/", async (req, res) => {
       handoverDate: toDateString(handoverDate),
       progressRate: progressRate ?? null,
       recognitionBasis: recognitionBasis ?? null,
+      projectCodeBranch: projectCodeBranch ?? null,
+      startDateActual: toDateString(startDateActual),
+      endDateActual: toDateString(endDateActual),
+      handoverDateActual: toDateString(handoverDateActual),
+      floorAreaTsubo: toNumericString(floorAreaTsubo),
+      floorAreaSqm: toNumericString(floorAreaSqm),
+      memo: memo ?? null,
+      isCompleted: isCompleted ?? false,
+      contractLines: contractLines ?? null,
     }).returning();
 
     res.status(201).json({
@@ -214,6 +225,8 @@ router.put("/:id", async (req, res) => {
       shortName, estimateNumber, orderType, orderDate, taxRate, taxExcludedAmount, taxAmount, taxIncludedAmount,
       overview, department, salesStaff, siteManager, category1, category2, category3,
       handoverDate, progressRate, recognitionBasis,
+      projectCodeBranch, startDateActual, endDateActual, handoverDateActual,
+      floorAreaTsubo, floorAreaSqm, memo, isCompleted, contractLines,
     } = req.body;
 
     const updateData: Partial<typeof projectsTable.$inferInsert> = {};
@@ -245,6 +258,15 @@ router.put("/:id", async (req, res) => {
     if (handoverDate !== undefined) updateData.handoverDate = toDateString(handoverDate);
     if (progressRate !== undefined) updateData.progressRate = progressRate;
     if (recognitionBasis !== undefined) updateData.recognitionBasis = recognitionBasis;
+    if (projectCodeBranch !== undefined) updateData.projectCodeBranch = projectCodeBranch || null;
+    if (startDateActual !== undefined) updateData.startDateActual = toDateString(startDateActual);
+    if (endDateActual !== undefined) updateData.endDateActual = toDateString(endDateActual);
+    if (handoverDateActual !== undefined) updateData.handoverDateActual = toDateString(handoverDateActual);
+    if (floorAreaTsubo !== undefined) updateData.floorAreaTsubo = toNumericString(floorAreaTsubo);
+    if (floorAreaSqm !== undefined) updateData.floorAreaSqm = toNumericString(floorAreaSqm);
+    if (memo !== undefined) updateData.memo = memo || null;
+    if (isCompleted !== undefined) updateData.isCompleted = isCompleted;
+    if (contractLines !== undefined) updateData.contractLines = contractLines;
     updateData.updatedAt = new Date();
 
     const [updated] = await db.update(projectsTable).set(updateData).where(eq(projectsTable.id, id)).returning();

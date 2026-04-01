@@ -83,6 +83,22 @@ export const CreateProjectBody = zod.object({
   handoverDate: zod.coerce.date().nullish(),
   progressRate: zod.number().nullish(),
   recognitionBasis: zod.string().nullish(),
+  projectCodeBranch: zod.string().nullish(),
+  startDateActual: zod.coerce.date().nullish(),
+  endDateActual: zod.coerce.date().nullish(),
+  handoverDateActual: zod.coerce.date().nullish(),
+  floorAreaTsubo: zod.number().nullish(),
+  floorAreaSqm: zod.number().nullish(),
+  memo: zod.string().nullish(),
+  isCompleted: zod.boolean().nullish(),
+  contractLines: zod
+    .array(
+      zod.object({
+        contractDate: zod.coerce.date().nullish(),
+        taxExcludedAmount: zod.number().nullish(),
+      }),
+    )
+    .nullish(),
 });
 
 /**
@@ -127,6 +143,23 @@ export const GetProjectResponse = zod
     handoverDate: zod.coerce.date().nullish().describe("引渡予定日"),
     progressRate: zod.number().nullish().describe("進捗率（%）"),
     recognitionBasis: zod.string().nullish().describe("計上基準"),
+    projectCodeBranch: zod.string().nullish().describe("工事コード枝番"),
+    startDateActual: zod.coerce.date().nullish().describe("着工日（実施）"),
+    endDateActual: zod.coerce.date().nullish().describe("竣工日（実施）"),
+    handoverDateActual: zod.coerce.date().nullish().describe("引渡日（実施）"),
+    floorAreaTsubo: zod.number().nullish().describe("床面積（坪）"),
+    floorAreaSqm: zod.number().nullish().describe("床面積（㎡）"),
+    memo: zod.string().nullish().describe("メモ"),
+    isCompleted: zod.boolean().nullish().describe("完成フラグ"),
+    contractLines: zod
+      .array(
+        zod.object({
+          contractDate: zod.coerce.date().nullish(),
+          taxExcludedAmount: zod.number().nullish(),
+        }),
+      )
+      .nullish()
+      .describe("請負金額明細（最大8行）"),
   })
   .and(
     zod.object({
@@ -209,6 +242,22 @@ export const UpdateProjectBody = zod.object({
   handoverDate: zod.coerce.date().nullish(),
   progressRate: zod.number().nullish(),
   recognitionBasis: zod.string().nullish(),
+  projectCodeBranch: zod.string().nullish(),
+  startDateActual: zod.coerce.date().nullish(),
+  endDateActual: zod.coerce.date().nullish(),
+  handoverDateActual: zod.coerce.date().nullish(),
+  floorAreaTsubo: zod.number().nullish(),
+  floorAreaSqm: zod.number().nullish(),
+  memo: zod.string().nullish(),
+  isCompleted: zod.boolean().nullish(),
+  contractLines: zod
+    .array(
+      zod.object({
+        contractDate: zod.coerce.date().nullish(),
+        taxExcludedAmount: zod.number().nullish(),
+      }),
+    )
+    .nullish(),
 });
 
 export const UpdateProjectResponse = zod.object({
@@ -245,6 +294,23 @@ export const UpdateProjectResponse = zod.object({
   handoverDate: zod.coerce.date().nullish().describe("引渡予定日"),
   progressRate: zod.number().nullish().describe("進捗率（%）"),
   recognitionBasis: zod.string().nullish().describe("計上基準"),
+  projectCodeBranch: zod.string().nullish().describe("工事コード枝番"),
+  startDateActual: zod.coerce.date().nullish().describe("着工日（実施）"),
+  endDateActual: zod.coerce.date().nullish().describe("竣工日（実施）"),
+  handoverDateActual: zod.coerce.date().nullish().describe("引渡日（実施）"),
+  floorAreaTsubo: zod.number().nullish().describe("床面積（坪）"),
+  floorAreaSqm: zod.number().nullish().describe("床面積（㎡）"),
+  memo: zod.string().nullish().describe("メモ"),
+  isCompleted: zod.boolean().nullish().describe("完成フラグ"),
+  contractLines: zod
+    .array(
+      zod.object({
+        contractDate: zod.coerce.date().nullish(),
+        taxExcludedAmount: zod.number().nullish(),
+      }),
+    )
+    .nullish()
+    .describe("請負金額明細（最大8行）"),
 });
 
 /**

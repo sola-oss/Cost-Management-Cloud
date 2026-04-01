@@ -1,9 +1,14 @@
-import { pgTable, serial, text, numeric, date, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, numeric, date, integer, timestamp, boolean, json } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 export const projectStatusEnum = ["planning", "active", "completed", "suspended"] as const;
 export type ProjectStatus = typeof projectStatusEnum[number];
+
+export type ContractLine = {
+  contractDate: string | null;
+  taxExcludedAmount: number | null;
+};
 
 export const projectsTable = pgTable("projects", {
   id: serial("id").primaryKey(),
@@ -38,6 +43,16 @@ export const projectsTable = pgTable("projects", {
   handoverDate: date("handover_date"),
   progressRate: integer("progress_rate"),
   recognitionBasis: text("recognition_basis"),
+
+  projectCodeBranch: text("project_code_branch"),
+  startDateActual: date("start_date_actual"),
+  endDateActual: date("end_date_actual"),
+  handoverDateActual: date("handover_date_actual"),
+  floorAreaTsubo: numeric("floor_area_tsubo", { precision: 10, scale: 2 }),
+  floorAreaSqm: numeric("floor_area_sqm", { precision: 10, scale: 2 }),
+  memo: text("memo"),
+  isCompleted: boolean("is_completed").default(false),
+  contractLines: json("contract_lines").$type<ContractLine[]>(),
 });
 
 export const insertProjectSchema = createInsertSchema(projectsTable).omit({ id: true, createdAt: true, updatedAt: true });

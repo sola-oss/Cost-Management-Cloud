@@ -608,6 +608,47 @@ components:
           type: string
           nullable: true
           description: 計上基準
+        projectCodeBranch:
+          type: string
+          nullable: true
+          description: 工事コード枝番
+        startDateActual:
+          type: string
+          format: date
+          nullable: true
+          description: 着工日（実施）
+        endDateActual:
+          type: string
+          format: date
+          nullable: true
+          description: 竣工日（実施）
+        handoverDateActual:
+          type: string
+          format: date
+          nullable: true
+          description: 引渡日（実施）
+        floorAreaTsubo:
+          type: number
+          nullable: true
+          description: 床面積（坪）
+        floorAreaSqm:
+          type: number
+          nullable: true
+          description: 床面積（㎡）
+        memo:
+          type: string
+          nullable: true
+          description: メモ
+        isCompleted:
+          type: boolean
+          nullable: true
+          description: 完成フラグ
+        contractLines:
+          type: array
+          nullable: true
+          description: 請負金額明細（最大8行）
+          items:
+            $ref: "#/components/schemas/ContractLine"
       required:
         - id
         - projectCode
@@ -844,6 +885,38 @@ components:
         recognitionBasis:
           type: string
           nullable: true
+        projectCodeBranch:
+          type: string
+          nullable: true
+        startDateActual:
+          type: string
+          format: date
+          nullable: true
+        endDateActual:
+          type: string
+          format: date
+          nullable: true
+        handoverDateActual:
+          type: string
+          format: date
+          nullable: true
+        floorAreaTsubo:
+          type: number
+          nullable: true
+        floorAreaSqm:
+          type: number
+          nullable: true
+        memo:
+          type: string
+          nullable: true
+        isCompleted:
+          type: boolean
+          nullable: true
+        contractLines:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/ContractLine"
       required:
         - projectCode
         - name
@@ -937,6 +1010,49 @@ components:
           nullable: true
         recognitionBasis:
           type: string
+          nullable: true
+        projectCodeBranch:
+          type: string
+          nullable: true
+        startDateActual:
+          type: string
+          format: date
+          nullable: true
+        endDateActual:
+          type: string
+          format: date
+          nullable: true
+        handoverDateActual:
+          type: string
+          format: date
+          nullable: true
+        floorAreaTsubo:
+          type: number
+          nullable: true
+        floorAreaSqm:
+          type: number
+          nullable: true
+        memo:
+          type: string
+          nullable: true
+        isCompleted:
+          type: boolean
+          nullable: true
+        contractLines:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/ContractLine"
+
+    ContractLine:
+      type: object
+      properties:
+        contractDate:
+          type: string
+          format: date
+          nullable: true
+        taxExcludedAmount:
+          type: number
           nullable: true
 
     CostItem:

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -10,24 +10,30 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save } from "lucide-react";
+import { ArrowLeft, Save, Info } from "lucide-react";
 
-const TAX_RATES = [0, 8, 10] as const;
+type ContractLineLocal = { contractDate: string; taxExcluded: string };
+
+const EMPTY_LINES: ContractLineLocal[] = Array.from({ length: 8 }, () => ({
+  contractDate: "",
+  taxExcluded: "",
+}));
 
 const formSchema = z.object({
-  projectCode: z.string().min(1, "工事番号は必須です"),
+  projectCodeMain: z.string().min(1, "工事番号は必須です"),
+  projectCodeBranch: z.string().default("00"),
   name: z.string().min(1, "工事名称は必須です"),
   shortName: z.string().optional(),
   location: z.string().min(1, "工事場所は必須です"),
   clientName: z.string().min(1, "得意先は必須です"),
   orderType: z.string().optional(),
+  floorAreaTsubo: z.coerce.number().optional(),
+  floorAreaSqm: z.coerce.number().optional(),
   overview: z.string().optional(),
-  taxExcludedAmount: z.coerce.number().min(0).optional(),
-  taxRate: z.coerce.number().optional(),
-  taxAmount: z.coerce.number().optional(),
-  taxIncludedAmount: z.coerce.number().optional(),
   description: z.string().optional(),
+  memo: z.string().optional(),
   department: z.string().optional(),
   salesStaff: z.string().optional(),
   siteManager: z.string().optional(),
@@ -35,104 +41,153 @@ const formSchema = z.object({
   category2: z.string().optional(),
   category3: z.string().optional(),
   orderDate: z.string().optional(),
-  handoverDate: z.string().optional(),
-  progressRate: z.coerce.number().min(0).max(100).optional(),
   estimateNumber: z.string().optional(),
+  startDate: z.string().min(1, "着工日は必須です"),
+  startDateActual: z.string().optional(),
+  endDate: z.string().min(1, "竣工予定日は必須です"),
+  endDateActual: z.string().optional(),
+  handoverDate: z.string().optional(),
+  handoverDateActual: z.string().optional(),
+  progressRate: z.coerce.number().min(0).max(100).optional(),
+  isCompleted: z.boolean().default(false),
   recognitionBasis: z.string().optional(),
   status: z.enum(["planning", "active", "completed", "suspended"]),
-  startDate: z.string().min(1, "着工日は必須です"),
-  endDate: z.string().min(1, "竣工予定日は必須です"),
-  contractAmount: z.coerce.number().min(0, "請負金額は0以上である必要があります"),
 });
 
 type FormValues = z.infer<typeof formSchema>;
+
+function fmt(n: number): string {
+  if (n === 0) return "";
+  return n.toLocaleString("ja-JP");
+}
+
+function parseLine(l: ContractLineLocal) {
+  const excluded = parseFloat(l.taxExcluded.replace(/,/g, "")) || 0;
+  const tax = Math.floor(excluded * 0.1);
+  const included = excluded + tax;
+  return { excluded, tax, included };
+}
 
 export default function NewProject() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const createProject = useCreateProject();
 
+  const [contractLines, setContractLines] = useState<ContractLineLocal[]>(EMPTY_LINES);
+  const [showClientDetail, setShowClientDetail] = useState(false);
+
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      projectCode: `P${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, "0")}-`,
+      projectCodeMain: `${new Date().getFullYear()}${String(new Date().getMonth() + 1).padStart(2, "0")}0001`,
+      projectCodeBranch: "00",
       name: "",
       shortName: "",
       location: "",
       clientName: "",
       orderType: "",
+      floorAreaTsubo: undefined,
+      floorAreaSqm: undefined,
       overview: "",
-      taxExcludedAmount: undefined,
-      taxRate: 10,
-      taxAmount: undefined,
-      taxIncludedAmount: undefined,
       description: "",
+      memo: "",
       department: "",
       salesStaff: "",
       siteManager: "",
       category1: "",
       category2: "",
       category3: "",
-      orderDate: "",
-      handoverDate: "",
-      progressRate: undefined,
+      orderDate: new Date().toISOString().split("T")[0],
       estimateNumber: "",
+      startDate: new Date().toISOString().split("T")[0],
+      startDateActual: "",
+      endDate: "",
+      endDateActual: "",
+      handoverDate: "",
+      handoverDateActual: "",
+      progressRate: undefined,
+      isCompleted: false,
       recognitionBasis: "",
       status: "planning",
-      startDate: new Date().toISOString().split("T")[0],
-      endDate: "",
-      contractAmount: 0,
     },
   });
 
-  const taxExcludedAmount = form.watch("taxExcludedAmount");
-  const taxRate = form.watch("taxRate");
+  const lineCalcs = useMemo(() => contractLines.map(parseLine), [contractLines]);
+  const totalExcluded = lineCalcs.reduce((s, l) => s + l.excluded, 0);
+  const totalTax = lineCalcs.reduce((s, l) => s + l.tax, 0);
+  const totalIncluded = lineCalcs.reduce((s, l) => s + l.included, 0);
 
-  useEffect(() => {
-    const excluded = taxExcludedAmount == null ? null : Number(taxExcludedAmount);
-    const rate = taxRate == null ? null : Number(taxRate);
-    if (excluded !== null && !isNaN(excluded) && rate !== null && !isNaN(rate)) {
-      const tax = Math.floor(excluded * rate / 100);
-      const included = excluded + tax;
-      form.setValue("taxAmount", tax);
-      form.setValue("taxIncludedAmount", included);
-      form.setValue("contractAmount", included);
+  function updateLine(index: number, field: keyof ContractLineLocal, value: string) {
+    setContractLines((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+  }
+
+  function handleAutoCalc() {
+    const rate = form.getValues("progressRate");
+    if (rate === undefined || isNaN(Number(rate))) return;
+    if (Number(rate) >= 100) {
+      form.setValue("isCompleted", true);
+      form.setValue("status", "completed");
     }
-  }, [taxExcludedAmount, taxRate]);
+  }
 
   function onSubmit(values: FormValues) {
-    const normalizeStr = (v: string | undefined) => (typeof v === "string" && v.trim() !== "" ? v.trim() : undefined);
-    const normalizeDate = (v: string | undefined) => (typeof v === "string" && v.trim() !== "" ? v.trim() : undefined);
-    const normalizeNum = (v: number | undefined) => (v != null && !isNaN(v) ? v : undefined);
+    const ns = (v: string | undefined) => (v && v.trim() ? v.trim() : undefined);
+    const nd = (v: string | undefined) => (v && v.trim() ? v.trim() : undefined);
+    const nn = (v: number | undefined) => (v != null && !isNaN(v) ? v : undefined);
+
+    const projectCode = `${values.projectCodeMain}-${values.projectCodeBranch}`;
+
+    const filledLines = contractLines.filter((l) => l.taxExcluded.trim() !== "").map((l) => ({
+      contractDate: l.contractDate || null,
+      taxExcludedAmount: parseFloat(l.taxExcluded.replace(/,/g, "")) || null,
+    }));
+
+    const contractAmount = totalIncluded || 0;
+    const taxExcludedAmount = totalExcluded || undefined;
+    const taxAmountVal = totalTax || undefined;
+    const taxIncludedAmount = totalIncluded || undefined;
 
     const payload = {
-      projectCode: values.projectCode,
+      projectCode,
       name: values.name,
       clientName: values.clientName,
       location: values.location,
-      contractAmount: values.contractAmount,
+      contractAmount,
       status: values.status,
       startDate: values.startDate,
       endDate: values.endDate,
-      description: normalizeStr(values.description),
-      shortName: normalizeStr(values.shortName),
-      estimateNumber: normalizeStr(values.estimateNumber),
-      orderType: normalizeStr(values.orderType),
-      orderDate: normalizeDate(values.orderDate),
-      taxRate: normalizeNum(values.taxRate),
-      taxExcludedAmount: normalizeNum(values.taxExcludedAmount),
-      taxAmount: normalizeNum(values.taxAmount),
-      taxIncludedAmount: normalizeNum(values.taxIncludedAmount),
-      overview: normalizeStr(values.overview),
-      department: normalizeStr(values.department),
-      salesStaff: normalizeStr(values.salesStaff),
-      siteManager: normalizeStr(values.siteManager),
-      category1: normalizeStr(values.category1),
-      category2: normalizeStr(values.category2),
-      category3: normalizeStr(values.category3),
-      handoverDate: normalizeDate(values.handoverDate),
-      progressRate: normalizeNum(values.progressRate),
-      recognitionBasis: normalizeStr(values.recognitionBasis),
+      description: ns(values.description),
+      shortName: ns(values.shortName),
+      estimateNumber: ns(values.estimateNumber),
+      orderType: ns(values.orderType),
+      orderDate: nd(values.orderDate),
+      taxRate: 10,
+      taxExcludedAmount: nn(taxExcludedAmount),
+      taxAmount: nn(taxAmountVal),
+      taxIncludedAmount: nn(taxIncludedAmount),
+      overview: ns(values.overview),
+      department: ns(values.department),
+      salesStaff: ns(values.salesStaff),
+      siteManager: ns(values.siteManager),
+      category1: ns(values.category1),
+      category2: ns(values.category2),
+      category3: ns(values.category3),
+      handoverDate: nd(values.handoverDate),
+      progressRate: nn(values.progressRate),
+      recognitionBasis: ns(values.recognitionBasis),
+      projectCodeBranch: values.projectCodeBranch,
+      startDateActual: nd(values.startDateActual),
+      endDateActual: nd(values.endDateActual),
+      handoverDateActual: nd(values.handoverDateActual),
+      floorAreaTsubo: nn(values.floorAreaTsubo),
+      floorAreaSqm: nn(values.floorAreaSqm),
+      memo: ns(values.memo),
+      isCompleted: values.isCompleted,
+      contractLines: filledLines.length > 0 ? filledLines : undefined,
     };
 
     createProject.mutate({ data: payload }, {
@@ -147,463 +202,690 @@ export default function NewProject() {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center gap-4">
+    <div className="p-4 max-w-7xl mx-auto space-y-4">
+      <div className="flex items-center gap-3">
         <Button variant="outline" size="icon" asChild>
           <Link href="/projects"><ArrowLeft className="w-4 h-4" /></Link>
         </Button>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">新規工事登録</h1>
-          <p className="text-sm text-slate-500">新しい工事プロジェクトの情報を入力してください。</p>
-        </div>
+        <h1 className="text-xl font-bold text-slate-900">工事登録【新規】</h1>
       </div>
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          {/* 工事番号・ステータス */}
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+
+          {/* ── 管理情報ヘッダー行 ── */}
           <Card>
-            <CardHeader className="py-3 border-b bg-slate-50/60">
-              <CardTitle className="text-sm font-semibold text-slate-700">管理情報</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-5 grid grid-cols-1 md:grid-cols-3 gap-5">
-              <FormField
-                control={form.control}
-                name="projectCode"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>工事番号 <span className="text-destructive">*</span></FormLabel>
-                    <FormControl>
-                      <Input placeholder="例: P202401-001" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="estimateNumber"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>見積番号</FormLabel>
-                    <FormControl>
-                      <Input placeholder="例: Q202401-001" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="status"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>ステータス <span className="text-destructive">*</span></FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+            <CardContent className="pt-4 pb-3">
+              <div className="flex flex-wrap gap-4 items-end">
+                {/* 工事コード (2フィールド) */}
+                <div className="flex items-end gap-1">
+                  <FormField
+                    control={form.control}
+                    name="projectCodeMain"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs text-slate-600">工事コード</FormLabel>
+                        <FormControl>
+                          <Input className="w-32 text-sm" placeholder="2025100100" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <span className="mb-2 text-slate-400 font-medium">—</span>
+                  <FormField
+                    control={form.control}
+                    name="projectCodeBranch"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs text-slate-600">枝番</FormLabel>
+                        <FormControl>
+                          <Input className="w-14 text-sm text-center" placeholder="00" {...field} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                {/* 受注日 */}
+                <FormField
+                  control={form.control}
+                  name="orderDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs text-slate-600">受注日</FormLabel>
                       <FormControl>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <Input type="date" className="text-sm w-36" {...field} />
                       </FormControl>
-                      <SelectContent>
-                        <SelectItem value="planning">計画中</SelectItem>
-                        <SelectItem value="active">施工中</SelectItem>
-                        <SelectItem value="completed">完工</SelectItem>
-                        <SelectItem value="suspended">中断</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                    </FormItem>
+                  )}
+                />
+
+                {/* 見積番号 */}
+                <FormField
+                  control={form.control}
+                  name="estimateNumber"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs text-slate-600">見積番号</FormLabel>
+                      <FormControl>
+                        <Input className="text-sm w-40" placeholder="2025100100-00" {...field} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                {/* ステータス */}
+                <FormField
+                  control={form.control}
+                  name="status"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs text-slate-600">ステータス</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="w-28 text-sm"><SelectValue /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="planning">計画中</SelectItem>
+                          <SelectItem value="active">施工中</SelectItem>
+                          <SelectItem value="completed">完工</SelectItem>
+                          <SelectItem value="suspended">中断</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+              </div>
             </CardContent>
           </Card>
 
-          {/* メイン2カラム */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* ── 左カラム ── */}
-            <Card>
-              <CardHeader className="py-3 border-b bg-slate-50/60">
-                <CardTitle className="text-sm font-semibold text-slate-700">工事基本情報</CardTitle>
-              </CardHeader>
-              <CardContent className="pt-5 space-y-4">
-                <FormField
-                  control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>工事名称 <span className="text-destructive">*</span></FormLabel>
-                      <FormControl>
-                        <Input placeholder="例: 〇〇ビル新築工事" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="shortName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>工事略称</FormLabel>
-                      <FormControl>
-                        <Input placeholder="例: 〇〇ビル" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="location"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>工事場所 <span className="text-destructive">*</span></FormLabel>
-                      <FormControl>
-                        <Input placeholder="例: 東京都新宿区..." {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="clientName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>得意先 <span className="text-destructive">*</span></FormLabel>
-                      <FormControl>
-                        <Input placeholder="例: 株式会社〇〇" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="orderType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>受注区分</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value || ""}>
-                        <FormControl>
-                          <SelectTrigger><SelectValue placeholder="選択してください" /></SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="元請">元請</SelectItem>
-                          <SelectItem value="下請">下請</SelectItem>
-                          <SelectItem value="直工事">直工事</SelectItem>
-                          <SelectItem value="その他">その他</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="overview"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>工事概要</FormLabel>
-                      <FormControl>
-                        <Textarea placeholder="工事の概要を入力してください" rows={3} {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+          {/* ── メイン 2カラム ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-                {/* 請負金額（税抜→税込自動計算） */}
-                <div className="space-y-3 rounded-md border border-slate-200 p-4 bg-slate-50/50">
-                  <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">請負金額</p>
+            {/* ── 左カラム ── */}
+            <div className="space-y-4">
+              <Card>
+                <CardHeader className="py-2 px-4 border-b bg-teal-700">
+                  <CardTitle className="text-xs font-semibold text-white">工事基本情報</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4 space-y-3">
+                  {/* 工事名称 */}
                   <FormField
                     control={form.control}
-                    name="taxExcludedAmount"
+                    name="name"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>税抜金額（円）</FormLabel>
+                        <FormLabel className="text-xs text-slate-600">工事名称 <span className="text-destructive">*</span></FormLabel>
                         <FormControl>
-                          <Input type="number" placeholder="0" {...field} value={field.value ?? ""} />
+                          <Input className="text-sm" placeholder="例: 〇〇邸　新築工事" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
+
+                  {/* 工事略称 */}
                   <FormField
                     control={form.control}
-                    name="taxRate"
+                    name="shortName"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>消費税率</FormLabel>
-                        <Select
-                          onValueChange={(v) => field.onChange(Number(v))}
-                          value={String(field.value ?? 10)}
-                        >
-                          <FormControl>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {TAX_RATES.map((r) => (
-                              <SelectItem key={r} value={String(r)}>{r}%</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <FormLabel className="text-xs text-slate-600">工事略称</FormLabel>
+                        <FormControl>
+                          <Input className="text-sm" placeholder="例: 〇〇邸　新築" {...field} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* 工事場所 */}
+                  <FormField
+                    control={form.control}
+                    name="location"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs text-slate-600">工事場所 <span className="text-destructive">*</span></FormLabel>
+                        <FormControl>
+                          <Input className="text-sm" placeholder="例: 宮城県仙台市青葉区1−2−1" {...field} />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                  <div className="grid grid-cols-2 gap-3">
+
+                  {/* 得意先 + 詳細ボタン */}
+                  <FormField
+                    control={form.control}
+                    name="clientName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs text-slate-600">得意先 <span className="text-destructive">*</span></FormLabel>
+                        <div className="flex gap-2">
+                          <FormControl>
+                            <Input className="text-sm flex-1" placeholder="例: エステート住建" {...field} />
+                          </FormControl>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="shrink-0 text-xs"
+                            onClick={() => setShowClientDetail(true)}
+                          >
+                            詳細
+                          </Button>
+                        </div>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* 受注区分 + 坪 + ㎡ */}
+                  <div className="flex gap-2 items-end">
                     <FormField
                       control={form.control}
-                      name="taxAmount"
+                      name="orderType"
                       render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>消費税額（円）</FormLabel>
+                        <FormItem className="flex-1">
+                          <FormLabel className="text-xs text-slate-600">受注区分</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value || ""}>
+                            <FormControl>
+                              <SelectTrigger className="text-sm"><SelectValue placeholder="選択" /></SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="元請">元請</SelectItem>
+                              <SelectItem value="下請">下請</SelectItem>
+                              <SelectItem value="直工事">直工事</SelectItem>
+                              <SelectItem value="その他">その他</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="floorAreaTsubo"
+                      render={({ field }) => (
+                        <FormItem className="w-24">
+                          <FormLabel className="text-xs text-slate-600">坪</FormLabel>
                           <FormControl>
-                            <Input
-                              type="number"
-                              readOnly
-                              className="bg-slate-100 text-slate-600"
-                              {...field}
-                              value={field.value ?? ""}
-                            />
+                            <Input type="number" className="text-sm" placeholder="0.0" {...field} value={field.value ?? ""} />
                           </FormControl>
                         </FormItem>
                       )}
                     />
                     <FormField
                       control={form.control}
-                      name="taxIncludedAmount"
+                      name="floorAreaSqm"
                       render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>税込金額（円）</FormLabel>
+                        <FormItem className="w-24">
+                          <FormLabel className="text-xs text-slate-600">㎡</FormLabel>
                           <FormControl>
-                            <Input
-                              type="number"
-                              readOnly
-                              className="bg-slate-100 font-semibold text-slate-800"
-                              {...field}
-                              value={field.value ?? ""}
-                            />
+                            <Input type="number" className="text-sm" placeholder="0.0" {...field} value={field.value ?? ""} />
                           </FormControl>
                         </FormItem>
                       )}
                     />
                   </div>
-                </div>
 
-                <FormField
-                  control={form.control}
-                  name="description"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>備考</FormLabel>
-                      <FormControl>
-                        <Textarea placeholder="特記事項があれば入力してください" rows={3} {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-            </Card>
+                  {/* 工事概要 */}
+                  <FormField
+                    control={form.control}
+                    name="overview"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs text-slate-600">工事概要</FormLabel>
+                        <FormControl>
+                          <Input className="text-sm" placeholder="工事概要を入力" {...field} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </CardContent>
+              </Card>
+
+              {/* ── 請負金額テーブル ── */}
+              <Card>
+                <CardHeader className="py-2 px-4 border-b bg-teal-700">
+                  <CardTitle className="text-xs font-semibold text-white">請負金額</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-teal-600 text-white">
+                          <th className="border border-teal-500 px-2 py-1.5 text-center w-8">No</th>
+                          <th className="border border-teal-500 px-2 py-1.5 text-center w-32">契約日付</th>
+                          <th className="border border-teal-500 px-2 py-1.5 text-right w-28">税抜金額</th>
+                          <th className="border border-teal-500 px-2 py-1.5 text-right w-24">消費税<br />10%</th>
+                          <th className="border border-teal-500 px-2 py-1.5 text-right w-28">税込金額</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {contractLines.map((line, i) => {
+                          const calc = lineCalcs[i];
+                          return (
+                            <tr key={i} className="hover:bg-slate-50">
+                              <td className="border border-slate-200 px-2 py-0.5 text-center text-slate-500">{i + 1}</td>
+                              <td className="border border-slate-200 px-1 py-0.5">
+                                <input
+                                  type="date"
+                                  value={line.contractDate}
+                                  onChange={(e) => updateLine(i, "contractDate", e.target.value)}
+                                  className="w-full text-xs border-none outline-none bg-transparent"
+                                />
+                              </td>
+                              <td className="border border-slate-200 px-1 py-0.5">
+                                <input
+                                  type="text"
+                                  value={line.taxExcluded}
+                                  onChange={(e) => updateLine(i, "taxExcluded", e.target.value)}
+                                  className="w-full text-xs text-right border-none outline-none bg-transparent"
+                                  placeholder="0"
+                                />
+                              </td>
+                              <td className="border border-slate-200 px-2 py-0.5 text-right text-slate-500 bg-slate-50/50">
+                                {calc.tax > 0 ? calc.tax.toLocaleString("ja-JP") : ""}
+                              </td>
+                              <td className="border border-slate-200 px-2 py-0.5 text-right font-medium text-slate-700 bg-slate-50/50">
+                                {calc.included > 0 ? calc.included.toLocaleString("ja-JP") : ""}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-teal-50 font-semibold">
+                          <td colSpan={2} className="border border-slate-200 px-2 py-1.5 text-center text-xs text-slate-700">合計金額</td>
+                          <td className="border border-slate-200 px-2 py-1.5 text-right text-xs">
+                            {totalExcluded > 0 ? totalExcluded.toLocaleString("ja-JP") : ""}
+                          </td>
+                          <td className="border border-slate-200 px-2 py-1.5 text-right text-xs">
+                            {totalTax > 0 ? totalTax.toLocaleString("ja-JP") : ""}
+                          </td>
+                          <td className="border border-slate-200 px-2 py-1.5 text-right text-xs font-bold text-teal-700">
+                            {totalIncluded > 0 ? totalIncluded.toLocaleString("ja-JP") : ""}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* 備考・メモ */}
+              <Card>
+                <CardContent className="pt-4 space-y-3">
+                  <FormField
+                    control={form.control}
+                    name="description"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs text-slate-600">備考</FormLabel>
+                        <FormControl>
+                          <Input className="text-sm" placeholder="特記事項があれば入力" {...field} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="memo"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs text-slate-600">メモ</FormLabel>
+                        <FormControl>
+                          <Textarea className="text-sm" rows={3} placeholder="自由記入メモ" {...field} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </CardContent>
+              </Card>
+            </div>
 
             {/* ── 右カラム ── */}
-            <Card>
-              <CardHeader className="py-3 border-b bg-slate-50/60">
-                <CardTitle className="text-sm font-semibold text-slate-700">担当・分類・工期</CardTitle>
-              </CardHeader>
-              <CardContent className="pt-5 space-y-4">
-                <FormField
-                  control={form.control}
-                  name="department"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>工事部門</FormLabel>
-                      <FormControl>
-                        <Input placeholder="例: 建築部" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="salesStaff"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>営業担当</FormLabel>
-                      <FormControl>
-                        <Input placeholder="担当者名" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="siteManager"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>工事担当</FormLabel>
-                      <FormControl>
-                        <Input placeholder="担当者名" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <div className="grid grid-cols-1 gap-3">
+            <div className="space-y-4">
+              <Card>
+                <CardHeader className="py-2 px-4 border-b bg-teal-700">
+                  <CardTitle className="text-xs font-semibold text-white">担当・分類</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4 space-y-3">
                   <FormField
                     control={form.control}
-                    name="category1"
+                    name="department"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>工事分類1</FormLabel>
+                        <FormLabel className="text-xs text-slate-600">工事部門</FormLabel>
                         <FormControl>
-                          <Input placeholder="例: 新築" {...field} />
+                          <Input className="text-sm" placeholder="例: 本社建築一課" {...field} />
                         </FormControl>
-                        <FormMessage />
                       </FormItem>
                     )}
                   />
                   <FormField
                     control={form.control}
-                    name="category2"
+                    name="salesStaff"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>工事分類2</FormLabel>
+                        <FormLabel className="text-xs text-slate-600">営業担当</FormLabel>
                         <FormControl>
-                          <Input placeholder="例: 木造" {...field} />
+                          <Input className="text-sm" placeholder="担当者名" {...field} />
                         </FormControl>
-                        <FormMessage />
                       </FormItem>
                     )}
                   />
                   <FormField
                     control={form.control}
-                    name="category3"
+                    name="siteManager"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>工事分類3</FormLabel>
+                        <FormLabel className="text-xs text-slate-600">工事担当</FormLabel>
                         <FormControl>
-                          <Input placeholder="例: 住宅" {...field} />
+                          <Input className="text-sm" placeholder="担当者名" {...field} />
                         </FormControl>
-                        <FormMessage />
                       </FormItem>
                     )}
                   />
-                </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <FormField
+                      control={form.control}
+                      name="category1"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs text-slate-600">工事分類1</FormLabel>
+                          <FormControl>
+                            <Input className="text-sm" placeholder="例: 民間" {...field} />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="category2"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs text-slate-600">工事分類2</FormLabel>
+                          <FormControl>
+                            <Input className="text-sm" placeholder="例: 建築" {...field} />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="category3"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs text-slate-600">工事分類3</FormLabel>
+                          <FormControl>
+                            <Input className="text-sm" placeholder="例: 新規" {...field} />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
 
-                <div className="grid grid-cols-1 gap-3 rounded-md border border-slate-200 p-4 bg-slate-50/50">
-                  <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">工期・日程</p>
-                  <FormField
-                    control={form.control}
-                    name="orderDate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>受注日</FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="startDate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>着工日 <span className="text-destructive">*</span></FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="endDate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>竣工予定日 <span className="text-destructive">*</span></FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="handoverDate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>引渡日（予定）</FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+              {/* 工事日程（予定/実施） */}
+              <Card>
+                <CardHeader className="py-2 px-4 border-b bg-teal-700">
+                  <CardTitle className="text-xs font-semibold text-white">工事日程</CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-teal-600 text-white">
+                        <th className="border border-teal-500 px-3 py-1.5 text-left w-16">区分</th>
+                        <th className="border border-teal-500 px-3 py-1.5 text-center">予定</th>
+                        <th className="border border-teal-500 px-3 py-1.5 text-center">実施</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* 着工日 */}
+                      <tr className="hover:bg-slate-50">
+                        <td className="border border-slate-200 px-3 py-1 font-medium text-slate-700 bg-teal-50/50 whitespace-nowrap">着工日</td>
+                        <td className="border border-slate-200 px-1 py-0.5">
+                          <FormField
+                            control={form.control}
+                            name="startDate"
+                            render={({ field }) => (
+                              <FormItem className="m-0 p-0">
+                                <FormControl>
+                                  <input
+                                    type="date"
+                                    {...field}
+                                    className="w-full text-xs border-none outline-none bg-transparent py-1"
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </td>
+                        <td className="border border-slate-200 px-1 py-0.5">
+                          <FormField
+                            control={form.control}
+                            name="startDateActual"
+                            render={({ field }) => (
+                              <FormItem className="m-0 p-0">
+                                <FormControl>
+                                  <input
+                                    type="date"
+                                    {...field}
+                                    className="w-full text-xs border-none outline-none bg-transparent py-1"
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        </td>
+                      </tr>
+                      {/* 竣工日 */}
+                      <tr className="hover:bg-slate-50">
+                        <td className="border border-slate-200 px-3 py-1 font-medium text-slate-700 bg-teal-50/50 whitespace-nowrap">竣工日</td>
+                        <td className="border border-slate-200 px-1 py-0.5">
+                          <FormField
+                            control={form.control}
+                            name="endDate"
+                            render={({ field }) => (
+                              <FormItem className="m-0 p-0">
+                                <FormControl>
+                                  <input
+                                    type="date"
+                                    {...field}
+                                    className="w-full text-xs border-none outline-none bg-transparent py-1"
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </td>
+                        <td className="border border-slate-200 px-1 py-0.5">
+                          <FormField
+                            control={form.control}
+                            name="endDateActual"
+                            render={({ field }) => (
+                              <FormItem className="m-0 p-0">
+                                <FormControl>
+                                  <input
+                                    type="date"
+                                    {...field}
+                                    className="w-full text-xs border-none outline-none bg-transparent py-1"
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        </td>
+                      </tr>
+                      {/* 引渡日 */}
+                      <tr className="hover:bg-slate-50">
+                        <td className="border border-slate-200 px-3 py-1 font-medium text-slate-700 bg-teal-50/50 whitespace-nowrap">引渡日</td>
+                        <td className="border border-slate-200 px-1 py-0.5">
+                          <FormField
+                            control={form.control}
+                            name="handoverDate"
+                            render={({ field }) => (
+                              <FormItem className="m-0 p-0">
+                                <FormControl>
+                                  <input
+                                    type="date"
+                                    {...field}
+                                    className="w-full text-xs border-none outline-none bg-transparent py-1"
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        </td>
+                        <td className="border border-slate-200 px-1 py-0.5">
+                          <FormField
+                            control={form.control}
+                            name="handoverDateActual"
+                            render={({ field }) => (
+                              <FormItem className="m-0 p-0">
+                                <FormControl>
+                                  <input
+                                    type="date"
+                                    {...field}
+                                    className="w-full text-xs border-none outline-none bg-transparent py-1"
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </CardContent>
+              </Card>
 
-                <FormField
-                  control={form.control}
-                  name="progressRate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>進捗率（%）</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min={0}
-                          max={100}
-                          placeholder="0〜100"
-                          {...field}
-                          value={field.value ?? ""}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+              {/* 進捗 */}
+              <Card>
+                <CardHeader className="py-2 px-4 border-b bg-teal-700">
+                  <CardTitle className="text-xs font-semibold text-white">進捗</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-4 space-y-3">
+                  <FormField
+                    control={form.control}
+                    name="recognitionBasis"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs text-slate-600">計上基準</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value || ""}>
+                          <FormControl>
+                            <SelectTrigger className="text-sm"><SelectValue placeholder="選択してください" /></SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="完成基準">完成基準</SelectItem>
+                            <SelectItem value="進行基準">進行基準</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </FormItem>
+                    )}
+                  />
 
-                <FormField
-                  control={form.control}
-                  name="recognitionBasis"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>計上基準</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value || ""}>
-                        <FormControl>
-                          <SelectTrigger><SelectValue placeholder="選択してください" /></SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="完成基準">完成基準</SelectItem>
-                          <SelectItem value="進行基準">進行基準</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-            </Card>
+                  {/* 進捗率 + 完成チェック */}
+                  <div className="space-y-2">
+                    <p className="text-xs text-slate-600">進捗率</p>
+                    <div className="flex items-center gap-3">
+                      <FormField
+                        control={form.control}
+                        name="progressRate"
+                        render={({ field }) => (
+                          <FormItem className="m-0">
+                            <FormControl>
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  className="w-16 text-sm text-right"
+                                  placeholder="0"
+                                  {...field}
+                                  value={field.value ?? ""}
+                                />
+                                <span className="text-sm text-slate-600">%</span>
+                              </div>
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="isCompleted"
+                        render={({ field }) => (
+                          <FormItem className="m-0 flex items-center gap-2">
+                            <FormControl>
+                              <Checkbox
+                                checked={field.value}
+                                onCheckedChange={(checked) => {
+                                  field.onChange(checked);
+                                  if (checked) {
+                                    form.setValue("progressRate", 100);
+                                    form.setValue("status", "completed");
+                                  }
+                                }}
+                              />
+                            </FormControl>
+                            <FormLabel className="text-xs text-slate-600 cursor-pointer">完成</FormLabel>
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-xs h-7"
+                      onClick={handleAutoCalc}
+                    >
+                      自動計算
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </div>
 
-          <div className="flex justify-end gap-4">
+          {/* ── 登録ボタン ── */}
+          <div className="flex justify-end gap-3 pb-4">
             <Button variant="outline" type="button" asChild>
               <Link href="/projects">キャンセル</Link>
             </Button>
             <Button type="submit" disabled={createProject.isPending}>
               <Save className="w-4 h-4 mr-2" />
-              {createProject.isPending ? "保存中..." : "工事を登録する"}
+              {createProject.isPending ? "保存中..." : "F12 登録"}
             </Button>
           </div>
         </form>
       </Form>
+
+      {/* 得意先詳細モーダル（簡易） */}
+      {showClientDetail && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+          onClick={() => setShowClientDetail(false)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <Info className="w-5 h-5 text-teal-600" />
+              <h3 className="font-semibold text-slate-800">得意先詳細</h3>
+            </div>
+            <p className="text-sm text-slate-600">得意先マスタは今後実装予定です。<br />現在は得意先名を直接入力してください。</p>
+            <div className="mt-4 flex justify-end">
+              <Button size="sm" onClick={() => setShowClientDetail(false)}>閉じる</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

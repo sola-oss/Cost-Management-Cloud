@@ -5,6 +5,7 @@
  * 建設業向け原価管理クラウドシステム API
  * OpenAPI spec version: 0.1.0
  */
+import type { ContractLine } from "./contractLine";
 import type { UpdateProjectRequestStatus } from "./updateProjectRequestStatus";
 
 export interface UpdateProjectRequest {
@@ -36,4 +37,13 @@ export interface UpdateProjectRequest {
   handoverDate?: Date | null;
   progressRate?: number | null;
   recognitionBasis?: string | null;
+  projectCodeBranch?: string | null;
+  startDateActual?: Date | null;
+  endDateActual?: Date | null;
+  handoverDateActual?: Date | null;
+  floorAreaTsubo?: number | null;
+  floorAreaSqm?: number | null;
+  memo?: string | null;
+  isCompleted?: boolean | null;
+  contractLines?: ContractLine[] | null;
 }
