@@ -1309,9 +1309,12 @@ components:
         workTypeName:
           type: string
           description: 工種名称
+        supplierCode:
+          type: string
+          description: 仕入先コード
         supplierName:
           type: string
-          description: 仕入先
+          description: 仕入先名
         contractAmount:
           type: number
           description: 請負金額
@@ -1335,6 +1338,7 @@ components:
         - projectId
         - workTypeCode
         - workTypeName
+        - supplierCode
         - supplierName
         - contractAmount
         - initialBudget
@@ -1369,6 +1373,8 @@ components:
           type: string
         workTypeName:
           type: string
+        supplierCode:
+          type: string
         supplierName:
           type: string
         contractAmount:
@@ -1389,6 +1395,8 @@ components:
         workTypeCode:
           type: string
         workTypeName:
+          type: string
+        supplierCode:
           type: string
         supplierName:
           type: string

@@ -13,7 +13,9 @@ export interface BudgetItem {
   workTypeCode: string;
   /** 工種名称 */
   workTypeName: string;
-  /** 仕入先 */
+  /** 仕入先コード */
+  supplierCode: string;
+  /** 仕入先名 */
   supplierName: string;
   /** 請負金額 */
   contractAmount: number;

@@ -11,6 +11,7 @@ function parseNumeric(val: unknown): number {
 function serializeItem(item: typeof budgetItemsTable.$inferSelect) {
   return {
     ...item,
+    supplierCode: item.supplierCode ?? "",
     contractAmount: parseNumeric(item.contractAmount),
     initialBudget: parseNumeric(item.initialBudget),
     revisedBudget: parseNumeric(item.revisedBudget),
@@ -45,7 +46,7 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const projectId = parseInt(req.params.id);
-    const { workTypeCode, workTypeName, supplierName, contractAmount, initialBudget, revisedBudget, sortOrder } = req.body;
+    const { workTypeCode, workTypeName, supplierCode, supplierName, contractAmount, initialBudget, revisedBudget, sortOrder } = req.body;
 
     const [item] = await db
       .insert(budgetItemsTable)
@@ -53,6 +54,7 @@ router.post("/", async (req, res) => {
         projectId,
         workTypeCode,
         workTypeName,
+        supplierCode: supplierCode ?? "",
         supplierName: supplierName ?? "",
         contractAmount: String(contractAmount ?? 0),
         initialBudget: String(initialBudget ?? 0),
@@ -72,11 +74,12 @@ router.put("/:itemId", async (req, res) => {
   try {
     const projectId = parseInt(req.params.id);
     const itemId = parseInt(req.params.itemId);
-    const { workTypeCode, workTypeName, supplierName, contractAmount, initialBudget, revisedBudget, sortOrder } = req.body;
+    const { workTypeCode, workTypeName, supplierCode, supplierName, contractAmount, initialBudget, revisedBudget, sortOrder } = req.body;
 
     const updateData: Partial<typeof budgetItemsTable.$inferInsert> = {};
     if (workTypeCode !== undefined) updateData.workTypeCode = workTypeCode;
     if (workTypeName !== undefined) updateData.workTypeName = workTypeName;
+    if (supplierCode !== undefined) updateData.supplierCode = supplierCode;
     if (supplierName !== undefined) updateData.supplierName = supplierName;
     if (contractAmount !== undefined) updateData.contractAmount = String(contractAmount);
     if (initialBudget !== undefined) updateData.initialBudget = String(initialBudget);

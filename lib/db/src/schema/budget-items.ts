@@ -8,6 +8,7 @@ export const budgetItemsTable = pgTable("budget_items", {
   projectId: integer("project_id").notNull().references(() => projectsTable.id, { onDelete: "cascade" }),
   workTypeCode: text("work_type_code").notNull(),
   workTypeName: text("work_type_name").notNull(),
+  supplierCode: text("supplier_code").notNull().default(""),
   supplierName: text("supplier_name").notNull().default(""),
   contractAmount: numeric("contract_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   initialBudget: numeric("initial_budget", { precision: 15, scale: 2 }).notNull().default("0"),

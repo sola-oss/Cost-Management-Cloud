@@ -9,6 +9,7 @@
 export interface CreateBudgetItemRequest {
   workTypeCode: string;
   workTypeName: string;
+  supplierCode?: string;
   supplierName?: string;
   contractAmount?: number;
   initialBudget?: number;

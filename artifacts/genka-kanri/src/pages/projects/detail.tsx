@@ -1804,6 +1804,10 @@ export default function ProjectDetail() {
   const { data: summary, isLoading: summaryLoading } = useGetProjectSummary(projectId, {
     query: { enabled: !!projectId, queryKey: getGetProjectSummaryQueryKey(projectId) },
   });
+  const { data: budgetItemsCheck } = useListBudgetItems(projectId, {
+    query: { enabled: !!projectId, queryKey: getListBudgetItemsQueryKey(projectId) },
+  });
+  const hasBudgetItems = (budgetItemsCheck?.items?.length ?? 0) > 0;
 
   if (projectLoading) {
     return (
@@ -1922,6 +1926,9 @@ export default function ProjectDetail() {
           <TabsTrigger value="budget" className="text-xs sm:text-sm gap-1">
             <Calculator className="w-3.5 h-3.5 hidden sm:block" />
             実行予算
+            {!hasBudgetItems && (
+              <Badge className="ml-1 text-[10px] px-1 py-0 h-4 bg-orange-500 text-white border-none">未登録</Badge>
+            )}
           </TabsTrigger>
           <TabsTrigger value="costs" className="text-xs sm:text-sm gap-1">
             <ClipboardList className="w-3.5 h-3.5 hidden sm:block" />

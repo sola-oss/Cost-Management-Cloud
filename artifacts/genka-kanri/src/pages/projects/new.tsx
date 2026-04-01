@@ -11,8 +11,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save, Info } from "lucide-react";
+import { ArrowLeft, Save, Info, Calculator } from "lucide-react";
 
 type ContractLineLocal = { contractDate: string; taxExcluded: string };
 
@@ -75,6 +78,8 @@ export default function NewProject() {
 
   const [contractLines, setContractLines] = useState<ContractLineLocal[]>(EMPTY_LINES);
   const [showClientDetail, setShowClientDetail] = useState(false);
+  const [showBudgetDialog, setShowBudgetDialog] = useState(false);
+  const [newProjectId, setNewProjectId] = useState<number | null>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -193,7 +198,8 @@ export default function NewProject() {
     createProject.mutate({ data: payload }, {
       onSuccess: (data) => {
         toast({ title: "登録完了", description: "新規工事を登録しました。" });
-        setLocation(`/projects/${data.id}`);
+        setNewProjectId(data.id);
+        setShowBudgetDialog(true);
       },
       onError: () => {
         toast({ title: "エラー", description: "工事の登録に失敗しました。", variant: "destructive" });
@@ -901,6 +907,46 @@ export default function NewProject() {
           </div>
         </div>
       )}
+
+      {/* 実行予算登録確認ダイアログ */}
+      <Dialog open={showBudgetDialog} onOpenChange={() => {}}>
+        <DialogContent className="sm:max-w-md" onInteractOutside={e => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Calculator className="w-5 h-5 text-teal-600" />
+              実行予算を登録しますか？
+            </DialogTitle>
+            <DialogDescription>
+              工事の登録が完了しました。続けて実行予算を登録することができます。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2 text-sm text-slate-600">
+            実行予算は工事の利益管理に必要です。今すぐ登録するか、後から工事詳細の「実行予算」タブで登録できます。
+          </div>
+          <DialogFooter className="flex gap-2 sm:flex-row">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => {
+                setShowBudgetDialog(false);
+                setLocation(`/projects/${newProjectId}`);
+              }}
+            >
+              後で登録する
+            </Button>
+            <Button
+              className="flex-1 bg-teal-600 hover:bg-teal-700"
+              onClick={() => {
+                setShowBudgetDialog(false);
+                setLocation(`/projects/${newProjectId}/budgets`);
+              }}
+            >
+              <Calculator className="w-4 h-4 mr-2" />
+              今すぐ登録する
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
