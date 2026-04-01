@@ -18,6 +18,9 @@ import Payments from "@/pages/payments";
 import VendorGroups from "@/pages/vendor-groups";
 import Vendors from "@/pages/vendors";
 import PaymentAssessment from "@/pages/payment-assessment";
+import EstimateList from "@/pages/estimates/index";
+import NewEstimate from "@/pages/estimates/new";
+import EstimateDetail from "@/pages/estimates/detail";
 
 const queryClient = new QueryClient();
 
@@ -35,6 +38,9 @@ function Router() {
         <Route path="/purchases" component={Purchases} />
         <Route path="/payments" component={Payments} />
         <Route path="/payment-assessment" component={PaymentAssessment} />
+        <Route path="/estimates" component={EstimateList} />
+        <Route path="/estimates/new" component={NewEstimate} />
+        <Route path="/estimates/:id" component={EstimateDetail} />
         <Route path="/vendors" component={Vendors} />
         <Route path="/vendor-groups" component={VendorGroups} />
         <Route component={NotFound} />

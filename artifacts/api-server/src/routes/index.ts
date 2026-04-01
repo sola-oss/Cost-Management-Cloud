@@ -10,6 +10,7 @@ import vendorGroupsRouter from "./vendor-groups";
 import vendorsRouter from "./vendors";
 import paymentAssessmentsRouter from "./payment-assessments";
 import workTypesRouter from "./work-types";
+import estimatesRouter from "./estimates";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use("/vendor-groups", vendorGroupsRouter);
 router.use("/vendors", vendorsRouter);
 router.use("/payment-assessments", paymentAssessmentsRouter);
 router.use("/work-types", workTypesRouter);
+router.use("/estimates", estimatesRouter);
 
 export default router;

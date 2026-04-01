@@ -2,7 +2,7 @@
 
 ## Overview
 
-建設業向けクラウド原価管理システム。工事管理・原価入力・予算管理・収支レポートを一元管理する。
+建設業向けクラウド原価管理システム。見積書作成・工事管理・原価入力・予算管理・支払管理・収支レポートを一元管理する。
 
 pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
 
