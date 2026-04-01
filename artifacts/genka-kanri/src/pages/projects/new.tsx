@@ -393,7 +393,7 @@ export default function NewProject() {
                   />
 
                   {/* 受注区分 + 坪 + ㎡ */}
-                  <div className="flex gap-2 items-end">
+                  <div className="flex gap-2 items-start">
                     <FormField
                       control={form.control}
                       name="orderType"
