@@ -216,10 +216,10 @@ export default function NewProject() {
           {/* ── 管理情報ヘッダー行 ── */}
           <Card>
             <CardContent className="pt-4 pb-3">
-              <div className="flex gap-3 items-end">
+              <div className="flex gap-3 items-start">
 
                 {/* 工事コード + 枝番（グループ） */}
-                <div className="flex gap-1 items-end flex-[2] min-w-0">
+                <div className="flex gap-1 items-start flex-[2] min-w-0">
                   <div className="flex-1 min-w-0">
                     <FormField
                       control={form.control}
@@ -235,7 +235,7 @@ export default function NewProject() {
                       )}
                     />
                   </div>
-                  <span className="pb-2.5 text-slate-400 font-medium shrink-0">—</span>
+                  <span className="pt-5 text-slate-400 font-medium shrink-0">—</span>
                   <div className="w-16 shrink-0">
                     <FormField
                       control={form.control}
