@@ -27,7 +27,7 @@ import {
 } from "recharts";
 import {
   ArrowLeft, Edit, Plus, Save, X, AlertTriangle, CheckCircle, TrendingUp,
-  FileText, Calculator, BarChart2, ClipboardList, Loader2, Trash2, Search,
+  FileText, Calculator, BarChart2, ClipboardList, Loader2, Trash2, Search, ExternalLink,
 } from "lucide-react";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { useForm } from "react-hook-form";
@@ -340,16 +340,29 @@ function BudgetTab({ projectId }: { projectId: number }) {
             <CardTitle className="text-sm font-semibold text-slate-700">実行予算明細</CardTitle>
             <CardDescription className="text-xs mt-0.5">工種コード・仕入先・金額を入力してください</CardDescription>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1.5 h-8"
-            onClick={() => { setAddingRow(true); }}
-            disabled={addingRow}
-          >
-            <Plus className="w-3.5 h-3.5" />
-            行追加
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 h-8 text-teal-700 border-teal-300 hover:bg-teal-50"
+              asChild
+            >
+              <Link href={`/projects/${projectId}/budgets`}>
+                <ExternalLink className="w-3.5 h-3.5" />
+                実行予算入力画面を開く
+              </Link>
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 h-8"
+              onClick={() => { setAddingRow(true); }}
+              disabled={addingRow}
+            >
+              <Plus className="w-3.5 h-3.5" />
+              行追加
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="p-0 overflow-x-auto">
           <Table>
