@@ -216,86 +216,98 @@ export default function NewProject() {
           {/* ── 管理情報ヘッダー行 ── */}
           <Card>
             <CardContent className="pt-4 pb-3">
-              <div className="flex flex-wrap gap-4 items-end">
-                {/* 工事コード (2フィールド) */}
-                <div className="flex items-end gap-1">
+              <div className="flex gap-3 items-end">
+
+                {/* 工事コード + 枝番（グループ） */}
+                <div className="flex gap-1 items-end flex-[2] min-w-0">
+                  <div className="flex-1 min-w-0">
+                    <FormField
+                      control={form.control}
+                      name="projectCodeMain"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs text-slate-600">工事コード</FormLabel>
+                          <FormControl>
+                            <Input className="w-full text-sm" placeholder="2025100100" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  <span className="pb-2.5 text-slate-400 font-medium shrink-0">—</span>
+                  <div className="w-16 shrink-0">
+                    <FormField
+                      control={form.control}
+                      name="projectCodeBranch"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs text-slate-600">枝番</FormLabel>
+                          <FormControl>
+                            <Input className="w-full text-sm text-center" placeholder="00" {...field} />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </div>
+
+                {/* 受注日 */}
+                <div className="flex-1 min-w-0">
                   <FormField
                     control={form.control}
-                    name="projectCodeMain"
+                    name="orderDate"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className="text-xs text-slate-600">工事コード</FormLabel>
+                        <FormLabel className="text-xs text-slate-600">受注日</FormLabel>
                         <FormControl>
-                          <Input className="w-32 text-sm" placeholder="2025100100" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <span className="mb-2 text-slate-400 font-medium">—</span>
-                  <FormField
-                    control={form.control}
-                    name="projectCodeBranch"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs text-slate-600">枝番</FormLabel>
-                        <FormControl>
-                          <Input className="w-14 text-sm text-center" placeholder="00" {...field} />
+                          <Input type="date" className="w-full text-sm" {...field} />
                         </FormControl>
                       </FormItem>
                     )}
                   />
                 </div>
 
-                {/* 受注日 */}
-                <FormField
-                  control={form.control}
-                  name="orderDate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs text-slate-600">受注日</FormLabel>
-                      <FormControl>
-                        <Input type="date" className="text-sm w-36" {...field} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-
                 {/* 見積番号 */}
-                <FormField
-                  control={form.control}
-                  name="estimateNumber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs text-slate-600">見積番号</FormLabel>
-                      <FormControl>
-                        <Input className="text-sm w-40" placeholder="2025100100-00" {...field} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
+                <div className="flex-1 min-w-0">
+                  <FormField
+                    control={form.control}
+                    name="estimateNumber"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs text-slate-600">見積番号</FormLabel>
+                        <FormControl>
+                          <Input className="w-full text-sm" placeholder="2025100100-00" {...field} />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
 
                 {/* ステータス */}
-                <FormField
-                  control={form.control}
-                  name="status"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs text-slate-600">ステータス</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger className="w-28 text-sm"><SelectValue /></SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="planning">計画中</SelectItem>
-                          <SelectItem value="active">施工中</SelectItem>
-                          <SelectItem value="completed">完工</SelectItem>
-                          <SelectItem value="suspended">中断</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </FormItem>
-                  )}
-                />
+                <div className="flex-1 min-w-0">
+                  <FormField
+                    control={form.control}
+                    name="status"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs text-slate-600">ステータス</FormLabel>
+                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                          <FormControl>
+                            <SelectTrigger className="w-full text-sm"><SelectValue /></SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="planning">計画中</SelectItem>
+                            <SelectItem value="active">施工中</SelectItem>
+                            <SelectItem value="completed">完工</SelectItem>
+                            <SelectItem value="suspended">中断</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
               </div>
             </CardContent>
           </Card>
