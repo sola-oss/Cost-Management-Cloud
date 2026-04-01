@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, Save, Copy, FileText } from "lucide-react";
+import { Plus, Trash2, Save, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 // ── 定数 ─────────────────────────────────────────────────────────────────────
@@ -375,14 +375,13 @@ export default function Purchases() {
                   <th className="px-3 py-2 text-center w-8 font-medium">No</th>
                   <th className="px-3 py-2 text-left w-28 font-medium">科目</th>
                   <th className="px-3 py-2 text-left font-medium">品名・摘要</th>
-                  <th className="px-3 py-2 text-center w-14 font-medium">単位</th>
                   <th className="px-3 py-2 text-right w-24 font-medium">数量</th>
+                  <th className="px-3 py-2 text-center w-14 font-medium">単位</th>
                   <th className="px-3 py-2 text-right w-28 font-medium">単価</th>
                   <th className="px-3 py-2 text-right w-28 font-medium">金額</th>
-                  <th className="px-3 py-2 text-center w-24 font-medium">税率</th>
-                  <th className="px-3 py-2 text-right w-24 font-medium">消費税</th>
-                  <th className="px-3 py-2 text-left w-28 font-medium">工種コード</th>
-                  <th className="px-3 py-2 text-center w-16 font-medium">操作</th>
+                  <th className="px-3 py-2 text-center w-24 font-medium">消費税率</th>
+                  <th className="px-3 py-2 text-left w-28 font-medium">工種</th>
+                  <th className="px-3 py-2 text-center w-10 font-medium"></th>
                 </tr>
               </thead>
               <tbody>
@@ -427,14 +426,6 @@ export default function Purchases() {
                           className="h-7 text-xs text-slate-500"
                         />
                       </td>
-                      {/* 単位 */}
-                      <td className="px-2 py-1.5">
-                        <Input
-                          value={row.unit}
-                          onChange={e => handleRowChange(idx, "unit", e.target.value)}
-                          className="h-8 text-xs text-center"
-                        />
-                      </td>
                       {/* 数量 */}
                       <td className="px-2 py-1.5">
                         <Input
@@ -442,6 +433,14 @@ export default function Purchases() {
                           value={row.quantity}
                           onChange={e => handleRowChange(idx, "quantity", e.target.value)}
                           className="h-8 text-xs text-right"
+                        />
+                      </td>
+                      {/* 単位 */}
+                      <td className="px-2 py-1.5">
+                        <Input
+                          value={row.unit}
+                          onChange={e => handleRowChange(idx, "unit", e.target.value)}
+                          className="h-8 text-xs text-center"
                         />
                       </td>
                       {/* 単価 */}
@@ -458,7 +457,7 @@ export default function Purchases() {
                       <td className="px-3 py-2 text-right text-sm font-mono text-slate-800">
                         {row.amount > 0 ? row.amount.toLocaleString() : <span className="text-slate-300">—</span>}
                       </td>
-                      {/* 税率 */}
+                      {/* 消費税率 */}
                       <td className="px-2 py-1.5">
                         <Select
                           value={String(row.taxRate)}
@@ -476,11 +475,7 @@ export default function Purchases() {
                           </SelectContent>
                         </Select>
                       </td>
-                      {/* 消費税 */}
-                      <td className="px-3 py-2 text-right text-sm font-mono text-blue-600">
-                        {row.tax > 0 ? row.tax.toLocaleString() : <span className="text-slate-300">—</span>}
-                      </td>
-                      {/* 工種コード */}
+                      {/* 工種 */}
                       <td className="px-2 py-1.5">
                         <Input
                           value={row.workTypeCode}
@@ -489,26 +484,16 @@ export default function Purchases() {
                           className="h-8 text-xs font-mono"
                         />
                       </td>
-                      {/* 操作 */}
-                      <td className="px-2 py-1.5">
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            type="button"
-                            onClick={() => duplicateRow(idx)}
-                            title="行を複写"
-                            className="p-1 rounded text-slate-400 hover:text-teal-600 hover:bg-teal-50"
-                          >
-                            <Copy className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteRow(idx)}
-                            title="行を削除"
-                            className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                      {/* 削除 */}
+                      <td className="px-2 py-1.5 text-center">
+                        <button
+                          type="button"
+                          onClick={() => deleteRow(idx)}
+                          title="行を削除"
+                          className="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </td>
                     </tr>
                   );
