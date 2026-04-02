@@ -45,4 +45,12 @@ export interface CreateProjectRequest {
   memo?: string | null;
   isCompleted?: boolean | null;
   contractLines?: ContractLine[] | null;
+  /** 公共/民間区分 */
+  publicPrivateType?: string | null;
+  /** 得意先コード */
+  clientCode?: string | null;
+  /** 工事経歴書種類 */
+  constructionHistoryType?: string | null;
+  /** 配置技術者名 */
+  constructionHistoryEngineer?: string | null;
 }

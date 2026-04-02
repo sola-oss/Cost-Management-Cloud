@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useLocation, Link } from "wouter";
 import { useCreateProject } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,31 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save, Info, Calculator } from "lucide-react";
+import { ArrowLeft, Save, Calculator } from "lucide-react";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+interface ClientMaster {
+  id: number;
+  clientCode: string;
+  name: string;
+  address: string | null;
+  tel: string | null;
+  contactName: string | null;
+}
+
+function useClients() {
+  const { data } = useQuery<{ items: ClientMaster[] }>({
+    queryKey: ["/api/clients"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/clients`);
+      if (!res.ok) return { items: [] };
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+  return data?.items ?? [];
+}
 
 type ContractLineLocal = { contractDate: string; taxExcluded: string };
 
@@ -55,6 +80,10 @@ const formSchema = z.object({
   isCompleted: z.boolean().default(false),
   recognitionBasis: z.string().optional(),
   status: z.enum(["planning", "active", "completed", "suspended"]),
+  publicPrivateType: z.string().optional(),
+  clientCode: z.string().optional(),
+  constructionHistoryType: z.string().optional(),
+  constructionHistoryEngineer: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -75,9 +104,9 @@ export default function NewProject() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const createProject = useCreateProject();
+  const clients = useClients();
 
   const [contractLines, setContractLines] = useState<ContractLineLocal[]>(EMPTY_LINES);
-  const [showClientDetail, setShowClientDetail] = useState(false);
   const [showBudgetDialog, setShowBudgetDialog] = useState(false);
   const [newProjectId, setNewProjectId] = useState<number | null>(null);
 
@@ -114,6 +143,10 @@ export default function NewProject() {
       isCompleted: false,
       recognitionBasis: "",
       status: "planning",
+      publicPrivateType: "",
+      clientCode: "",
+      constructionHistoryType: "",
+      constructionHistoryEngineer: "",
     },
   });
 
@@ -193,6 +226,10 @@ export default function NewProject() {
       memo: ns(values.memo),
       isCompleted: values.isCompleted,
       contractLines: filledLines.length > 0 ? filledLines : undefined,
+      publicPrivateType: ns(values.publicPrivateType),
+      clientCode: ns(values.clientCode),
+      constructionHistoryType: ns(values.constructionHistoryType),
+      constructionHistoryEngineer: ns(values.constructionHistoryEngineer),
     };
 
     createProject.mutate({ data: payload }, {
@@ -372,31 +409,84 @@ export default function NewProject() {
                     )}
                   />
 
-                  {/* 得意先 + 詳細ボタン */}
+                  {/* 公共/民間区分 */}
                   <FormField
                     control={form.control}
-                    name="clientName"
+                    name="publicPrivateType"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className="text-xs text-slate-600">得意先 <span className="text-destructive">*</span></FormLabel>
-                        <div className="flex gap-2">
+                        <FormLabel className="text-xs text-slate-600">公共/民間区分</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value || ""}>
                           <FormControl>
-                            <Input className="text-sm flex-1" placeholder="例: エステート住建" {...field} />
+                            <SelectTrigger className="text-sm"><SelectValue placeholder="選択" /></SelectTrigger>
                           </FormControl>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="shrink-0 text-xs"
-                            onClick={() => setShowClientDetail(true)}
-                          >
-                            詳細
-                          </Button>
-                        </div>
-                        <FormMessage />
+                          <SelectContent>
+                            <SelectItem value="公共">公共</SelectItem>
+                            <SelectItem value="民間">民間</SelectItem>
+                            <SelectItem value="JV">JV</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </FormItem>
                     )}
                   />
+
+                  {/* 得意先 + 得意先コード */}
+                  <div className="space-y-2">
+                    <FormField
+                      control={form.control}
+                      name="clientName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs text-slate-600">得意先 <span className="text-destructive">*</span></FormLabel>
+                          <div className="flex gap-2">
+                            <Select
+                              onValueChange={(val) => {
+                                if (val === "__manual__") {
+                                  form.setValue("clientCode", "");
+                                  return;
+                                }
+                                const found = clients.find((c) => c.clientCode === val);
+                                if (found) {
+                                  field.onChange(found.name);
+                                  form.setValue("clientCode", found.clientCode);
+                                }
+                              }}
+                              value={clients.find((c) => c.clientCode === form.getValues("clientCode")) ? (form.getValues("clientCode") || "__manual__") : "__manual__"}
+                            >
+                              <SelectTrigger className="text-sm flex-1">
+                                <SelectValue placeholder="得意先を選択" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__manual__">— 直接入力 —</SelectItem>
+                                {clients.map((c) => (
+                                  <SelectItem key={c.id} value={c.clientCode}>
+                                    <span className="font-mono text-slate-500 mr-1 text-xs">{c.clientCode}</span>
+                                    {c.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormControl>
+                              <Input className="text-sm flex-1" placeholder="例: エステート住建" {...field} />
+                            </FormControl>
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="clientCode"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs text-slate-600">得意先コード</FormLabel>
+                          <FormControl>
+                            <Input className="text-sm" placeholder="例: C001" {...field} />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
 
                   {/* 受注区分 + 坪 + ㎡ */}
                   <div className="flex gap-2 items-start">
@@ -459,6 +549,34 @@ export default function NewProject() {
                       </FormItem>
                     )}
                   />
+
+                  {/* 工事経歴書情報 */}
+                  <div className="flex gap-2 items-start">
+                    <FormField
+                      control={form.control}
+                      name="constructionHistoryType"
+                      render={({ field }) => (
+                        <FormItem className="flex-1">
+                          <FormLabel className="text-xs text-slate-600">工事経歴書 種類</FormLabel>
+                          <FormControl>
+                            <Input className="text-sm" placeholder="例: 建築一式" {...field} />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="constructionHistoryEngineer"
+                      render={({ field }) => (
+                        <FormItem className="flex-1">
+                          <FormLabel className="text-xs text-slate-600">配置技術者名</FormLabel>
+                          <FormControl>
+                            <Input className="text-sm" placeholder="例: 田中 太郎" {...field} />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                 </CardContent>
               </Card>
 
@@ -885,28 +1003,6 @@ export default function NewProject() {
           </div>
         </form>
       </Form>
-
-      {/* 得意先詳細モーダル（簡易） */}
-      {showClientDetail && (
-        <div
-          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
-          onClick={() => setShowClientDetail(false)}
-        >
-          <div
-            className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full mx-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <Info className="w-5 h-5 text-teal-600" />
-              <h3 className="font-semibold text-slate-800">得意先詳細</h3>
-            </div>
-            <p className="text-sm text-slate-600">得意先マスタは今後実装予定です。<br />現在は得意先名を直接入力してください。</p>
-            <div className="mt-4 flex justify-end">
-              <Button size="sm" onClick={() => setShowClientDetail(false)}>閉じる</Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 実行予算登録確認ダイアログ */}
       <Dialog open={showBudgetDialog} onOpenChange={() => {}}>

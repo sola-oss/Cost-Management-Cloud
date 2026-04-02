@@ -22,6 +22,7 @@ import EstimateList from "@/pages/estimates/index";
 import NewEstimate from "@/pages/estimates/new";
 import EstimateDetail from "@/pages/estimates/detail";
 import WorkTypeMaster from "@/pages/master/work-types";
+import ClientMaster from "@/pages/master/clients";
 
 const queryClient = new QueryClient();
 
@@ -47,6 +48,7 @@ function Router() {
         <Route path="/vendor-groups" component={VendorGroups} />
         <Route path="/master/vendor-groups" component={VendorGroups} />
         <Route path="/master/work-types" component={WorkTypeMaster} />
+        <Route path="/master/clients" component={ClientMaster} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>

@@ -86,4 +86,12 @@ export interface Project {
   isCompleted?: boolean | null;
   /** 請負金額明細（最大8行） */
   contractLines?: ContractLine[] | null;
+  /** 公共/民間区分 */
+  publicPrivateType?: string | null;
+  /** 得意先コード */
+  clientCode?: string | null;
+  /** 工事経歴書種類 */
+  constructionHistoryType?: string | null;
+  /** 配置技術者名 */
+  constructionHistoryEngineer?: string | null;
 }

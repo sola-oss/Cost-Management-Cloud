@@ -52,6 +52,7 @@ interface EstimateForm {
 
 interface Project { id: number; name: string; projectCode: string; clientName: string; location: string; }
 interface WorkType { id: number; code: string; name: string; }
+interface Client { id: number; clientCode: string; name: string; address: string | null; }
 
 const LEVEL_LABELS: Record<number, string> = { 1: "大", 2: "中", 3: "小", 4: "細", 5: "商品" };
 const ROW_TYPE_LABELS: Record<string, string> = {
@@ -77,6 +78,11 @@ async function fetchProjects(): Promise<{ items: Project[] }> {
 }
 async function fetchWorkTypes(): Promise<WorkType[]> {
   const r = await fetch(`${BASE}/api/work-types`);
+  return r.json();
+}
+async function fetchClients(): Promise<{ items: Client[] }> {
+  const r = await fetch(`${BASE}/api/clients`);
+  if (!r.ok) return { items: [] };
   return r.json();
 }
 async function fetchEstimate(id: number) {
@@ -152,6 +158,8 @@ export default function EstimateEditor({ id }: { id?: number }) {
 
   const { data: projectsData } = useQuery({ queryKey: ["projects-list"], queryFn: fetchProjects });
   const { data: workTypes } = useQuery({ queryKey: ["work-types"], queryFn: fetchWorkTypes });
+  const { data: clientsData } = useQuery({ queryKey: ["clients-list"], queryFn: fetchClients });
+  const clients = clientsData?.items ?? [];
   const { data: existing } = useQuery({
     queryKey: ["estimate", id],
     queryFn: () => fetchEstimate(id!),
@@ -407,6 +415,34 @@ export default function EstimateEditor({ id }: { id?: number }) {
               <div className="grid grid-cols-2 border-b border-slate-300">
                 {/* 得意先エリア */}
                 <div className="border-r border-slate-300 p-4 space-y-2">
+                  {clients.length > 0 && (
+                    <Select
+                      value={clients.find((c) => c.name === form.clientName)?.clientCode ?? "__manual__"}
+                      onValueChange={(val) => {
+                        if (val === "__manual__") return;
+                        const found = clients.find((c) => c.clientCode === val);
+                        if (found) {
+                          sf({
+                            clientName: found.name,
+                            clientAddress: found.address ?? form.clientAddress,
+                          });
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-7 text-xs border-slate-300 mb-1">
+                        <SelectValue placeholder="得意先マスタから選択" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__manual__" className="text-xs text-slate-400">— 直接入力 —</SelectItem>
+                        {clients.map((c) => (
+                          <SelectItem key={c.id} value={c.clientCode} className="text-xs">
+                            <span className="font-mono text-slate-500 mr-1">{c.clientCode}</span>
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   <div className="flex items-baseline gap-2">
                     <input
                       value={form.clientName}

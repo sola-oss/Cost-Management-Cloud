@@ -10,4 +10,5 @@ import type { ListCostItemsCategory } from "./listCostItemsCategory";
 export type ListCostItemsParams = {
   projectId: number;
   category?: ListCostItemsCategory;
+  limit?: number;
 };

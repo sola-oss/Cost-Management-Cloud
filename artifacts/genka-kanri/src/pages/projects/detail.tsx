@@ -10,6 +10,7 @@ import {
   getListCostItemsQueryKey, getGetBudgetVsActualQueryKey,
   getListBudgetItemsQueryKey,
 } from "@workspace/api-client-react";
+import type { ProjectDetail } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -98,6 +99,10 @@ const projectEditSchema = z.object({
   handoverDate: z.string().optional(),
   progressRate: z.coerce.number().min(0).max(100).optional().or(z.literal("")),
   recognitionBasis: z.string().optional(),
+  publicPrivateType: z.string().optional(),
+  clientCode: z.string().optional(),
+  constructionHistoryType: z.string().optional(),
+  constructionHistoryEngineer: z.string().optional(),
 });
 
 const costItemSchema = z.object({
@@ -128,6 +133,23 @@ function useWorkTypes() {
     staleTime: 60_000,
   });
   return data ?? [];
+}
+
+// ─── 得意先マスタ hook ────────────────────────────────────────────────────
+
+type ClientMasterItem = { id: number; clientCode: string; name: string; address: string | null; tel: string | null; contactName: string | null };
+
+function useClients() {
+  const { data } = useQuery<{ items: ClientMasterItem[] }>({
+    queryKey: ["/api/clients"],
+    queryFn: async () => {
+      const res = await fetch("/api/clients");
+      if (!res.ok) return { items: [] };
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+  return data?.items ?? [];
 }
 
 // ─── 実行予算タブ ─────────────────────────────────────────────────────────
@@ -1165,11 +1187,12 @@ function FinancialTab({ projectId, contractAmount }: { projectId: number; contra
 
 // ─── 基本情報タブ ─────────────────────────────────────────────────────────────
 
-function BasicInfoTab({ project, projectId }: { project: NonNullable<ReturnType<typeof useGetProject>["data"]>; projectId: number }) {
+function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectId: number }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
   const updateProject = useUpdateProject();
+  const clients = useClients();
 
   const form = useForm<z.infer<typeof projectEditSchema>>({
     resolver: zodResolver(projectEditSchema),
@@ -1200,6 +1223,10 @@ function BasicInfoTab({ project, projectId }: { project: NonNullable<ReturnType<
       handoverDate: project.handoverDate ?? "",
       progressRate: project.progressRate ?? undefined,
       recognitionBasis: project.recognitionBasis ?? "",
+      publicPrivateType: project.publicPrivateType ?? "",
+      clientCode: project.clientCode ?? "",
+      constructionHistoryType: project.constructionHistoryType ?? "",
+      constructionHistoryEngineer: project.constructionHistoryEngineer ?? "",
     },
   });
 
@@ -1254,6 +1281,10 @@ function BasicInfoTab({ project, projectId }: { project: NonNullable<ReturnType<
       handoverDate: normalizeDate(values.handoverDate),
       progressRate: normalizeNum(values.progressRate),
       recognitionBasis: normalizeStr(values.recognitionBasis),
+      publicPrivateType: normalizeStr(values.publicPrivateType),
+      clientCode: normalizeStr(values.clientCode),
+      constructionHistoryType: normalizeStr(values.constructionHistoryType),
+      constructionHistoryEngineer: normalizeStr(values.constructionHistoryEngineer),
     };
 
     updateProject.mutate(
@@ -1329,12 +1360,70 @@ function BasicInfoTab({ project, projectId }: { project: NonNullable<ReturnType<
                 />
                 <FormField
                   control={form.control}
+                  name="publicPrivateType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>公共/民間区分</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || ""}>
+                        <FormControl>
+                          <SelectTrigger><SelectValue placeholder="選択してください" /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="公共">公共</SelectItem>
+                          <SelectItem value="民間">民間</SelectItem>
+                          <SelectItem value="JV">JV</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
                   name="clientName"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>得意先 <span className="text-destructive">*</span></FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
+                      <div className="flex gap-2">
+                        <Select
+                          onValueChange={(val) => {
+                            if (val === "__manual__") {
+                              form.setValue("clientCode", "");
+                              return;
+                            }
+                            const found = clients.find((c) => c.clientCode === val);
+                            if (found) {
+                              field.onChange(found.name);
+                              form.setValue("clientCode", found.clientCode);
+                            }
+                          }}
+                          value={clients.find((c) => c.clientCode === form.getValues("clientCode")) ? (form.getValues("clientCode") || "__manual__") : "__manual__"}
+                        >
+                          <SelectTrigger className="flex-1">
+                            <SelectValue placeholder="得意先を選択" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__manual__">— 直接入力 —</SelectItem>
+                            {clients.map((c) => (
+                              <SelectItem key={c.id} value={c.clientCode}>
+                                <span className="font-mono text-slate-500 mr-1 text-xs">{c.clientCode}</span>
+                                {c.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormControl><Input className="flex-1" {...field} /></FormControl>
+                      </div>
                       <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="clientCode"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>得意先コード</FormLabel>
+                      <FormControl><Input placeholder="例: C001" {...field} /></FormControl>
                     </FormItem>
                   )}
                 />
@@ -1370,6 +1459,28 @@ function BasicInfoTab({ project, projectId }: { project: NonNullable<ReturnType<
                     </FormItem>
                   )}
                 />
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField
+                    control={form.control}
+                    name="constructionHistoryType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>工事経歴書 種類</FormLabel>
+                        <FormControl><Input placeholder="例: 建築一式" {...field} /></FormControl>
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="constructionHistoryEngineer"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>配置技術者名</FormLabel>
+                        <FormControl><Input placeholder="例: 田中 太郎" {...field} /></FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
                 <div className="space-y-3 rounded-md border border-slate-200 p-4 bg-slate-50/50">
                   <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">請負金額</p>
                   <FormField
@@ -1671,10 +1782,33 @@ function BasicInfoTab({ project, projectId }: { project: NonNullable<ReturnType<
                 <dt className="text-slate-500 mb-0.5">工事場所</dt>
                 <dd className="font-medium text-slate-900">{project.location || "-"}</dd>
               </div>
+              {project.publicPrivateType && (
+                <div>
+                  <dt className="text-slate-500 mb-0.5">公共/民間区分</dt>
+                  <dd className="font-medium text-slate-900">{project.publicPrivateType}</dd>
+                </div>
+              )}
               <div>
                 <dt className="text-slate-500 mb-0.5">得意先</dt>
-                <dd className="font-medium text-slate-900">{project.clientName}</dd>
+                <dd className="font-medium text-slate-900">
+                  {project.clientName}
+                  {project.clientCode && (
+                    <span className="ml-2 text-xs font-mono text-slate-500">({project.clientCode})</span>
+                  )}
+                </dd>
               </div>
+              {project.constructionHistoryType && (
+                <div>
+                  <dt className="text-slate-500 mb-0.5">工事経歴書 種類</dt>
+                  <dd className="font-medium text-slate-900">{project.constructionHistoryType}</dd>
+                </div>
+              )}
+              {project.constructionHistoryEngineer && (
+                <div>
+                  <dt className="text-slate-500 mb-0.5">配置技術者名</dt>
+                  <dd className="font-medium text-slate-900">{project.constructionHistoryEngineer}</dd>
+                </div>
+              )}
               {project.orderType && (
                 <div>
                   <dt className="text-slate-500 mb-0.5">受注区分</dt>

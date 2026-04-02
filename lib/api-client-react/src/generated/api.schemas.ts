@@ -109,6 +109,14 @@ export interface Project {
   isCompleted?: boolean | null;
   /** 請負金額明細（最大8行） */
   contractLines?: ContractLine[] | null;
+  /** 公共/民間区分 */
+  publicPrivateType?: string | null;
+  /** 得意先コード */
+  clientCode?: string | null;
+  /** 工事経歴書種類 */
+  constructionHistoryType?: string | null;
+  /** 配置技術者名 */
+  constructionHistoryEngineer?: string | null;
 }
 
 /**
@@ -295,6 +303,14 @@ export interface CreateProjectRequest {
   memo?: string | null;
   isCompleted?: boolean | null;
   contractLines?: ContractLine[] | null;
+  /** 公共/民間区分 */
+  publicPrivateType?: string | null;
+  /** 得意先コード */
+  clientCode?: string | null;
+  /** 工事経歴書種類 */
+  constructionHistoryType?: string | null;
+  /** 配置技術者名 */
+  constructionHistoryEngineer?: string | null;
 }
 
 export type UpdateProjectRequestStatus =
@@ -345,6 +361,50 @@ export interface UpdateProjectRequest {
   memo?: string | null;
   isCompleted?: boolean | null;
   contractLines?: ContractLine[] | null;
+  /** 公共/民間区分 */
+  publicPrivateType?: string | null;
+  /** 得意先コード */
+  clientCode?: string | null;
+  /** 工事経歴書種類 */
+  constructionHistoryType?: string | null;
+  /** 配置技術者名 */
+  constructionHistoryEngineer?: string | null;
+}
+
+export interface Client {
+  id: number;
+  /** 得意先コード */
+  clientCode: string;
+  /** 得意先名 */
+  name: string;
+  /** 住所 */
+  address?: string | null;
+  /** 電話番号 */
+  tel?: string | null;
+  /** 担当者名 */
+  contactName?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClientListResponse {
+  items: Client[];
+}
+
+export interface CreateClientRequest {
+  clientCode: string;
+  name: string;
+  address?: string | null;
+  tel?: string | null;
+  contactName?: string | null;
+}
+
+export interface UpdateClientRequest {
+  clientCode: string;
+  name: string;
+  address?: string | null;
+  tel?: string | null;
+  contactName?: string | null;
 }
 
 export interface CostItemListResponse {
@@ -568,6 +628,7 @@ export const ListProjectsStatus = {
 export type ListCostItemsParams = {
   projectId: number;
   category?: ListCostItemsCategory;
+  limit?: number;
 };
 
 export type ListCostItemsCategory =

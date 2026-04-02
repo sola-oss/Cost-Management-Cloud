@@ -105,6 +105,7 @@ router.post("/", async (req, res) => {
       handoverDate, progressRate, recognitionBasis,
       projectCodeBranch, startDateActual, endDateActual, handoverDateActual,
       floorAreaTsubo, floorAreaSqm, memo, isCompleted, contractLines,
+      publicPrivateType, clientCode, constructionHistoryType, constructionHistoryEngineer,
     } = req.body;
 
     const [project] = await db.insert(projectsTable).values({
@@ -140,6 +141,10 @@ router.post("/", async (req, res) => {
       memo: memo ?? null,
       isCompleted: isCompleted ?? false,
       contractLines: contractLines ?? null,
+      publicPrivateType: publicPrivateType ?? null,
+      clientCode: clientCode ?? null,
+      constructionHistoryType: constructionHistoryType ?? null,
+      constructionHistoryEngineer: constructionHistoryEngineer ?? null,
     }).returning();
 
     res.status(201).json({
@@ -227,6 +232,7 @@ router.put("/:id", async (req, res) => {
       handoverDate, progressRate, recognitionBasis,
       projectCodeBranch, startDateActual, endDateActual, handoverDateActual,
       floorAreaTsubo, floorAreaSqm, memo, isCompleted, contractLines,
+      publicPrivateType, clientCode, constructionHistoryType, constructionHistoryEngineer,
     } = req.body;
 
     const updateData: Partial<typeof projectsTable.$inferInsert> = {};
@@ -267,6 +273,10 @@ router.put("/:id", async (req, res) => {
     if (memo !== undefined) updateData.memo = memo || null;
     if (isCompleted !== undefined) updateData.isCompleted = isCompleted;
     if (contractLines !== undefined) updateData.contractLines = contractLines;
+    if (publicPrivateType !== undefined) updateData.publicPrivateType = publicPrivateType || null;
+    if (clientCode !== undefined) updateData.clientCode = clientCode || null;
+    if (constructionHistoryType !== undefined) updateData.constructionHistoryType = constructionHistoryType || null;
+    if (constructionHistoryEngineer !== undefined) updateData.constructionHistoryEngineer = constructionHistoryEngineer || null;
     updateData.updatedAt = new Date();
 
     const [updated] = await db.update(projectsTable).set(updateData).where(eq(projectsTable.id, id)).returning();

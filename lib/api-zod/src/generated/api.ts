@@ -99,6 +99,10 @@ export const CreateProjectBody = zod.object({
       }),
     )
     .nullish(),
+  publicPrivateType: zod.string().nullish().describe("公共\/民間区分"),
+  clientCode: zod.string().nullish().describe("得意先コード"),
+  constructionHistoryType: zod.string().nullish().describe("工事経歴書種類"),
+  constructionHistoryEngineer: zod.string().nullish().describe("配置技術者名"),
 });
 
 /**
@@ -160,6 +164,13 @@ export const GetProjectResponse = zod
       )
       .nullish()
       .describe("請負金額明細（最大8行）"),
+    publicPrivateType: zod.string().nullish().describe("公共\/民間区分"),
+    clientCode: zod.string().nullish().describe("得意先コード"),
+    constructionHistoryType: zod.string().nullish().describe("工事経歴書種類"),
+    constructionHistoryEngineer: zod
+      .string()
+      .nullish()
+      .describe("配置技術者名"),
   })
   .and(
     zod.object({
@@ -258,6 +269,10 @@ export const UpdateProjectBody = zod.object({
       }),
     )
     .nullish(),
+  publicPrivateType: zod.string().nullish().describe("公共\/民間区分"),
+  clientCode: zod.string().nullish().describe("得意先コード"),
+  constructionHistoryType: zod.string().nullish().describe("工事経歴書種類"),
+  constructionHistoryEngineer: zod.string().nullish().describe("配置技術者名"),
 });
 
 export const UpdateProjectResponse = zod.object({
@@ -311,6 +326,10 @@ export const UpdateProjectResponse = zod.object({
     )
     .nullish()
     .describe("請負金額明細（最大8行）"),
+  publicPrivateType: zod.string().nullish().describe("公共\/民間区分"),
+  clientCode: zod.string().nullish().describe("得意先コード"),
+  constructionHistoryType: zod.string().nullish().describe("工事経歴書種類"),
+  constructionHistoryEngineer: zod.string().nullish().describe("配置技術者名"),
 });
 
 /**
@@ -346,11 +365,14 @@ export const GetProjectSummaryResponse = zod.object({
 /**
  * @summary 原価項目一覧取得
  */
+export const listCostItemsQueryLimitDefault = 50;
+
 export const ListCostItemsQueryParams = zod.object({
   projectId: zod.coerce.number(),
   category: zod
     .enum(["material", "labor", "subcontract", "expense"])
     .optional(),
+  limit: zod.coerce.number().default(listCostItemsQueryLimitDefault),
 });
 
 export const ListCostItemsResponse = zod.object({
@@ -706,4 +728,66 @@ export const GetBudgetVsActualResponse = zod.object({
       usageRate: zod.number(),
     }),
   ),
+});
+
+/**
+ * @summary 得意先一覧取得
+ */
+export const ListClientsResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      clientCode: zod.string().describe("得意先コード"),
+      name: zod.string().describe("得意先名"),
+      address: zod.string().nullish().describe("住所"),
+      tel: zod.string().nullish().describe("電話番号"),
+      contactName: zod.string().nullish().describe("担当者名"),
+      createdAt: zod.coerce.date(),
+      updatedAt: zod.coerce.date(),
+    }),
+  ),
+});
+
+/**
+ * @summary 得意先登録
+ */
+export const CreateClientBody = zod.object({
+  clientCode: zod.string(),
+  name: zod.string(),
+  address: zod.string().nullish(),
+  tel: zod.string().nullish(),
+  contactName: zod.string().nullish(),
+});
+
+/**
+ * @summary 得意先更新
+ */
+export const UpdateClientParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateClientBody = zod.object({
+  clientCode: zod.string(),
+  name: zod.string(),
+  address: zod.string().nullish(),
+  tel: zod.string().nullish(),
+  contactName: zod.string().nullish(),
+});
+
+export const UpdateClientResponse = zod.object({
+  id: zod.number(),
+  clientCode: zod.string().describe("得意先コード"),
+  name: zod.string().describe("得意先名"),
+  address: zod.string().nullish().describe("住所"),
+  tel: zod.string().nullish().describe("電話番号"),
+  contactName: zod.string().nullish().describe("担当者名"),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary 得意先削除
+ */
+export const DeleteClientParams = zod.object({
+  id: zod.coerce.number(),
 });

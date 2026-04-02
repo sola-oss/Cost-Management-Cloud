@@ -11,6 +11,7 @@ import vendorsRouter from "./vendors";
 import paymentAssessmentsRouter from "./payment-assessments";
 import workTypesRouter from "./work-types";
 import estimatesRouter from "./estimates";
+import clientsRouter from "./clients";
 
 const router: IRouter = Router();
 
@@ -26,5 +27,6 @@ router.use("/vendors", vendorsRouter);
 router.use("/payment-assessments", paymentAssessmentsRouter);
 router.use("/work-types", workTypesRouter);
 router.use("/estimates", estimatesRouter);
+router.use("/clients", clientsRouter);
 
 export default router;

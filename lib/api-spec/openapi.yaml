@@ -176,6 +176,11 @@ paths:
           schema:
             type: string
             enum: [material, labor, subcontract, expense]
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 50
       responses:
         "200":
           description: 原価項目一覧
@@ -467,6 +472,74 @@ paths:
               schema:
                 $ref: "#/components/schemas/BudgetVsActualResponse"
 
+  /clients:
+    get:
+      operationId: listClients
+      tags: [clients]
+      summary: 得意先一覧取得
+      responses:
+        "200":
+          description: 得意先一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientListResponse"
+    post:
+      operationId: createClient
+      tags: [clients]
+      summary: 得意先登録
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateClientRequest"
+      responses:
+        "201":
+          description: 得意先登録成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Client"
+
+  /clients/{id}:
+    put:
+      operationId: updateClient
+      tags: [clients]
+      summary: 得意先更新
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateClientRequest"
+      responses:
+        "200":
+          description: 得意先更新成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Client"
+    delete:
+      operationId: deleteClient
+      tags: [clients]
+      summary: 得意先削除
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: 削除成功
+
 components:
   schemas:
     HealthStatus:
@@ -649,6 +722,22 @@ components:
           description: 請負金額明細（最大8行）
           items:
             $ref: "#/components/schemas/ContractLine"
+        publicPrivateType:
+          type: string
+          nullable: true
+          description: 公共/民間区分
+        clientCode:
+          type: string
+          nullable: true
+          description: 得意先コード
+        constructionHistoryType:
+          type: string
+          nullable: true
+          description: 工事経歴書種類
+        constructionHistoryEngineer:
+          type: string
+          nullable: true
+          description: 配置技術者名
       required:
         - id
         - projectCode
@@ -917,6 +1006,22 @@ components:
           nullable: true
           items:
             $ref: "#/components/schemas/ContractLine"
+        publicPrivateType:
+          type: string
+          nullable: true
+          description: 公共/民間区分
+        clientCode:
+          type: string
+          nullable: true
+          description: 得意先コード
+        constructionHistoryType:
+          type: string
+          nullable: true
+          description: 工事経歴書種類
+        constructionHistoryEngineer:
+          type: string
+          nullable: true
+          description: 配置技術者名
       required:
         - projectCode
         - name
@@ -1043,6 +1148,108 @@ components:
           nullable: true
           items:
             $ref: "#/components/schemas/ContractLine"
+        publicPrivateType:
+          type: string
+          nullable: true
+          description: 公共/民間区分
+        clientCode:
+          type: string
+          nullable: true
+          description: 得意先コード
+        constructionHistoryType:
+          type: string
+          nullable: true
+          description: 工事経歴書種類
+        constructionHistoryEngineer:
+          type: string
+          nullable: true
+          description: 配置技術者名
+
+    Client:
+      type: object
+      properties:
+        id:
+          type: integer
+        clientCode:
+          type: string
+          description: 得意先コード
+        name:
+          type: string
+          description: 得意先名
+        address:
+          type: string
+          nullable: true
+          description: 住所
+        tel:
+          type: string
+          nullable: true
+          description: 電話番号
+        contactName:
+          type: string
+          nullable: true
+          description: 担当者名
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - clientCode
+        - name
+        - createdAt
+        - updatedAt
+
+    ClientListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Client"
+      required:
+        - items
+
+    CreateClientRequest:
+      type: object
+      properties:
+        clientCode:
+          type: string
+        name:
+          type: string
+        address:
+          type: string
+          nullable: true
+        tel:
+          type: string
+          nullable: true
+        contactName:
+          type: string
+          nullable: true
+      required:
+        - clientCode
+        - name
+
+    UpdateClientRequest:
+      type: object
+      properties:
+        clientCode:
+          type: string
+        name:
+          type: string
+        address:
+          type: string
+          nullable: true
+        tel:
+          type: string
+          nullable: true
+        contactName:
+          type: string
+          nullable: true
+      required:
+        - clientCode
+        - name
 
     ContractLine:
       type: object

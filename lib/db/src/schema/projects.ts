@@ -53,6 +53,10 @@ export const projectsTable = pgTable("projects", {
   memo: text("memo"),
   isCompleted: boolean("is_completed").default(false),
   contractLines: json("contract_lines").$type<ContractLine[]>(),
+  publicPrivateType: text("public_private_type"),
+  clientCode: text("client_code"),
+  constructionHistoryType: text("construction_history_type"),
+  constructionHistoryEngineer: text("construction_history_engineer"),
 });
 
 export const insertProjectSchema = createInsertSchema(projectsTable).omit({ id: true, createdAt: true, updatedAt: true });
