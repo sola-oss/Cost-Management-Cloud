@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { Link } from "wouter";
 import { useListProjects, useCreateCostItem, getListProjectsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -9,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, Save, FileText } from "lucide-react";
+import { Plus, Trash2, Save, FileText, ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface WorkTypeItem {
@@ -121,7 +122,7 @@ export default function Purchases() {
   });
   const projects = projectsData?.items ?? [];
   const { data: vendorsData } = useVendors();
-  const vendorNames = vendorsData?.items?.map((v) => v.name) ?? [];
+  const vendors = vendorsData?.items ?? [];
   const { data: workTypesData } = useWorkTypes();
   const workTypes = workTypesData ?? [];
   const createCostItem = useCreateCostItem();
@@ -130,7 +131,7 @@ export default function Purchases() {
   // ── ヘッダー状態 ─────────────────────────────────────────────────────────
   const [slipNumber]      = useState(() => generateSlipNumber());
   const [purchaseDate,    setPurchaseDate]    = useState(TODAY);
-  const [vendorName,      setVendorName]      = useState("");
+  const [vendorId,        setVendorId]        = useState<string>("");
   const [paymentDueDate,  setPaymentDueDate]  = useState("");
   const [selectedProject, setSelectedProject] = useState<string>("");
   const [orderNumber,     setOrderNumber]     = useState("");
@@ -179,7 +180,7 @@ export default function Purchases() {
 
   const newSlip = () => {
     setPurchaseDate(TODAY);
-    setVendorName("");
+    setVendorId("");
     setPaymentDueDate("");
     setSelectedProject("");
     setOrderNumber("");
@@ -205,6 +206,9 @@ export default function Purchases() {
     const categoryMap: Record<string, "material" | "labor" | "subcontract" | "expense"> = {
       "610": "material", "620": "subcontract", "630": "labor", "640": "expense",
     };
+
+    const selectedVendor = vendorId && vendorId !== "none" ? vendors.find(v => String(v.id) === vendorId) : undefined;
+    const vendorName = selectedVendor?.name ?? "";
 
     setSaving(true);
     try {
@@ -341,18 +345,29 @@ export default function Purchases() {
               {/* 仕入先 */}
               <div className="space-y-1">
                 <Label className="text-xs text-slate-600">仕入先</Label>
-                <Input
-                  value={vendorName}
-                  onChange={e => setVendorName(e.target.value)}
-                  placeholder="例: 山田建材株式会社"
-                  className="text-sm"
-                  list="vendor-suggestions"
-                />
-                <datalist id="vendor-suggestions">
-                  {vendorNames.map((name) => (
-                    <option key={name} value={name} />
-                  ))}
-                </datalist>
+                {vendors.length === 0 ? (
+                  <div className="flex items-center gap-2 py-1.5">
+                    <span className="text-xs text-slate-400">仕入先が未登録です。</span>
+                    <Link href="/vendors" className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 hover:underline font-medium">
+                      <ExternalLink className="w-3 h-3" />
+                      新規登録
+                    </Link>
+                  </div>
+                ) : (
+                  <Select value={vendorId} onValueChange={setVendorId}>
+                    <SelectTrigger className="text-sm">
+                      <SelectValue placeholder="仕入先を選択してください" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">（指定なし）</SelectItem>
+                      {vendors.map((v) => (
+                        <SelectItem key={v.id} value={String(v.id)}>
+                          {v.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
 
               {/* 支払予定日 */}
