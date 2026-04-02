@@ -16,7 +16,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save, Calculator } from "lucide-react";
+import { ArrowLeft, Save, Calculator, FolderSearch } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -38,6 +39,30 @@ function useClients() {
       return res.json();
     },
     staleTime: 60_000,
+  });
+  return data?.items ?? [];
+}
+
+interface EstimateListItem {
+  id: number;
+  estimateNumber: string;
+  subject: string;
+  clientName: string;
+  taxExcludedAmount: number | null;
+  taxIncludedAmount: number | null;
+  estimateDate: string | null;
+  createdDate: string | null;
+}
+
+function useEstimates() {
+  const { data } = useQuery<{ items: EstimateListItem[] }>({
+    queryKey: ["/api/estimates"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/estimates`);
+      if (!res.ok) return { items: [] };
+      return res.json();
+    },
+    staleTime: 30_000,
   });
   return data?.items ?? [];
 }
@@ -105,10 +130,12 @@ export default function NewProject() {
   const { toast } = useToast();
   const createProject = useCreateProject();
   const clients = useClients();
+  const estimates = useEstimates();
 
   const [contractLines, setContractLines] = useState<ContractLineLocal[]>(EMPTY_LINES);
   const [showBudgetDialog, setShowBudgetDialog] = useState(false);
   const [newProjectId, setNewProjectId] = useState<number | null>(null);
+  const [estimatePickerOpen, setEstimatePickerOpen] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -319,9 +346,21 @@ export default function NewProject() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel className="text-xs text-slate-600">見積番号</FormLabel>
-                        <FormControl>
-                          <Input className="w-full text-sm" placeholder="2025100100-00" {...field} />
-                        </FormControl>
+                        <div className="flex gap-1.5">
+                          <FormControl>
+                            <Input className="w-full text-sm" placeholder="2025100100-00" {...field} />
+                          </FormControl>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="shrink-0 text-xs border-teal-600 text-teal-700 hover:bg-teal-50"
+                            onClick={() => setEstimatePickerOpen(true)}
+                          >
+                            <FolderSearch className="w-3.5 h-3.5 mr-1" />
+                            参照
+                          </Button>
+                        </div>
                       </FormItem>
                     )}
                   />
@@ -942,6 +981,76 @@ export default function NewProject() {
           </div>
         </form>
       </Form>
+
+      {/* 見積書参照ダイアログ */}
+      <Dialog open={estimatePickerOpen} onOpenChange={setEstimatePickerOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-teal-700">
+              <FolderSearch className="w-5 h-5" />
+              見積書を選択
+            </DialogTitle>
+            <DialogDescription>
+              選択すると見積番号・工事名称・得意先・請負金額が自動入力されます
+            </DialogDescription>
+          </DialogHeader>
+          <div className="overflow-auto flex-1 border rounded-md">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-teal-700 hover:bg-teal-700">
+                  <TableHead className="text-white text-xs">見積番号</TableHead>
+                  <TableHead className="text-white text-xs">件名</TableHead>
+                  <TableHead className="text-white text-xs">得意先</TableHead>
+                  <TableHead className="text-white text-xs text-right">見積金額（税込）</TableHead>
+                  <TableHead className="text-white text-xs">作成日</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {estimates.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center text-sm text-slate-400 py-8">
+                      見積書が登録されていません
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  estimates.map((est) => (
+                    <TableRow
+                      key={est.id}
+                      className="cursor-pointer hover:bg-teal-50"
+                      onClick={() => {
+                        form.setValue("estimateNumber", est.estimateNumber);
+                        form.setValue("name", est.subject || "");
+                        form.setValue("clientName", est.clientName || "");
+                        if (est.taxExcludedAmount != null) {
+                          setContractLines((prev) => {
+                            const next = [...prev];
+                            next[0] = { ...next[0], taxExcluded: String(est.taxExcludedAmount) };
+                            return next;
+                          });
+                        }
+                        setEstimatePickerOpen(false);
+                      }}
+                    >
+                      <TableCell className="text-xs font-mono">{est.estimateNumber}</TableCell>
+                      <TableCell className="text-xs">{est.subject || "—"}</TableCell>
+                      <TableCell className="text-xs">{est.clientName || "—"}</TableCell>
+                      <TableCell className="text-xs text-right">
+                        {est.taxIncludedAmount != null
+                          ? est.taxIncludedAmount.toLocaleString("ja-JP") + " 円"
+                          : "—"}
+                      </TableCell>
+                      <TableCell className="text-xs">{est.createdDate ?? est.estimateDate ?? "—"}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEstimatePickerOpen(false)}>キャンセル</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 実行予算登録確認ダイアログ */}
       <Dialog open={showBudgetDialog} onOpenChange={() => {}}>
