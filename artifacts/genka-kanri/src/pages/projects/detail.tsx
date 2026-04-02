@@ -33,7 +33,7 @@ import { formatCurrency, formatPercent } from "@/lib/utils";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -113,29 +113,22 @@ const costItemSchema = z.object({
   notes: z.string().optional(),
 });
 
-// ─── 工種マスタ（建設業一般的工種コード） ───────────────────────────────
-const WORK_TYPE_MASTER = [
-  { code: "0610", name: "仮設工事" },
-  { code: "0620", name: "土工事" },
-  { code: "0630", name: "地業工事" },
-  { code: "0640", name: "鉄筋工事" },
-  { code: "0650", name: "基礎工事" },
-  { code: "0660", name: "木工事" },
-  { code: "0670", name: "屋根工事" },
-  { code: "0680", name: "金属工事" },
-  { code: "0690", name: "左官工事" },
-  { code: "0700", name: "タイル・石工事" },
-  { code: "0710", name: "建具工事" },
-  { code: "0720", name: "内装工事" },
-  { code: "0730", name: "塗装工事" },
-  { code: "0740", name: "防水工事" },
-  { code: "0750", name: "断熱工事" },
-  { code: "0760", name: "電気設備工事" },
-  { code: "0770", name: "給排水設備工事" },
-  { code: "0780", name: "空調設備工事" },
-  { code: "0790", name: "外構工事" },
-  { code: "0800", name: "その他" },
-] as const;
+// ─── 工種マスタ hook ─────────────────────────────────────────────────────
+
+type WorkTypeMasterItem = { id: number; code: string; name: string; constructionType: string };
+
+function useWorkTypes() {
+  const { data } = useQuery<WorkTypeMasterItem[]>({
+    queryKey: ["/api/work-types"],
+    queryFn: async () => {
+      const res = await fetch("/api/work-types");
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+  return data ?? [];
+}
 
 // ─── 実行予算タブ ─────────────────────────────────────────────────────────
 
@@ -151,6 +144,7 @@ type EditingRow = {
 function BudgetTab({ projectId }: { projectId: number }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const workTypeMaster = useWorkTypes();
 
   const { data: budgetItemsData, isLoading } = useListBudgetItems(
     projectId,
@@ -326,13 +320,6 @@ function BudgetTab({ projectId }: { projectId: number }) {
         </Card>
       </div>
 
-      {/* 工種コード候補リスト（datalist） */}
-      <datalist id="work-type-codes">
-        {WORK_TYPE_MASTER.map((wt) => (
-          <option key={wt.code} value={wt.code}>{wt.name}</option>
-        ))}
-      </datalist>
-
       {/* ── 実行予算グリッド ── */}
       <Card>
         <CardHeader className="border-b py-3 bg-slate-50/50 flex flex-row items-center justify-between space-y-0">
@@ -399,27 +386,35 @@ function BudgetTab({ projectId }: { projectId: number }) {
                       <TableRow key={item.id} className={isEditing ? "bg-blue-50" : "hover:bg-slate-50/50"}>
                         {isEditing ? (
                           <>
-                            <TableCell className="py-1.5">
-                              <Input
-                                className="h-7 text-xs font-mono"
-                                list="work-type-codes"
-                                value={editingValues.workTypeCode}
-                                onChange={(e) => {
-                                  const code = e.target.value;
-                                  setEditingValues((v) => ({ ...v, workTypeCode: code }));
-                                  const wt = WORK_TYPE_MASTER.find((w) => w.code === code);
-                                  if (wt) setEditingValues((v) => ({ ...v, workTypeCode: wt.code, workTypeName: wt.name }));
+                            <TableCell className="py-1.5" colSpan={2}>
+                              <Select
+                                value={editingValues.workTypeCode || "__none__"}
+                                onValueChange={(code) => {
+                                  if (code === "__none__") {
+                                    setEditingValues((v) => ({ ...v, workTypeCode: "", workTypeName: "" }));
+                                    return;
+                                  }
+                                  const wt = workTypeMaster.find((w) => w.code === code);
+                                  setEditingValues((v) => ({
+                                    ...v,
+                                    workTypeCode: code,
+                                    workTypeName: wt?.name ?? "",
+                                  }));
                                 }}
-                                placeholder="コード"
-                              />
-                            </TableCell>
-                            <TableCell className="py-1.5">
-                              <Input
-                                className="h-7 text-xs"
-                                value={editingValues.workTypeName}
-                                onChange={(e) => setEditingValues((v) => ({ ...v, workTypeName: e.target.value }))}
-                                placeholder="工種名称"
-                              />
+                              >
+                                <SelectTrigger className="h-7 text-xs">
+                                  <SelectValue placeholder="工種を選択" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__none__" className="text-xs text-slate-400">— 未選択 —</SelectItem>
+                                  {workTypeMaster.map((wt) => (
+                                    <SelectItem key={wt.id} value={wt.code} className="text-xs">
+                                      <span className="font-mono text-slate-500 mr-1">{wt.code}</span>
+                                      {wt.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </TableCell>
                             <TableCell className="py-1.5">
                               <Input
@@ -500,28 +495,35 @@ function BudgetTab({ projectId }: { projectId: number }) {
                   {/* 新規行追加フォーム */}
                   {addingRow && (
                     <TableRow className="bg-emerald-50">
-                      <TableCell className="py-1.5">
-                        <Input
-                          className="h-7 text-xs font-mono"
-                          list="work-type-codes"
-                          value={newRow.workTypeCode}
-                          onChange={(e) => {
-                            const code = e.target.value;
-                            setNewRow((r) => ({ ...r, workTypeCode: code }));
-                            const wt = WORK_TYPE_MASTER.find((w) => w.code === code);
-                            if (wt) setNewRow((r) => ({ ...r, workTypeCode: wt.code, workTypeName: wt.name }));
+                      <TableCell className="py-1.5" colSpan={2}>
+                        <Select
+                          value={newRow.workTypeCode || "__none__"}
+                          onValueChange={(code) => {
+                            if (code === "__none__") {
+                              setNewRow((r) => ({ ...r, workTypeCode: "", workTypeName: "" }));
+                              return;
+                            }
+                            const wt = workTypeMaster.find((w) => w.code === code);
+                            setNewRow((r) => ({
+                              ...r,
+                              workTypeCode: code,
+                              workTypeName: wt?.name ?? "",
+                            }));
                           }}
-                          placeholder="コード"
-                          autoFocus
-                        />
-                      </TableCell>
-                      <TableCell className="py-1.5">
-                        <Input
-                          className="h-7 text-xs"
-                          value={newRow.workTypeName}
-                          onChange={(e) => setNewRow((r) => ({ ...r, workTypeName: e.target.value }))}
-                          placeholder="工種名称"
-                        />
+                        >
+                          <SelectTrigger className="h-7 text-xs">
+                            <SelectValue placeholder="工種を選択" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__" className="text-xs text-slate-400">— 未選択 —</SelectItem>
+                            {workTypeMaster.map((wt) => (
+                              <SelectItem key={wt.id} value={wt.code} className="text-xs">
+                                <span className="font-mono text-slate-500 mr-1">{wt.code}</span>
+                                {wt.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </TableCell>
                       <TableCell className="py-1.5">
                         <Input

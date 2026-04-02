@@ -6,6 +6,8 @@ export const workTypesTable = pgTable("work_types", {
   id: serial("id").primaryKey(),
   code: text("code").notNull().unique(),
   name: text("name").notNull(),
+  constructionType: text("construction_type").notNull().default("その他"),
+  notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

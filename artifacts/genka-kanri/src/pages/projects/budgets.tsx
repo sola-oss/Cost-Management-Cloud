@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { useParams, Link, useLocation } from "wouter";
+import { useState, useEffect, useRef } from "react";
+import { useParams, Link } from "wouter";
 import {
   useGetProject, useGetProjectSummary, useListBudgetItems,
   useCreateBudgetItem, useUpdateBudgetItem, useDeleteBudgetItem,
@@ -21,7 +21,7 @@ import { formatCurrency } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
-type WorkType = { id: number; code: string; name: string };
+type WorkType = { id: number; code: string; name: string; constructionType?: string };
 
 type RowState = {
   id?: number;
@@ -49,12 +49,9 @@ function parseN(s: string) {
   return parseFloat(s.replace(/,/g, "")) || 0;
 }
 
-const NUMERIC_COLS = ["contractAmount", "initialBudget", "revisedBudget"] as const;
-const TEXT_COLS = ["workTypeCode", "workTypeName", "supplierCode", "supplierName"] as const;
-
-const COLS: { key: keyof RowState; label: string; width: string; align: "left" | "right"; numeric?: boolean }[] = [
-  { key: "workTypeCode",   label: "工種コード",   width: "100px", align: "left" },
-  { key: "workTypeName",   label: "工種名",       width: "140px", align: "left" },
+const COLS: { key: keyof RowState; label: string; width: string; align: "left" | "right"; numeric?: boolean; hidden?: boolean }[] = [
+  { key: "workTypeCode",   label: "工種",         width: "240px", align: "left" },
+  { key: "workTypeName",   label: "工種名",       width: "0px",   align: "left", hidden: true },
   { key: "supplierCode",   label: "仕入先コード", width: "90px",  align: "left" },
   { key: "supplierName",   label: "仕入先名",     width: "150px", align: "left" },
   { key: "contractAmount", label: "請負金額",     width: "110px", align: "right", numeric: true },
@@ -75,96 +72,10 @@ function useWorkTypes() {
   return workTypes;
 }
 
-type ComboBoxProps = {
-  value: string;
-  onChange: (value: string) => void;
-  onSelectWorkType: (wt: WorkType) => void;
-  workTypes: WorkType[];
-  filterField: "code" | "name";
-  inputRef?: (el: HTMLInputElement | null) => void;
-  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
-  placeholder?: string;
-};
-
-function WorkTypeComboBox({
-  value, onChange, onSelectWorkType, workTypes, filterField,
-  inputRef, onKeyDown, placeholder,
-}: ComboBoxProps) {
-  const [open, setOpen] = useState(false);
-  const [inputValue, setInputValue] = useState(value);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => { setInputValue(value); }, [value]);
-
-  const filtered = inputValue.length > 0
-    ? workTypes.filter(wt => {
-        const v = inputValue.toLowerCase();
-        return filterField === "code"
-          ? wt.code.toLowerCase().includes(v)
-          : wt.name.toLowerCase().includes(v);
-      })
-    : workTypes;
-
-  function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setInputValue(e.target.value);
-    onChange(e.target.value);
-    setOpen(true);
-  }
-
-  function handleSelect(wt: WorkType) {
-    onSelectWorkType(wt);
-    setOpen(false);
-  }
-
-  function handleBlur(e: React.FocusEvent) {
-    if (containerRef.current?.contains(e.relatedTarget as Node)) return;
-    setOpen(false);
-  }
-
-  function handleFocus() {
-    setOpen(true);
-  }
-
-  return (
-    <div ref={containerRef} className="relative w-full" onBlur={handleBlur}>
-      <input
-        ref={inputRef}
-        type="text"
-        value={inputValue}
-        onChange={handleInputChange}
-        onFocus={handleFocus}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") { setOpen(false); }
-          if (onKeyDown) onKeyDown(e);
-        }}
-        placeholder={placeholder}
-        className="w-full h-full px-2 py-1 bg-transparent outline-none focus:bg-teal-50 focus:ring-1 focus:ring-teal-400 text-xs"
-        style={{ minHeight: "28px" }}
-      />
-      {open && filtered.length > 0 && (
-        <div className="absolute z-50 top-full left-0 min-w-[200px] max-h-48 overflow-y-auto bg-white border border-slate-200 rounded shadow-lg">
-          {filtered.slice(0, 20).map(wt => (
-            <button
-              key={wt.id}
-              type="button"
-              tabIndex={-1}
-              onMouseDown={() => handleSelect(wt)}
-              className="w-full text-left px-2 py-1.5 text-xs hover:bg-teal-50 flex gap-2"
-            >
-              <span className="text-slate-500 font-mono w-8 shrink-0">{wt.code}</span>
-              <span className="text-slate-800">{wt.name}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 export default function BudgetManagement() {
   const { id } = useParams<{ id: string }>();
   const projectId = parseInt(id || "0", 10);
-  const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const workTypes = useWorkTypes();
@@ -297,6 +208,7 @@ export default function BudgetManagement() {
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>, rowIdx: number, colKey: string) {
+    const visibleCols = COLS.filter(c => !c.hidden);
     if (e.key === "Enter" && e.ctrlKey) {
       e.preventDefault();
       if (rowIdx > 0) {
@@ -306,13 +218,13 @@ export default function BudgetManagement() {
     }
     if (e.key === "Tab") {
       e.preventDefault();
-      const colIdx = COLS.findIndex(c => c.key === colKey);
+      const colIdx = visibleCols.findIndex(c => c.key === colKey);
       let nextColIdx = colIdx + (e.shiftKey ? -1 : 1);
       let nextRowIdx = rowIdx;
-      if (nextColIdx >= COLS.length) { nextColIdx = 0; nextRowIdx++; }
-      if (nextColIdx < 0) { nextColIdx = COLS.length - 1; nextRowIdx--; }
+      if (nextColIdx >= visibleCols.length) { nextColIdx = 0; nextRowIdx++; }
+      if (nextColIdx < 0) { nextColIdx = visibleCols.length - 1; nextRowIdx--; }
       if (nextRowIdx >= 0 && nextRowIdx < rows.length) {
-        const ref = cellRefs.current[`${nextRowIdx}-${COLS[nextColIdx].key}`];
+        const ref = cellRefs.current[`${nextRowIdx}-${visibleCols[nextColIdx].key}`];
         if (ref) ref.focus();
       }
       return;
@@ -586,7 +498,7 @@ export default function BudgetManagement() {
                           onCheckedChange={v => setSelectedRows(v ? new Set(rows.map((_, i) => i)) : new Set())}
                         />
                       </th>
-                      {COLS.map(col => (
+                      {COLS.filter(col => !col.hidden).map(col => (
                         <th key={col.key}
                           style={{ width: col.width, minWidth: col.width }}
                           className={`border border-teal-600 px-2 py-1.5 font-semibold ${col.align === "right" ? "text-right" : "text-left"}`}>
@@ -633,31 +545,43 @@ export default function BudgetManagement() {
                                 checked={isSelected}
                                 onCheckedChange={() => handleToggleRow(rowIdx)} />
                             </td>
-                            {COLS.map(col => (
+                            {COLS.filter(col => !col.hidden).map(col => (
                               <td key={col.key}
                                 className={`border border-slate-100 p-0 ${col.align === "right" ? "text-right" : ""}`}>
                                 {col.key === "workTypeCode" ? (
-                                  <WorkTypeComboBox
-                                    value={row.workTypeCode}
-                                    onChange={v => handleCellChange(rowIdx, "workTypeCode", v)}
-                                    onSelectWorkType={wt => handleSelectWorkType(rowIdx, wt)}
-                                    workTypes={workTypes}
-                                    filterField="code"
-                                    inputRef={el => { cellRefs.current[`${rowIdx}-workTypeCode`] = el; }}
-                                    onKeyDown={e => handleKeyDown(e, rowIdx, "workTypeCode")}
-                                    placeholder="コード"
-                                  />
-                                ) : col.key === "workTypeName" ? (
-                                  <WorkTypeComboBox
-                                    value={row.workTypeName}
-                                    onChange={v => handleCellChange(rowIdx, "workTypeName", v)}
-                                    onSelectWorkType={wt => handleSelectWorkType(rowIdx, wt)}
-                                    workTypes={workTypes}
-                                    filterField="name"
-                                    inputRef={el => { cellRefs.current[`${rowIdx}-workTypeName`] = el; }}
-                                    onKeyDown={e => handleKeyDown(e, rowIdx, "workTypeName")}
-                                    placeholder="工種名"
-                                  />
+                                  <Select
+                                    value={row.workTypeCode || "__none__"}
+                                    onValueChange={code => {
+                                      if (code === "__none__") {
+                                        handleSelectWorkType(rowIdx, { id: 0, code: "", name: "" });
+                                        return;
+                                      }
+                                      const wt = workTypes.find(w => w.code === code);
+                                      if (wt) handleSelectWorkType(rowIdx, wt);
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-7 w-full border-0 rounded-none text-xs focus:ring-1 focus:ring-teal-400 focus:ring-inset" style={{ minHeight: "28px" }}>
+                                      <SelectValue placeholder="工種を選択">
+                                        {row.workTypeCode ? (
+                                          <span>
+                                            <span className="font-mono text-slate-500 mr-1">{row.workTypeCode}</span>
+                                            {row.workTypeName}
+                                          </span>
+                                        ) : (
+                                          <span className="text-slate-400">工種を選択</span>
+                                        )}
+                                      </SelectValue>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="__none__" className="text-xs text-slate-400">— 未選択 —</SelectItem>
+                                      {workTypes.map(wt => (
+                                        <SelectItem key={wt.id} value={wt.code} className="text-xs">
+                                          <span className="font-mono text-slate-500 mr-1">{wt.code}</span>
+                                          {wt.name}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
                                 ) : (
                                   <input
                                     ref={el => { cellRefs.current[`${rowIdx}-${col.key}`] = el; }}

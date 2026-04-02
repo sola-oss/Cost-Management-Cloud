@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, CreditCard, Calculator, Users, Layers, FileText } from "lucide-react";
+import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, CreditCard, Calculator, Users, Layers, FileText, Wrench } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarProvider, SidebarRail, SidebarTrigger, SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from "./ui/sidebar";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
@@ -22,6 +22,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   ];
 
   const masterNav = [
+    { title: "工種マスタ", icon: Wrench, url: "/master/work-types" },
     { title: "仕入先マスタ", icon: Users, url: "/vendors" },
     { title: "仕入先グループ", icon: Layers, url: "/vendor-groups" },
   ];

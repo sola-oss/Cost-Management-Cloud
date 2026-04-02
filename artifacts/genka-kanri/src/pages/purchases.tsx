@@ -12,6 +12,24 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Trash2, Save, FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
+interface WorkTypeItem {
+  id: number;
+  code: string;
+  name: string;
+  constructionType: string;
+}
+
+function useWorkTypes() {
+  return useQuery({
+    queryKey: ["/api/work-types"],
+    queryFn: async () => {
+      const res = await fetch("/api/work-types");
+      if (!res.ok) throw new Error("Failed to fetch work types");
+      return res.json() as Promise<WorkTypeItem[]>;
+    },
+  });
+}
+
 // ── 定数 ─────────────────────────────────────────────────────────────────────
 const TODAY = new Date().toISOString().split("T")[0];
 
@@ -104,6 +122,8 @@ export default function Purchases() {
   const projects = projectsData?.items ?? [];
   const { data: vendorsData } = useVendors();
   const vendorNames = vendorsData?.items?.map((v) => v.name) ?? [];
+  const { data: workTypesData } = useWorkTypes();
+  const workTypes = workTypesData ?? [];
   const createCostItem = useCreateCostItem();
   const [saving, setSaving] = useState(false);
 
@@ -551,12 +571,23 @@ export default function Purchases() {
                       </td>
                       {/* 工種 */}
                       <td className="px-2 py-1.5">
-                        <Input
-                          value={row.workTypeCode}
-                          onChange={e => handleRowChange(idx, "workTypeCode", e.target.value)}
-                          placeholder="工種コード"
-                          className="h-8 text-xs font-mono"
-                        />
+                        <Select
+                          value={row.workTypeCode || "__none__"}
+                          onValueChange={v => handleRowChange(idx, "workTypeCode", v === "__none__" ? "" : v)}
+                        >
+                          <SelectTrigger className="h-8 text-xs border-slate-200 min-w-[110px]">
+                            <SelectValue placeholder="工種" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__" className="text-xs text-slate-400">— 未選択 —</SelectItem>
+                            {workTypes.map(wt => (
+                              <SelectItem key={wt.id} value={wt.code} className="text-xs">
+                                <span className="font-mono text-slate-500 mr-1">{wt.code}</span>
+                                {wt.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </td>
                       {/* 削除 */}
                       <td className="px-2 py-1.5 text-center">
