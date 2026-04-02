@@ -43,7 +43,9 @@ function Router() {
         <Route path="/estimates/new" component={NewEstimate} />
         <Route path="/estimates/:id" component={EstimateDetail} />
         <Route path="/vendors" component={Vendors} />
+        <Route path="/master/suppliers" component={Vendors} />
         <Route path="/vendor-groups" component={VendorGroups} />
+        <Route path="/master/vendor-groups" component={VendorGroups} />
         <Route path="/master/work-types" component={WorkTypeMaster} />
         <Route component={NotFound} />
       </Switch>

@@ -23,8 +23,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   const masterNav = [
     { title: "工種マスタ", icon: Wrench, url: "/master/work-types" },
-    { title: "仕入先マスタ", icon: Users, url: "/vendors" },
-    { title: "仕入先グループ", icon: Layers, url: "/vendor-groups" },
+    { title: "仕入先マスタ", icon: Users, url: "/master/suppliers" },
+    { title: "仕入先グループ", icon: Layers, url: "/master/vendor-groups" },
   ];
 
   const isActive = (url: string) =>
