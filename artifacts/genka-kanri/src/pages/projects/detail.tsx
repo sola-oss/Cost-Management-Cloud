@@ -1360,25 +1360,6 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
                 />
                 <FormField
                   control={form.control}
-                  name="publicPrivateType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>公共/民間区分</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value || ""}>
-                        <FormControl>
-                          <SelectTrigger><SelectValue placeholder="選択してください" /></SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="公共">公共</SelectItem>
-                          <SelectItem value="民間">民間</SelectItem>
-                          <SelectItem value="JV">JV</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
                   name="clientName"
                   render={({ field }) => (
                     <FormItem>
@@ -1412,18 +1393,9 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
                           </SelectContent>
                         </Select>
                         <FormControl><Input className="flex-1" {...field} /></FormControl>
+                        <Input className="w-32" placeholder="得意先コード" {...form.register("clientCode")} />
                       </div>
                       <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="clientCode"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>得意先コード</FormLabel>
-                      <FormControl><Input placeholder="例: C001" {...field} /></FormControl>
                     </FormItem>
                   )}
                 />
@@ -1459,28 +1431,6 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
                     </FormItem>
                   )}
                 />
-                <div className="grid grid-cols-2 gap-3">
-                  <FormField
-                    control={form.control}
-                    name="constructionHistoryType"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>工事経歴書 種類</FormLabel>
-                        <FormControl><Input placeholder="例: 建築一式" {...field} /></FormControl>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="constructionHistoryEngineer"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>配置技術者名</FormLabel>
-                        <FormControl><Input placeholder="例: 田中 太郎" {...field} /></FormControl>
-                      </FormItem>
-                    )}
-                  />
-                </div>
                 <div className="space-y-3 rounded-md border border-slate-200 p-4 bg-slate-50/50">
                   <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">請負金額</p>
                   <FormField
@@ -1782,12 +1732,6 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
                 <dt className="text-slate-500 mb-0.5">工事場所</dt>
                 <dd className="font-medium text-slate-900">{project.location || "-"}</dd>
               </div>
-              {project.publicPrivateType && (
-                <div>
-                  <dt className="text-slate-500 mb-0.5">公共/民間区分</dt>
-                  <dd className="font-medium text-slate-900">{project.publicPrivateType}</dd>
-                </div>
-              )}
               <div>
                 <dt className="text-slate-500 mb-0.5">得意先</dt>
                 <dd className="font-medium text-slate-900">
@@ -1797,18 +1741,6 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
                   )}
                 </dd>
               </div>
-              {project.constructionHistoryType && (
-                <div>
-                  <dt className="text-slate-500 mb-0.5">工事経歴書 種類</dt>
-                  <dd className="font-medium text-slate-900">{project.constructionHistoryType}</dd>
-                </div>
-              )}
-              {project.constructionHistoryEngineer && (
-                <div>
-                  <dt className="text-slate-500 mb-0.5">配置技術者名</dt>
-                  <dd className="font-medium text-slate-900">{project.constructionHistoryEngineer}</dd>
-                </div>
-              )}
               {project.orderType && (
                 <div>
                   <dt className="text-slate-500 mb-0.5">受注区分</dt>

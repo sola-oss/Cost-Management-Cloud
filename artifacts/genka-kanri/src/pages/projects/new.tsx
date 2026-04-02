@@ -409,84 +409,50 @@ export default function NewProject() {
                     )}
                   />
 
-                  {/* 公共/民間区分 */}
+                  {/* 得意先 + 得意先コード */}
                   <FormField
                     control={form.control}
-                    name="publicPrivateType"
+                    name="clientName"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className="text-xs text-slate-600">公共/民間区分</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value || ""}>
+                        <FormLabel className="text-xs text-slate-600">得意先 <span className="text-destructive">*</span></FormLabel>
+                        <div className="flex gap-2">
+                          <Select
+                            onValueChange={(val) => {
+                              if (val === "__manual__") {
+                                form.setValue("clientCode", "");
+                                return;
+                              }
+                              const found = clients.find((c) => c.clientCode === val);
+                              if (found) {
+                                field.onChange(found.name);
+                                form.setValue("clientCode", found.clientCode);
+                              }
+                            }}
+                            value={clients.find((c) => c.clientCode === form.getValues("clientCode")) ? (form.getValues("clientCode") || "__manual__") : "__manual__"}
+                          >
+                            <SelectTrigger className="text-sm flex-1">
+                              <SelectValue placeholder="得意先を選択" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__manual__">— 直接入力 —</SelectItem>
+                              {clients.map((c) => (
+                                <SelectItem key={c.id} value={c.clientCode}>
+                                  <span className="font-mono text-slate-500 mr-1 text-xs">{c.clientCode}</span>
+                                  {c.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                           <FormControl>
-                            <SelectTrigger className="text-sm"><SelectValue placeholder="選択" /></SelectTrigger>
+                            <Input className="text-sm flex-1" {...field} />
                           </FormControl>
-                          <SelectContent>
-                            <SelectItem value="公共">公共</SelectItem>
-                            <SelectItem value="民間">民間</SelectItem>
-                            <SelectItem value="JV">JV</SelectItem>
-                          </SelectContent>
-                        </Select>
+                          <Input className="text-sm w-32" placeholder="得意先コード" {...form.register("clientCode")} />
+                        </div>
+                        <FormMessage />
                       </FormItem>
                     )}
                   />
-
-                  {/* 得意先 + 得意先コード */}
-                  <div className="space-y-2">
-                    <FormField
-                      control={form.control}
-                      name="clientName"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs text-slate-600">得意先 <span className="text-destructive">*</span></FormLabel>
-                          <div className="flex gap-2">
-                            <Select
-                              onValueChange={(val) => {
-                                if (val === "__manual__") {
-                                  form.setValue("clientCode", "");
-                                  return;
-                                }
-                                const found = clients.find((c) => c.clientCode === val);
-                                if (found) {
-                                  field.onChange(found.name);
-                                  form.setValue("clientCode", found.clientCode);
-                                }
-                              }}
-                              value={clients.find((c) => c.clientCode === form.getValues("clientCode")) ? (form.getValues("clientCode") || "__manual__") : "__manual__"}
-                            >
-                              <SelectTrigger className="text-sm flex-1">
-                                <SelectValue placeholder="得意先を選択" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="__manual__">— 直接入力 —</SelectItem>
-                                {clients.map((c) => (
-                                  <SelectItem key={c.id} value={c.clientCode}>
-                                    <span className="font-mono text-slate-500 mr-1 text-xs">{c.clientCode}</span>
-                                    {c.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormControl>
-                              <Input className="text-sm flex-1" placeholder="例: エステート住建" {...field} />
-                            </FormControl>
-                          </div>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="clientCode"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs text-slate-600">得意先コード</FormLabel>
-                          <FormControl>
-                            <Input className="text-sm" placeholder="例: C001" {...field} />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                  </div>
 
                   {/* 受注区分 + 坪 + ㎡ */}
                   <div className="flex gap-2 items-start">
@@ -550,33 +516,6 @@ export default function NewProject() {
                     )}
                   />
 
-                  {/* 工事経歴書情報 */}
-                  <div className="flex gap-2 items-start">
-                    <FormField
-                      control={form.control}
-                      name="constructionHistoryType"
-                      render={({ field }) => (
-                        <FormItem className="flex-1">
-                          <FormLabel className="text-xs text-slate-600">工事経歴書 種類</FormLabel>
-                          <FormControl>
-                            <Input className="text-sm" placeholder="例: 建築一式" {...field} />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="constructionHistoryEngineer"
-                      render={({ field }) => (
-                        <FormItem className="flex-1">
-                          <FormLabel className="text-xs text-slate-600">配置技術者名</FormLabel>
-                          <FormControl>
-                            <Input className="text-sm" placeholder="例: 田中 太郎" {...field} />
-                          </FormControl>
-                        </FormItem>
-                      )}
-                    />
-                  </div>
                 </CardContent>
               </Card>
 
