@@ -140,7 +140,7 @@ export default function Purchases() {
   const [memo,            setMemo]            = useState("");
 
   // ── 支払予定生成フラグ ────────────────────────────────────────────────────
-  const [createPayment, setCreatePayment] = useState(true);
+  const [createPayment, setCreatePayment] = useState(false);
 
   // ── 明細行状態 ───────────────────────────────────────────────────────────
   const [rows, setRows] = useState<DetailRow[]>([createRow()]);
@@ -454,6 +454,7 @@ export default function Purchases() {
                 />
                 <Label htmlFor="createPayment" className="text-sm text-slate-700 cursor-pointer">
                   支払予定も作成する
+                  <span className="ml-2 text-xs text-slate-400">※通常は支払査定から登録されます</span>
                 </Label>
               </div>
             </div>
