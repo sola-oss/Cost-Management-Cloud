@@ -23,6 +23,10 @@ import NewEstimate from "@/pages/estimates/new";
 import EstimateDetail from "@/pages/estimates/detail";
 import WorkTypeMaster from "@/pages/master/work-types";
 import ClientMaster from "@/pages/master/clients";
+import CompanySettings from "@/pages/settings/index";
+import InvoiceList from "@/pages/invoices/index";
+import NewInvoice from "@/pages/invoices/new";
+import InvoiceDetail from "@/pages/invoices/detail";
 
 const queryClient = new QueryClient();
 
@@ -49,6 +53,10 @@ function Router() {
         <Route path="/master/vendor-groups" component={VendorGroups} />
         <Route path="/master/work-types" component={WorkTypeMaster} />
         <Route path="/master/clients" component={ClientMaster} />
+        <Route path="/settings" component={CompanySettings} />
+        <Route path="/invoices" component={InvoiceList} />
+        <Route path="/invoices/new" component={NewInvoice} />
+        <Route path="/invoices/:id" component={InvoiceDetail} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>

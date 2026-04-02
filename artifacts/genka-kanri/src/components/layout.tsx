@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, CreditCard, Calculator, Users, Layers, FileText, Wrench } from "lucide-react";
+import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, CreditCard, Calculator, Users, Layers, FileText, Wrench, Settings, Receipt } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarProvider, SidebarRail, SidebarTrigger, SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from "./ui/sidebar";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
@@ -12,6 +12,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   const operationNav = [
     { title: "見積書", icon: FileText, url: "/estimates" },
+    { title: "請求管理", icon: Receipt, url: "/invoices" },
     { title: "仕入入力", icon: ShoppingCart, url: "/purchases" },
     { title: "支払管理", icon: CreditCard, url: "/payments" },
     { title: "支払査定", icon: Calculator, url: "/payment-assessment" },
@@ -26,6 +27,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     { title: "工種マスタ", icon: Wrench, url: "/master/work-types" },
     { title: "仕入先マスタ", icon: Building2, url: "/master/suppliers" },
     { title: "仕入先グループ", icon: Layers, url: "/master/vendor-groups" },
+    { title: "会社設定", icon: Settings, url: "/settings" },
   ];
 
   const isActive = (url: string) =>

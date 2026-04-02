@@ -12,6 +12,9 @@ import paymentAssessmentsRouter from "./payment-assessments";
 import workTypesRouter from "./work-types";
 import estimatesRouter from "./estimates";
 import clientsRouter from "./clients";
+import companySettingsRouter from "./company-settings";
+import invoicesRouter from "./invoices";
+import invoicePaymentsRouter from "./invoice-payments";
 
 const router: IRouter = Router();
 
@@ -28,5 +31,8 @@ router.use("/payment-assessments", paymentAssessmentsRouter);
 router.use("/work-types", workTypesRouter);
 router.use("/estimates", estimatesRouter);
 router.use("/clients", clientsRouter);
+router.use("/company-settings", companySettingsRouter);
+router.use("/invoices", invoicesRouter);
+router.use("/invoices/:id/payments", invoicePaymentsRouter);
 
 export default router;

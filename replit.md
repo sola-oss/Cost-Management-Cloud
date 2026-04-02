@@ -44,6 +44,9 @@ artifacts-monorepo/
 
 ## Features
 
+- **会社設定** (/settings) — 会社名・住所・TEL・FAX・適格請求書発行事業者登録番号（T+13桁バリデーション）・銀行情報の登録・保存
+- **請求管理** (/invoices) — 請求書CRUD、インボイス対応フォーマット、税率別集計（10%/8%）、PDF出力（jspdf + jspdf-autotable）
+- **入金管理** — 請求詳細画面で入金日・金額・方法（振込/現金/手形）を複数回登録、ステータス自動更新（未入金/一部入金/入金済）
 - **ダッシュボード** — KPI概要、原価項目別構成（PieChart）、月別原価推移（AreaChart）
 - **工事一覧** — 工事のCRUD、ステータスフィルタ、得意先名列、予算消化率バー、粗利率
 - **工事詳細（タブ付き）** — 4タブ構成：基本情報・実行予算・原価明細・収支状況
@@ -91,6 +94,17 @@ artifacts-monorepo/
 - `DELETE /api/vendors/:id` — 仕入先削除
 - `POST /api/payment-assessments/calculate` — 支払査定集計（期間・グループ・査定方式）
 - `POST /api/payment-assessments/confirm` — 査定確定（payments テーブルへの書込み）
+
+- `GET /api/company-settings` — 会社設定取得（1件のみ）
+- `PUT /api/company-settings` — 会社設定保存（upsert）
+- `GET /api/invoices` — 請求書一覧
+- `POST /api/invoices` — 請求書作成（INV-YYYYMMDD-0001形式の自動採番）
+- `GET /api/invoices/:id` — 請求書詳細（明細・入金履歴含む）
+- `PATCH /api/invoices/:id` — 請求書更新
+- `DELETE /api/invoices/:id` — 請求書削除
+- `POST /api/invoices/:id/items` — 請求明細一括保存（全削除→再登録）
+- `POST /api/invoices/:id/payments` — 入金登録（ステータス自動再計算）
+- `DELETE /api/invoices/:id/payments/:pid` — 入金削除（ステータス自動再計算）
 
 ## TypeScript & Composite Projects
 
