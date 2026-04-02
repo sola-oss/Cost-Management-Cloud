@@ -174,9 +174,9 @@ function BudgetTab({ projectId }: { projectId: number }) {
 
   const items = budgetItemsData?.items ?? [];
 
-  const totalContractAmount = budgetItemsData?.totalContractAmount ?? 0;
-  const totalInitialBudget = budgetItemsData?.totalInitialBudget ?? 0;
-  const totalRevisedBudget = budgetItemsData?.totalRevisedBudget ?? 0;
+  const totalContractAmount = items.reduce((s, i) => s + (i.contractAmount ?? 0), 0);
+  const totalInitialBudget = items.reduce((s, i) => s + (i.initialBudget ?? 0), 0);
+  const totalRevisedBudget = items.reduce((s, i) => s + (i.revisedBudget ?? 0), 0);
   const totalExpectedProfit = totalContractAmount - totalRevisedBudget;
   const totalExpectedProfitRate = totalContractAmount > 0 ? (totalExpectedProfit / totalContractAmount) * 100 : 0;
 
