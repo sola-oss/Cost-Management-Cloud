@@ -101,6 +101,13 @@ async function apiPatch(url: string, body: any) {
   return r.json();
 }
 
+function addMonths(dateStr: string, months: number): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().slice(0, 10);
+}
+
 // ─── 補助コンポーネント ───────────────────────────────────────────────────────
 function FieldRow({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
   return (
@@ -144,13 +151,17 @@ export default function EstimateEditor({ id }: { id?: number }) {
   const [form, setForm] = useState<EstimateForm>({
     projectId: "", estimateDate: today, createdDate: today,
     clientName: "", clientAddress: "", subject: "", location: "",
-    constructionPeriod: "", validityPeriod: "見積日より1ヶ月",
+    constructionPeriod: "", validityPeriod: addMonths(today, 1),
     paymentTerms: "別途契約書通り", taxRate: 10, status: "draft", notes: "",
     architectFirm: "", companyName: "", companyAddress: "",
     companyTel: "", companyFax: "", companyStaff: "", department: "", memo: "",
   });
 
   const sf = (patch: Partial<EstimateForm>) => setForm((f) => ({ ...f, ...patch }));
+
+  const [cpStart, setCpStart] = useState("");
+  const [cpEnd, setCpEnd] = useState("");
+  const [vpMode, setVpMode] = useState<"1m" | "2m" | "3m" | "custom">("1m");
 
   const [items, setItems] = useState<EstimateItem[]>([
     { _key: nk(), rowIndex: 0, level: 1, workType: "", itemName: "", quantity: null, unit: "式", unitPrice: null, amount: 0, rowType: "normal", notes: "" },
@@ -168,6 +179,28 @@ export default function EstimateEditor({ id }: { id?: number }) {
 
   useEffect(() => {
     if (!existing) return;
+    const cp = existing.constructionPeriod ?? "";
+    const cpParts = cp.split("〜");
+    if (cpParts.length === 2) {
+      setCpStart(cpParts[0] || "");
+      setCpEnd(cpParts[1] || "");
+    } else {
+      setCpStart("");
+      setCpEnd("");
+    }
+    const vp = existing.validityPeriod ?? "";
+    const estDate = existing.estimateDate ?? today;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(vp)) {
+      const m1 = addMonths(estDate, 1);
+      const m2 = addMonths(estDate, 2);
+      const m3 = addMonths(estDate, 3);
+      if (vp === m1) setVpMode("1m");
+      else if (vp === m2) setVpMode("2m");
+      else if (vp === m3) setVpMode("3m");
+      else setVpMode("custom");
+    } else {
+      setVpMode("1m");
+    }
     setForm({
       projectId: existing.projectId ? String(existing.projectId) : "",
       estimateDate: existing.estimateDate ?? today,
@@ -177,7 +210,7 @@ export default function EstimateEditor({ id }: { id?: number }) {
       subject: existing.subject ?? "",
       location: existing.location ?? "",
       constructionPeriod: existing.constructionPeriod ?? "",
-      validityPeriod: existing.validityPeriod ?? "見積日より1ヶ月",
+      validityPeriod: /^\d{4}-\d{2}-\d{2}$/.test(vp) ? vp : addMonths(estDate, 1),
       paymentTerms: existing.paymentTerms ?? "別途契約書通り",
       taxRate: existing.taxRate ?? 10,
       status: existing.status ?? "draft",
@@ -513,13 +546,62 @@ export default function EstimateEditor({ id }: { id?: number }) {
                     <FormInput value={form.location} onChange={(v) => sf({ location: v })} placeholder="例：宮城県仙台市青葉区1-2-1" />
                   </FieldRow>
                   <FieldRow label="工期">
-                    <FormInput value={form.constructionPeriod} onChange={(v) => sf({ constructionPeriod: v })} placeholder="例：6月1日〜10月31日" />
+                    <div className="flex items-center gap-1 w-full">
+                      <input
+                        type="date"
+                        value={cpStart}
+                        onChange={(e) => {
+                          const s = e.target.value;
+                          setCpStart(s);
+                          sf({ constructionPeriod: s || cpEnd ? `${s}〜${cpEnd}` : "" });
+                        }}
+                        className="bg-transparent border-0 outline-none focus:bg-orange-50 focus:ring-1 focus:ring-orange-300 rounded px-1 py-0.5 text-sm flex-1 min-w-0"
+                      />
+                      <span className="text-slate-400 text-xs shrink-0">〜</span>
+                      <input
+                        type="date"
+                        value={cpEnd}
+                        onChange={(e) => {
+                          const e2 = e.target.value;
+                          setCpEnd(e2);
+                          sf({ constructionPeriod: cpStart || e2 ? `${cpStart}〜${e2}` : "" });
+                        }}
+                        className="bg-transparent border-0 outline-none focus:bg-orange-50 focus:ring-1 focus:ring-orange-300 rounded px-1 py-0.5 text-sm flex-1 min-w-0"
+                      />
+                    </div>
                   </FieldRow>
                   <FieldRow label="支払条件">
                     <FormInput value={form.paymentTerms} onChange={(v) => sf({ paymentTerms: v })} />
                   </FieldRow>
                   <FieldRow label="有効期限">
-                    <FormInput value={form.validityPeriod} onChange={(v) => sf({ validityPeriod: v })} />
+                    <div className="flex items-center gap-1.5 w-full">
+                      <select
+                        value={vpMode}
+                        onChange={(e) => {
+                          const m = e.target.value as typeof vpMode;
+                          setVpMode(m);
+                          if (m !== "custom") {
+                            const months = m === "1m" ? 1 : m === "2m" ? 2 : 3;
+                            sf({ validityPeriod: addMonths(form.estimateDate, months) });
+                          }
+                        }}
+                        className="bg-transparent border-0 outline-none focus:bg-orange-50 focus:ring-1 focus:ring-orange-300 rounded px-1 py-0.5 text-xs text-slate-700 shrink-0 cursor-pointer"
+                      >
+                        <option value="1m">見積日より1ヶ月後</option>
+                        <option value="2m">見積日より2ヶ月後</option>
+                        <option value="3m">見積日より3ヶ月後</option>
+                        <option value="custom">直接入力</option>
+                      </select>
+                      <input
+                        type="date"
+                        value={form.validityPeriod}
+                        onChange={(e) => {
+                          setVpMode("custom");
+                          sf({ validityPeriod: e.target.value });
+                        }}
+                        className="bg-transparent border-0 outline-none focus:bg-orange-50 focus:ring-1 focus:ring-orange-300 rounded px-1 py-0.5 text-sm flex-1 min-w-0"
+                      />
+                    </div>
                   </FieldRow>
                   <FieldRow label="社内メモ" className="border-b-0">
                     <FormInput value={form.memo} onChange={(v) => sf({ memo: v })} placeholder="（印刷されません）" />
