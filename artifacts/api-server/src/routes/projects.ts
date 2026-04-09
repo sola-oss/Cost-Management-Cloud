@@ -157,6 +157,11 @@ router.post("/", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to create project");
+    const msg = err instanceof Error ? err.message : "";
+    if (msg.includes("duplicate key") && msg.includes("project_code_unique")) {
+      res.status(409).json({ message: "この工事番号はすでに使用されています。工事番号を変更してください。" });
+      return;
+    }
     res.status(500).json({ message: "Internal server error" });
   }
 });

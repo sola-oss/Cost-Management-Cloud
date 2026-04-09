@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -67,6 +67,29 @@ function useEstimates() {
   return data?.items ?? [];
 }
 
+function useNextProjectCode(): string {
+  const now = new Date();
+  const prefix = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const { data } = useQuery<{ items: { projectCode: string }[] }>({
+    queryKey: ["/api/projects/codes"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/projects`);
+      if (!res.ok) return { items: [] };
+      return res.json();
+    },
+    staleTime: 10_000,
+  });
+  const codes = (data?.items ?? [])
+    .map((p) => p.projectCode?.split("-")[0] ?? "")
+    .filter((c) => c.startsWith(prefix));
+  const max = codes.reduce((m, c) => {
+    const n = parseInt(c.slice(prefix.length)) || 0;
+    return n > m ? n : m;
+  }, 0);
+  const next = String(max + 1).padStart(4, "0");
+  return `${prefix}${next}`;
+}
+
 type ContractLineLocal = { contractDate: string; taxExcluded: string };
 
 const EMPTY_LINES: ContractLineLocal[] = Array.from({ length: 8 }, () => ({
@@ -131,6 +154,7 @@ export default function NewProject() {
   const createProject = useCreateProject();
   const clients = useClients();
   const estimates = useEstimates();
+  const nextCode = useNextProjectCode();
 
   const [contractLines, setContractLines] = useState<ContractLineLocal[]>(EMPTY_LINES);
   const [showBudgetDialog, setShowBudgetDialog] = useState(false);
@@ -176,6 +200,12 @@ export default function NewProject() {
       constructionHistoryEngineer: "",
     },
   });
+
+  useEffect(() => {
+    if (nextCode) {
+      form.setValue("projectCodeMain", nextCode, { shouldDirty: false });
+    }
+  }, [nextCode]);
 
   const lineCalcs = useMemo(() => contractLines.map(parseLine), [contractLines]);
   const totalExcluded = lineCalcs.reduce((s, l) => s + l.excluded, 0);
@@ -265,8 +295,13 @@ export default function NewProject() {
         setNewProjectId(data.id);
         setShowBudgetDialog(true);
       },
-      onError: () => {
-        toast({ title: "エラー", description: "工事の登録に失敗しました。", variant: "destructive" });
+      onError: (err: unknown) => {
+        let msg = "工事の登録に失敗しました。";
+        try {
+          const apiErr = err as { data?: { message?: string } };
+          if (apiErr?.data?.message) msg = apiErr.data.message;
+        } catch { /* ignore */ }
+        toast({ title: "エラー", description: msg, variant: "destructive" });
       },
     });
   }
