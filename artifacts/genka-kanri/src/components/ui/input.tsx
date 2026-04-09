@@ -2,8 +2,50 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
+function getFocusableInputs(): HTMLElement[] {
+  return Array.from(
+    document.querySelectorAll<HTMLElement>(
+      'input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled])'
+    )
+  ).filter((el) => {
+    const style = window.getComputedStyle(el)
+    return style.display !== "none" && style.visibility !== "hidden" && el.offsetParent !== null
+  })
+}
+
 const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
-  ({ className, type, ...props }, ref) => {
+  ({ className, type, onKeyDown, ...props }, ref) => {
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+      onKeyDown?.(e)
+
+      if (e.defaultPrevented) return
+
+      if (e.nativeEvent.isComposing || e.keyCode === 229) return
+
+      if (e.key === "Enter") {
+        e.preventDefault()
+        const focusables = getFocusableInputs()
+        const idx = focusables.indexOf(e.currentTarget)
+        if (idx !== -1 && idx < focusables.length - 1) {
+          focusables[idx + 1].focus()
+        }
+      } else if (e.key === "ArrowLeft") {
+        if (e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0) {
+          e.preventDefault()
+          const focusables = getFocusableInputs()
+          const idx = focusables.indexOf(e.currentTarget)
+          if (idx > 0) {
+            const prev = focusables[idx - 1] as HTMLInputElement
+            prev.focus()
+            if (typeof prev.selectionStart === "number") {
+              const len = prev.value?.length ?? 0
+              prev.setSelectionRange(len, len)
+            }
+          }
+        }
+      }
+    }
+
     return (
       <input
         type={type}
@@ -12,6 +54,7 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
           className
         )}
         ref={ref}
+        onKeyDown={handleKeyDown}
         {...props}
       />
     )
