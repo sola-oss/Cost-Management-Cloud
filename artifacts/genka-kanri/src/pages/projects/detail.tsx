@@ -1939,6 +1939,12 @@ export default function ProjectDetail() {
             {project.projectCode} ／ {project.clientName}
           </p>
         </div>
+        <Button variant="outline" size="sm" asChild className="shrink-0 gap-1.5 border-teal-600 text-teal-700 hover:bg-teal-50">
+          <Link href={`/projects/${projectId}/ledger`}>
+            <FileText className="w-3.5 h-3.5" />
+            工事台帳
+          </Link>
+        </Button>
       </div>
 
       {/* ── KPI サマリー（常時表示） ── */}

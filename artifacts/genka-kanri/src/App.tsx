@@ -28,6 +28,7 @@ import InvoiceList from "@/pages/invoices/index";
 import NewInvoice from "@/pages/invoices/new";
 import InvoiceDetail from "@/pages/invoices/detail";
 import ConstructionHistory from "@/pages/projects/history";
+import ProjectLedger from "@/pages/projects/ledger";
 
 const queryClient = new QueryClient();
 
@@ -42,6 +43,7 @@ function Router() {
         <Route path="/projects/:id/costs/new" component={NewCostEntry} />
         <Route path="/projects/:id/budgets" component={BudgetManagement} />
         <Route path="/projects/:id/history" component={ConstructionHistory} />
+        <Route path="/projects/:id/ledger" component={ProjectLedger} />
         <Route path="/reports" component={Reports} />
         <Route path="/purchases" component={Purchases} />
         <Route path="/payments" component={Payments} />

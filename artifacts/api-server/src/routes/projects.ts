@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, sql, and, inArray } from "drizzle-orm";
-import { db, projectsTable, costItemsTable, budgetsTable } from "@workspace/db";
+import { db, projectsTable, costItemsTable, budgetsTable, invoicesTable, invoicePaymentsTable, companySettingsTable, constructionHistoriesTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -347,6 +347,73 @@ router.get("/:id/summary", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get project summary");
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+router.get("/:id/ledger", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id) || id <= 0) return res.status(400).json({ message: "Invalid project ID" });
+
+    const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, id));
+    if (!project) return res.status(404).json({ message: "工事が見つかりません" });
+
+    const [costItems, budgets, constructionHistory, invoiceRows, companyRows] = await Promise.all([
+      db.select().from(costItemsTable).where(eq(costItemsTable.projectId, id)),
+      db.select().from(budgetsTable).where(eq(budgetsTable.projectId, id)),
+      db.select().from(constructionHistoriesTable).where(eq(constructionHistoriesTable.projectId, id)).then(r => r[0] ?? null),
+      db.select().from(invoicesTable).where(eq(invoicesTable.projectId, id)).orderBy(invoicesTable.invoiceDate),
+      db.select().from(companySettingsTable).limit(1),
+    ]);
+
+    const totalBudget = budgets.reduce((s, b) => s + parseNumeric(b.budgetAmount), 0);
+    const totalActualCost = costItems.reduce((s, c) => s + parseNumeric(c.amount), 0);
+    const contractAmount = parseNumeric(project.contractAmount);
+    const grossProfit = contractAmount - totalActualCost;
+    const grossProfitRate = contractAmount > 0 ? (grossProfit / contractAmount) * 100 : 0;
+
+    const invoicesWithPayments = await Promise.all(
+      invoiceRows.map(async (inv) => {
+        const payments = await db.select().from(invoicePaymentsTable).where(eq(invoicePaymentsTable.invoiceId, inv.id)).orderBy(invoicePaymentsTable.paymentDate);
+        return {
+          ...inv,
+          totalAmount: parseNumeric(inv.totalAmount),
+          paidAmount: parseNumeric(inv.paidAmount),
+          payments: payments.map(p => ({ ...p, amount: parseNumeric(p.amount) })),
+        };
+      })
+    );
+
+    const totalInvoiced = invoicesWithPayments.reduce((s, inv) => s + inv.totalAmount, 0);
+    const totalPaid = invoicesWithPayments.reduce((s, inv) => s + inv.paidAmount, 0);
+    const totalUnpaid = totalInvoiced - totalPaid;
+
+    res.json({
+      project: {
+        ...project,
+        contractAmount,
+        taxExcludedAmount: project.taxExcludedAmount != null ? parseNumeric(project.taxExcludedAmount) : null,
+        taxAmount: project.taxAmount != null ? parseNumeric(project.taxAmount) : null,
+        taxIncludedAmount: project.taxIncludedAmount != null ? parseNumeric(project.taxIncludedAmount) : null,
+        floorAreaTsubo: project.floorAreaTsubo != null ? parseNumeric(project.floorAreaTsubo) : null,
+        floorAreaSqm: project.floorAreaSqm != null ? parseNumeric(project.floorAreaSqm) : null,
+      },
+      constructionHistory,
+      invoices: invoicesWithPayments,
+      companySettings: companyRows[0] ?? null,
+      summary: {
+        totalBudget,
+        totalActualCost,
+        grossProfit,
+        grossProfitRate: Math.round(grossProfitRate * 10) / 10,
+        totalInvoiced,
+        totalPaid,
+        totalUnpaid,
+      },
+    });
+  } catch (err) {
+    req.log.error({ err }, "Failed to get project ledger");
     res.status(500).json({ message: "Internal server error" });
   }
 });
