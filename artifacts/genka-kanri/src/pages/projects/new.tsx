@@ -160,6 +160,7 @@ export default function NewProject() {
   const [showBudgetDialog, setShowBudgetDialog] = useState(false);
   const [newProjectId, setNewProjectId] = useState<number | null>(null);
   const [estimatePickerOpen, setEstimatePickerOpen] = useState(false);
+  const [postSaveHistory, setPostSaveHistory] = useState(false);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -293,7 +294,12 @@ export default function NewProject() {
       onSuccess: (data) => {
         toast({ title: "登録完了", description: "新規工事を登録しました。" });
         setNewProjectId(data.id);
-        setShowBudgetDialog(true);
+        if (postSaveHistory) {
+          setPostSaveHistory(false);
+          setLocation(`/projects/${data.id}/history`);
+        } else {
+          setShowBudgetDialog(true);
+        }
       },
       onError: (err: unknown) => {
         let msg = "工事の登録に失敗しました。";
@@ -974,19 +980,23 @@ export default function NewProject() {
 
           {/* ── 工事経歴書ボタン ── */}
           <div className="flex">
-            {newProjectId ? (
-              <Link href={`/projects/${newProjectId}/history`}>
-                <Button type="button" variant="outline" className="gap-2 border-teal-600 text-teal-700 hover:bg-teal-50">
-                  <ClipboardList className="w-4 h-4" />
-                  工事経歴書
-                </Button>
-              </Link>
-            ) : (
-              <Button type="button" variant="outline" className="gap-2 border-slate-300 text-slate-400 cursor-not-allowed" disabled>
-                <ClipboardList className="w-4 h-4" />
-                工事経歴書（工事保存後に有効）
-              </Button>
-            )}
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-2 border-teal-600 text-teal-700 hover:bg-teal-50"
+              disabled={createProject.isPending}
+              onClick={() => {
+                if (newProjectId) {
+                  setLocation(`/projects/${newProjectId}/history`);
+                } else {
+                  setPostSaveHistory(true);
+                  form.handleSubmit(onSubmit)();
+                }
+              }}
+            >
+              <ClipboardList className="w-4 h-4" />
+              工事経歴書
+            </Button>
           </div>
 
           {/* ── 備考・メモ（全幅） ── */}
