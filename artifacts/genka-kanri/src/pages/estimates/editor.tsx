@@ -169,189 +169,195 @@ function PrintLayout({
     const [y, m, day] = d.split("-");
     return `${y}年${parseInt(m)}月${parseInt(day)}日`;
   };
+  const pageHeader = (
+    <div className="flex justify-between text-[9px] text-slate-500 mb-3 pb-1 border-b border-slate-300">
+      <span>見積番号: {estNumber}</span>
+      <span>発行日: {fmtDate(form.estimateDate)}</span>
+    </div>
+  );
 
-  // 印刷用：pagebreak を区切りとしてページごとのアイテムリストに分割
-  const pages: EstimateItem[][] = [];
-  let currentPage: EstimateItem[] = [];
+  // 工種ごとにグループ化（pagebreakは無視、rowType=normal/discountのみ対象）
+  type Group = { name: string; rows: EstimateItem[]; subtotal: number };
+  const groups: Group[] = [];
+  const groupMap = new Map<string, Group>();
   for (const item of items) {
-    if (item.rowType === "pagebreak") {
-      pages.push(currentPage);
-      currentPage = [];
-    } else {
-      currentPage.push(item);
+    if (item.rowType === "pagebreak" || item.rowType === "total" || item.rowType === "tax") continue;
+    const wt = item.workType?.trim() || "（未分類）";
+    if (!groupMap.has(wt)) {
+      const g: Group = { name: wt, rows: [], subtotal: 0 };
+      groupMap.set(wt, g);
+      groups.push(g);
     }
+    const g = groupMap.get(wt)!;
+    const amt = item.quantity != null && item.unitPrice != null
+      ? Math.round(item.quantity * item.unitPrice)
+      : (item.amount ?? 0);
+    g.rows.push(item);
+    g.subtotal += item.rowType === "discount" ? -Math.abs(amt) : amt;
   }
-  pages.push(currentPage);
-  const detailPages = pages.filter((p) => p.length > 0);
+  const itemsSubtotal = groups.reduce((s, g) => s + g.subtotal, 0);
 
   return (
     <div className="hidden print:block text-black font-sans text-[11px]">
+
       {/* ===== PAGE 1: 御見積書（表紙） ===== */}
       <div className="print-page w-[210mm] min-h-[297mm] p-[15mm] box-border">
-        {/* ヘッダー */}
-        <div className="flex justify-between items-start mb-4">
-          <div className="text-xs text-slate-500">
-            <div>見積番号: {estNumber}</div>
-            <div>見積日: {fmtDate(form.estimateDate)}</div>
-          </div>
-          <div className="text-center flex-1">
-            <h1 className="text-3xl font-bold tracking-widest text-slate-900 mb-1">御　見　積　書</h1>
-          </div>
-          <div className="text-xs text-slate-500 text-right w-32"></div>
+        <div className="text-center mb-6">
+          <h1 className="text-3xl font-bold tracking-widest text-slate-900">御　見　積　書</h1>
         </div>
-
-        {/* 得意先 + 御見積金額 */}
-        <div className="flex justify-between gap-6 mb-4">
-          {/* 左：得意先 */}
+        <div className="flex justify-between gap-6">
+          {/* 左：得意先・金額・工事情報 */}
           <div className="flex-1">
-            <div className="text-2xl font-bold border-b-2 border-black pb-1 mb-2">
+            <div className="text-xl font-bold border-b-2 border-black pb-1 mb-3">
               {form.clientName || "\u3000\u3000\u3000\u3000\u3000\u3000"}&nbsp;御中
             </div>
-            <div className="text-sm mb-3">下記の通り御見積申し上げます。</div>
-            {/* 御見積金額 */}
-            <div className="border border-black p-3 bg-slate-50 mb-3">
-              <div className="text-xs text-slate-600 mb-0.5">御見積金額（税込）</div>
-              <div className="text-3xl font-extrabold text-slate-900">{fmt(taxIncluded)}</div>
-              <div className="flex gap-6 mt-2 text-xs text-slate-600">
-                <span>税抜合計: {fmt(finalSubtotal)}</span>
-                <span>消費税（{form.taxRate}%）: {fmt(taxAmount)}</span>
+            <div className="text-xs mb-4">下記の通り御見積申し上げます。</div>
+            <div className="mb-4 text-center">
+              <div className="text-xs text-slate-600 mb-1">御見積金額</div>
+              <div className="text-3xl font-extrabold text-slate-900 border border-black inline-block px-6 py-2">{fmt(taxIncluded)}</div>
+              <div className="flex gap-8 justify-center mt-2 text-xs text-slate-600">
+                <span>税抜合計　{fmt(finalSubtotal)}-</span>
+                <span>消費税（{form.taxRate}%）　{fmt(taxAmount)}-</span>
               </div>
             </div>
-            {/* 工事情報 */}
             <table className="w-full border-collapse text-xs">
               <tbody>
                 <tr className="border border-slate-400">
-                  <td className="bg-slate-100 border-r border-slate-400 px-2 py-1 font-medium w-24">工事名</td>
-                  <td className="px-2 py-1">{form.subject}</td>
+                  <td className="bg-slate-100 border-r border-slate-400 px-2 py-1.5 font-medium w-24">工事名</td>
+                  <td className="px-2 py-1.5">{form.subject}</td>
                 </tr>
                 <tr className="border border-slate-400">
-                  <td className="bg-slate-100 border-r border-slate-400 px-2 py-1 font-medium">工事場所</td>
-                  <td className="px-2 py-1">{form.location}</td>
+                  <td className="bg-slate-100 border-r border-slate-400 px-2 py-1.5 font-medium">工事場所</td>
+                  <td className="px-2 py-1.5">{form.location}</td>
                 </tr>
                 <tr className="border border-slate-400">
-                  <td className="bg-slate-100 border-r border-slate-400 px-2 py-1 font-medium">工事期間</td>
-                  <td className="px-2 py-1">{form.constructionPeriod}</td>
+                  <td className="bg-slate-100 border-r border-slate-400 px-2 py-1.5 font-medium">工事期間</td>
+                  <td className="px-2 py-1.5">{form.constructionPeriod}</td>
                 </tr>
                 <tr className="border border-slate-400">
-                  <td className="bg-slate-100 border-r border-slate-400 px-2 py-1 font-medium">有効期限</td>
-                  <td className="px-2 py-1">{fmtDate(form.validityPeriod)}</td>
+                  <td className="bg-slate-100 border-r border-slate-400 px-2 py-1.5 font-medium">有効期限</td>
+                  <td className="px-2 py-1.5">{fmtDate(form.validityPeriod)}</td>
                 </tr>
                 {form.notes && (
                   <tr className="border border-slate-400">
-                    <td className="bg-slate-100 border-r border-slate-400 px-2 py-1 font-medium">備考</td>
-                    <td className="px-2 py-1">{form.notes}</td>
+                    <td className="bg-slate-100 border-r border-slate-400 px-2 py-1.5 font-medium">備考</td>
+                    <td className="px-2 py-1.5">{form.notes}</td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
-
           {/* 右：自社情報 */}
-          <div className="w-60 text-xs border border-slate-400 p-3 self-start">
-            {form.companyName && <div className="font-bold text-sm mb-1">{form.companyName}</div>}
-            {form.representativeName && <div className="mb-0.5">代表取締役　{form.representativeName}</div>}
-            {form.companyAddress && <div className="mb-0.5">{form.companyAddress}</div>}
-            {form.companyTel && <div className="mb-0.5">TEL: {form.companyTel}</div>}
-            {form.companyFax && <div className="mb-0.5">FAX: {form.companyFax}</div>}
-            {form.constructionLicense && <div className="mb-0.5">{form.constructionLicense}</div>}
-            <div className="border-t border-slate-300 mt-2 pt-2">
-              {form.companyStaff && <div className="mb-0.5">担当: {form.companyStaff}</div>}
-              {form.staffMobile && <div className="mb-0.5">携帯: {form.staffMobile}</div>}
-              {form.staffEmail && <div className="mb-0.5">Mail: {form.staffEmail}</div>}
-            </div>
+          <div className="w-52 text-xs self-start space-y-0.5">
+            {form.companyName && <div className="font-bold">{form.companyName}</div>}
+            {form.representativeName && <div>代表取締役 {form.representativeName}</div>}
+            {form.companyAddress && <div>{form.companyAddress}</div>}
+            {form.companyTel && <div>TEL：{form.companyTel}</div>}
+            {form.companyFax && <div>FAX：{form.companyFax}</div>}
+            {form.constructionLicense && <div>建設業許可 {form.constructionLicense}</div>}
+            {form.companyStaff && <div>担当者：{form.companyStaff}</div>}
+            {form.staffMobile && <div>携帯番号：{form.staffMobile}</div>}
+            {form.staffEmail && <div>MAIL：{form.staffEmail}</div>}
           </div>
         </div>
       </div>
 
-      {/* ===== PAGE 2+: 見積明細書（フラット一覧） ===== */}
-      {detailPages.map((pageItems, pi) => (
-        <div key={pi} className="print-page w-[210mm] min-h-[297mm] p-[15mm] box-border break-before-page">
+      {/* ===== PAGE 2: 見積内訳書 ===== */}
+      <div className="print-page w-[210mm] min-h-[297mm] p-[15mm] box-border break-before-page">
+        {pageHeader}
+        <div className="text-center mb-4">
+          <h2 className="text-xl font-bold tracking-wider">見　積　内　訳　書</h2>
+        </div>
+        <table className="w-full border-collapse text-xs">
+          <thead>
+            <tr className="bg-slate-100">
+              <th className="border border-slate-400 px-2 py-2 text-center w-10">No.</th>
+              <th className="border border-slate-400 px-3 py-2 text-left">分類</th>
+              <th className="border border-slate-400 px-3 py-2 text-right w-40">見積額</th>
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map((g, i) => (
+              <tr key={i}>
+                <td className="border border-slate-400 px-2 py-1.5 text-center">{i + 1}</td>
+                <td className="border border-slate-400 px-3 py-1.5">{g.name}</td>
+                <td className="border border-slate-400 px-3 py-1.5 text-right">{g.subtotal.toLocaleString()}</td>
+              </tr>
+            ))}
+            <tr className="bg-slate-50">
+              <td colSpan={2} className="border border-slate-400 px-3 py-1.5 text-right font-medium">小計</td>
+              <td className="border border-slate-400 px-3 py-1.5 text-right font-medium">{itemsSubtotal.toLocaleString()}</td>
+            </tr>
+            {miscExpensesAmount > 0 && (
+              <tr>
+                <td colSpan={2} className="border border-slate-400 px-3 py-1.5 text-right">諸経費</td>
+                <td className="border border-slate-400 px-3 py-1.5 text-right">{miscExpensesAmount.toLocaleString()}</td>
+              </tr>
+            )}
+            {discountAmount > 0 && (
+              <tr>
+                <td colSpan={2} className="border border-slate-400 px-3 py-1.5 text-right">お値引き</td>
+                <td className="border border-slate-400 px-3 py-1.5 text-right">-{discountAmount.toLocaleString()}</td>
+              </tr>
+            )}
+            <tr className="bg-slate-100 font-bold">
+              <td colSpan={2} className="border border-slate-400 px-3 py-2 text-right">税抜合計</td>
+              <td className="border border-slate-400 px-3 py-2 text-right">{finalSubtotal.toLocaleString()}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* ===== PAGE 3+: 見積明細書（工種ごと1ページ） ===== */}
+      {groups.map((group, gi) => (
+        <div key={gi} className="print-page w-[210mm] min-h-[297mm] p-[15mm] box-border break-before-page">
+          {pageHeader}
           <div className="text-center mb-3">
             <h2 className="text-xl font-bold tracking-wider">見　積　明　細　書</h2>
-            <div className="text-xs text-slate-500 mt-0.5">（工事名：{form.subject}）</div>
+            <div className="text-xs text-slate-600 mt-0.5">（{gi + 1}. {group.name}）</div>
           </div>
           <table className="w-full border-collapse text-[10px]">
             <thead>
-              <tr className="bg-slate-200">
+              <tr className="bg-slate-100">
                 <th className="border border-slate-400 px-1 py-1.5 text-center w-8">No.</th>
-                <th className="border border-slate-400 px-2 py-1.5 text-left w-20">工種</th>
                 <th className="border border-slate-400 px-2 py-1.5 text-left">摘要</th>
-                <th className="border border-slate-400 px-2 py-1.5 text-left w-24">備考</th>
-                <th className="border border-slate-400 px-1 py-1.5 text-center w-16">数量・単位</th>
+                <th className="border border-slate-400 px-2 py-1.5 text-left w-28">備考</th>
+                <th className="border border-slate-400 px-1 py-1.5 text-center w-20">数量・単位</th>
                 <th className="border border-slate-400 px-2 py-1.5 text-right w-20">見積単価</th>
                 <th className="border border-slate-400 px-2 py-1.5 text-right w-24">見積額</th>
               </tr>
             </thead>
             <tbody>
-              {pageItems.map((item, idx) => {
+              {group.rows.map((item, idx) => {
                 const amt = item.quantity != null && item.unitPrice != null
                   ? Math.round(item.quantity * item.unitPrice)
-                  : item.amount;
+                  : (item.amount ?? 0);
                 const isDiscount = item.rowType === "discount";
-                const isTax = item.rowType === "tax";
-                const isTotal = item.rowType === "total";
-                const rowClass = isTotal ? "bg-slate-200 font-bold" : isTax ? "bg-amber-50" : isDiscount ? "bg-red-50 text-red-700" : idx % 2 === 1 ? "bg-slate-50" : "";
-                if (isTotal || isTax) {
-                  return (
-                    <tr key={item._key} className={rowClass}>
-                      <td className="border border-slate-300 px-1 py-1 text-center text-slate-400">{idx + 1}</td>
-                      <td colSpan={5} className="border border-slate-300 px-2 py-1 font-medium">{item.itemName || (isTax ? `消費税（${form.taxRate}%）` : "合計")}</td>
-                      <td className="border border-slate-300 px-2 py-1 text-right font-bold">{fmt(amt)}</td>
-                    </tr>
-                  );
-                }
                 return (
-                  <tr key={item._key} className={rowClass}>
+                  <tr key={item._key} className={idx % 2 === 1 ? "bg-slate-50" : ""}>
                     <td className="border border-slate-300 px-1 py-1 text-center text-slate-500">{idx + 1}</td>
-                    <td className="border border-slate-300 px-2 py-1 text-slate-600">{item.workType}</td>
                     <td className="border border-slate-300 px-2 py-1">{item.itemName}</td>
                     <td className="border border-slate-300 px-2 py-1 text-slate-600">{item.notes}</td>
                     <td className="border border-slate-300 px-1 py-1 text-center">
-                      {item.quantity != null ? `${item.quantity.toLocaleString()} ${item.unit}` : item.unit}
+                      {item.quantity != null ? `${item.quantity.toLocaleString()}${item.unit}` : item.unit}
                     </td>
                     <td className="border border-slate-300 px-2 py-1 text-right">
-                      {item.unitPrice != null ? `¥${item.unitPrice.toLocaleString()}` : ""}
+                      {item.unitPrice != null ? item.unitPrice.toLocaleString() : ""}
                     </td>
-                    <td className="border border-slate-300 px-2 py-1 text-right font-medium">
-                      {isDiscount ? `▲ ${fmt(Math.abs(amt))}` : (amt > 0 || (item.quantity != null && item.unitPrice != null)) ? fmt(amt) : ""}
+                    <td className="border border-slate-300 px-2 py-1 text-right">
+                      {isDiscount ? `-${Math.abs(amt).toLocaleString()}` : amt > 0 ? amt.toLocaleString() : ""}
                     </td>
                   </tr>
                 );
               })}
-              {/* 最終ページのみ合計サマリーを追加 */}
-              {pi === detailPages.length - 1 && (
-                <>
-                  {miscExpensesAmount > 0 && (
-                    <tr>
-                      <td className="border border-slate-300 px-1 py-1 text-center text-slate-400">—</td>
-                      <td colSpan={5} className="border border-slate-300 px-2 py-1 text-slate-600">諸経費（{form.miscExpensesRate}%）</td>
-                      <td className="border border-slate-300 px-2 py-1 text-right">{fmt(miscExpensesAmount)}</td>
-                    </tr>
-                  )}
-                  {discountAmount > 0 && (
-                    <tr className="text-red-700">
-                      <td className="border border-slate-300 px-1 py-1 text-center text-slate-400">—</td>
-                      <td colSpan={5} className="border border-slate-300 px-2 py-1">お値引き</td>
-                      <td className="border border-slate-300 px-2 py-1 text-right">▲ {fmt(discountAmount)}</td>
-                    </tr>
-                  )}
-                  <tr className="bg-slate-100 font-bold">
-                    <td className="border border-slate-400 px-1 py-1.5 text-center">—</td>
-                    <td colSpan={5} className="border border-slate-400 px-2 py-1.5">税抜合計</td>
-                    <td className="border border-slate-400 px-2 py-1.5 text-right">{fmt(finalSubtotal)}</td>
-                  </tr>
-                  <tr>
-                    <td className="border border-slate-300 px-1 py-1 text-center text-slate-400">—</td>
-                    <td colSpan={5} className="border border-slate-300 px-2 py-1">消費税（{form.taxRate}%）</td>
-                    <td className="border border-slate-300 px-2 py-1 text-right">{fmt(taxAmount)}</td>
-                  </tr>
-                  <tr className="bg-slate-800 text-white font-bold">
-                    <td className="border border-slate-600 px-1 py-2 text-center">—</td>
-                    <td colSpan={5} className="border border-slate-600 px-2 py-2 text-base">御見積金額（税込）</td>
-                    <td className="border border-slate-600 px-2 py-2 text-right text-base">{fmt(taxIncluded)}</td>
-                  </tr>
-                </>
-              )}
+              <tr className="font-bold">
+                <td colSpan={5} className="border border-slate-400 px-2 py-1.5 text-right">
+                  {group.name}　小計
+                </td>
+                <td className="border border-slate-400 px-2 py-1.5 text-right">
+                  {group.subtotal.toLocaleString()}
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
