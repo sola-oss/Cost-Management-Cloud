@@ -16,7 +16,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save, Calculator, FolderSearch } from "lucide-react";
+import { ArrowLeft, Save, Calculator, FolderSearch, ClipboardList } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -970,6 +970,23 @@ export default function NewProject() {
                 </CardContent>
               </Card>
             </div>
+          </div>
+
+          {/* ── 工事経歴書ボタン ── */}
+          <div className="flex">
+            {newProjectId ? (
+              <Link href={`/projects/${newProjectId}/history`}>
+                <Button type="button" variant="outline" className="gap-2 border-teal-600 text-teal-700 hover:bg-teal-50">
+                  <ClipboardList className="w-4 h-4" />
+                  工事経歴書
+                </Button>
+              </Link>
+            ) : (
+              <Button type="button" variant="outline" className="gap-2 border-slate-300 text-slate-400 cursor-not-allowed" disabled>
+                <ClipboardList className="w-4 h-4" />
+                工事経歴書（工事保存後に有効）
+              </Button>
+            )}
           </div>
 
           {/* ── 備考・メモ（全幅） ── */}

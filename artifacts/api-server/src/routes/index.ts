@@ -15,6 +15,7 @@ import clientsRouter from "./clients";
 import companySettingsRouter from "./company-settings";
 import invoicesRouter from "./invoices";
 import invoicePaymentsRouter from "./invoice-payments";
+import constructionHistoriesRouter from "./construction-histories";
 
 const router: IRouter = Router();
 
@@ -34,5 +35,6 @@ router.use("/clients", clientsRouter);
 router.use("/company-settings", companySettingsRouter);
 router.use("/invoices", invoicesRouter);
 router.use("/invoices/:id/payments", invoicePaymentsRouter);
+router.use("/projects/:projectId/construction-history", constructionHistoriesRouter);
 
 export default router;

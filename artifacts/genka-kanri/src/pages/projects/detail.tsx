@@ -1682,6 +1682,15 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
               </CardContent>
             </Card>
           </div>
+          {/* 工事経歴書ボタン */}
+          <div className="flex">
+            <Link href={`/projects/${projectId}/history`}>
+              <Button type="button" variant="outline" className="gap-2 border-teal-600 text-teal-700 hover:bg-teal-50">
+                <ClipboardList className="w-4 h-4" />
+                工事経歴書
+              </Button>
+            </Link>
+          </div>
           <div className="flex justify-end gap-3">
             <Button type="button" variant="outline" onClick={() => { setIsEditing(false); form.reset(); }}>
               <X className="w-4 h-4 mr-1" />キャンセル
