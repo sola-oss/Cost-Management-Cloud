@@ -202,60 +202,64 @@ function PrintLayout({
 
       {/* ===== PAGE 1: 御見積書（表紙） ===== */}
       <div className="print-page w-[210mm] min-h-[297mm] p-[15mm] box-border">
-        <div className="text-center mb-6">
+        {/* ヘッダー：見積番号（左）・発行日（右） */}
+        <div className="flex justify-between text-[10px] text-slate-500 mb-4">
+          <span>見積番号: {estNumber}</span>
+          <span>発行日: {fmtDate(form.estimateDate)}</span>
+        </div>
+
+        {/* タイトル */}
+        <div className="text-center mb-5">
           <h1 className="text-3xl font-bold tracking-widest text-slate-900">御　見　積　書</h1>
         </div>
-        <div className="flex justify-between gap-6">
-          {/* 左：得意先・金額・工事情報 */}
-          <div className="flex-1">
-            <div className="text-xl font-bold border-b-2 border-black pb-1 mb-3">
-              {form.clientName || "\u3000\u3000\u3000\u3000\u3000\u3000"}&nbsp;御中
-            </div>
-            <div className="text-xs mb-4">下記の通り御見積申し上げます。</div>
-            <div className="mb-4 text-center">
-              <div className="text-xs text-slate-600 mb-1">御見積金額</div>
-              <div className="text-3xl font-extrabold text-slate-900 border border-black inline-block px-6 py-2">{fmt(taxIncluded)}</div>
-              <div className="flex gap-8 justify-center mt-2 text-xs text-slate-600">
-                <span>税抜合計　{fmt(finalSubtotal)}-</span>
-                <span>消費税（{form.taxRate}%）　{fmt(taxAmount)}-</span>
+
+        {/* 得意先名（底線のみ、右端に御中） */}
+        <div className="flex items-end border-b-2 border-black pb-1 mb-2">
+          <span className="text-xl font-bold flex-1">
+            {form.clientName || "\u3000\u3000\u3000\u3000\u3000\u3000\u3000\u3000"}
+          </span>
+          <span className="text-base font-bold ml-4">御中</span>
+        </div>
+        <div className="text-xs mb-5">下記の通り、御見積申し上げます。</div>
+
+        {/* 御見積金額エリア */}
+        <div className="flex items-center mb-1">
+          <span className="text-sm font-medium w-28 shrink-0">御見積金額</span>
+          <span className="text-[28px] font-extrabold text-slate-900 border border-black px-5 py-1 leading-tight">
+            {fmt(taxIncluded)}
+          </span>
+        </div>
+        <div className="flex gap-10 text-xs text-slate-600 mb-6 pl-28">
+          <span>税抜合計　{fmt(finalSubtotal)}-</span>
+          <span>消費税（{form.taxRate}%）　{fmt(taxAmount)}-</span>
+        </div>
+
+        {/* 2カラム：工事情報（左）・自社情報（右） */}
+        <div className="flex gap-6">
+          {/* 左：工事情報（底線のみのフォームスタイル） */}
+          <div className="flex-1 text-xs">
+            {[
+              { label: "工事名",   value: form.subject },
+              { label: "工事場所", value: form.location },
+              { label: "工事期間", value: form.constructionPeriod },
+              { label: "有効期限", value: fmtDate(form.validityPeriod) },
+              { label: "備考",     value: form.notes },
+            ].map(({ label, value }) => (
+              <div key={label} className="flex border-b border-slate-400 py-2 min-h-[28px]">
+                <span className="font-medium w-16 shrink-0">{label}</span>
+                <span className="flex-1 pl-2">{value}</span>
               </div>
-            </div>
-            <table className="w-full border-collapse text-xs">
-              <tbody>
-                <tr className="border border-slate-400">
-                  <td className="bg-slate-100 border-r border-slate-400 px-2 py-1.5 font-medium w-24">工事名</td>
-                  <td className="px-2 py-1.5">{form.subject}</td>
-                </tr>
-                <tr className="border border-slate-400">
-                  <td className="bg-slate-100 border-r border-slate-400 px-2 py-1.5 font-medium">工事場所</td>
-                  <td className="px-2 py-1.5">{form.location}</td>
-                </tr>
-                <tr className="border border-slate-400">
-                  <td className="bg-slate-100 border-r border-slate-400 px-2 py-1.5 font-medium">工事期間</td>
-                  <td className="px-2 py-1.5">{form.constructionPeriod}</td>
-                </tr>
-                <tr className="border border-slate-400">
-                  <td className="bg-slate-100 border-r border-slate-400 px-2 py-1.5 font-medium">有効期限</td>
-                  <td className="px-2 py-1.5">{fmtDate(form.validityPeriod)}</td>
-                </tr>
-                {form.notes && (
-                  <tr className="border border-slate-400">
-                    <td className="bg-slate-100 border-r border-slate-400 px-2 py-1.5 font-medium">備考</td>
-                    <td className="px-2 py-1.5">{form.notes}</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+            ))}
           </div>
-          {/* 右：自社情報 */}
-          <div className="w-52 text-xs self-start space-y-0.5">
-            {form.companyName && <div className="font-bold">{form.companyName}</div>}
-            {form.representativeName && <div>代表取締役 {form.representativeName}</div>}
+
+          {/* 右：自社情報（プレーンテキスト） */}
+          <div className="w-52 shrink-0 text-[10px] self-start leading-relaxed">
+            {form.representativeName && <div>代表取締役　{form.representativeName}</div>}
             {form.companyAddress && <div>{form.companyAddress}</div>}
             {form.companyTel && <div>TEL：{form.companyTel}</div>}
             {form.companyFax && <div>FAX：{form.companyFax}</div>}
-            {form.constructionLicense && <div>建設業許可 {form.constructionLicense}</div>}
-            {form.companyStaff && <div>担当者：{form.companyStaff}</div>}
+            {form.constructionLicense && <div className="mt-1">建設業許可 {form.constructionLicense}</div>}
+            {form.companyStaff && <div className="mt-1">担当者：{form.companyStaff}</div>}
             {form.staffMobile && <div>携帯番号：{form.staffMobile}</div>}
             {form.staffEmail && <div>MAIL：{form.staffEmail}</div>}
           </div>
