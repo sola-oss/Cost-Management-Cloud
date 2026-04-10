@@ -23,6 +23,10 @@ router.get("/", async (req, res) => {
         bankAccountType: "普通",
         bankAccountNumber: "",
         bankAccountName: "",
+        constructionLicense: "",
+        staffName: "",
+        staffMobile: "",
+        staffEmail: "",
       });
     }
     res.json(rows[0]);
@@ -38,6 +42,7 @@ router.put("/", async (req, res) => {
       companyName, postalCode, address, tel, fax,
       invoiceRegistrationNumber, representativeName, department,
       bankName, bankBranch, bankAccountType, bankAccountNumber, bankAccountName,
+      constructionLicense, staffName, staffMobile, staffEmail,
     } = req.body;
 
     const values = {
@@ -54,6 +59,10 @@ router.put("/", async (req, res) => {
       bankAccountType: bankAccountType ?? "普通",
       bankAccountNumber: bankAccountNumber ?? "",
       bankAccountName: bankAccountName ?? "",
+      constructionLicense: constructionLicense ?? "",
+      staffName: staffName ?? "",
+      staffMobile: staffMobile ?? "",
+      staffEmail: staffEmail ?? "",
     };
 
     const rows = await db.select({ id: companySettingsTable.id }).from(companySettingsTable).limit(1);

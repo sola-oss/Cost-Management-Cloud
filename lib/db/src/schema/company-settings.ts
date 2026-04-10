@@ -15,6 +15,10 @@ export const companySettingsTable = pgTable("company_settings", {
   bankAccountType: text("bank_account_type").default("普通"),
   bankAccountNumber: text("bank_account_number").default(""),
   bankAccountName: text("bank_account_name").default(""),
+  constructionLicense: text("construction_license").default(""),
+  staffName: text("staff_name").default(""),
+  staffMobile: text("staff_mobile").default(""),
+  staffEmail: text("staff_email").default(""),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

@@ -24,6 +24,10 @@ interface CompanySettings {
   bankAccountType: string;
   bankAccountNumber: string;
   bankAccountName: string;
+  constructionLicense: string;
+  staffName: string;
+  staffMobile: string;
+  staffEmail: string;
 }
 
 const defaultSettings: CompanySettings = {
@@ -41,6 +45,10 @@ const defaultSettings: CompanySettings = {
   bankAccountType: "普通",
   bankAccountNumber: "",
   bankAccountName: "",
+  constructionLicense: "",
+  staffName: "",
+  staffMobile: "",
+  staffEmail: "",
 };
 
 async function fetchSettings(): Promise<CompanySettings> {
@@ -169,6 +177,29 @@ export default function CompanySettingsPage() {
                 <Input value={form.department} onChange={(e) => set("department", e.target.value)} className="mt-1" placeholder="工事部" />
               </div>
             </div>
+            <div>
+              <Label>建設業許可番号</Label>
+              <Input value={form.constructionLicense} onChange={(e) => set("constructionLicense", e.target.value)} className="mt-1" placeholder="例：山口県知事許可（般-XX）第XXXX号" />
+            </div>
+          </div>
+        </section>
+
+        {/* 担当者情報 */}
+        <section className="bg-white rounded-xl border p-6 space-y-4">
+          <h2 className="text-base font-semibold text-slate-700 border-b pb-2">担当者情報</h2>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>担当者名</Label>
+              <Input value={form.staffName} onChange={(e) => set("staffName", e.target.value)} className="mt-1" placeholder="担当者名" />
+            </div>
+            <div>
+              <Label>携帯番号</Label>
+              <Input value={form.staffMobile} onChange={(e) => set("staffMobile", e.target.value)} className="mt-1" placeholder="090-0000-0000" />
+            </div>
+          </div>
+          <div>
+            <Label>メールアドレス</Label>
+            <Input value={form.staffEmail} onChange={(e) => set("staffEmail", e.target.value)} className="mt-1" placeholder="example@company.co.jp" />
           </div>
         </section>
 
