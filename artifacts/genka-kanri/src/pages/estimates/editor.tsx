@@ -230,7 +230,7 @@ function PrintLayout({
         {/* 御見積金額エリア */}
         <div className="flex items-center mb-1">
           <span className="text-sm font-medium w-28 shrink-0">御見積金額</span>
-          <span className="text-[28px] font-extrabold text-slate-900 border border-black px-5 py-1 leading-tight">
+          <span className="text-xl font-extrabold text-slate-900 border border-black px-5 py-1 leading-tight">
             {fmt(taxIncluded)}
           </span>
         </div>
