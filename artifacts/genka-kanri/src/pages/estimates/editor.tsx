@@ -434,6 +434,30 @@ export default function EstimateEditor({ id }: { id?: number }) {
     queryFn: () => fetchEstimate(id!),
     enabled: !isNew && !!id,
   });
+  const { data: companySettings } = useQuery({
+    queryKey: ["company-settings"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/company-settings`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+
+  useEffect(() => {
+    if (!isNew || !companySettings) return;
+    sf({
+      companyName: companySettings.companyName ?? "",
+      companyAddress: [companySettings.postalCode ? `〒${companySettings.postalCode}` : "", companySettings.address ?? ""].filter(Boolean).join(" "),
+      companyTel: companySettings.tel ?? "",
+      companyFax: companySettings.fax ?? "",
+      representativeName: companySettings.representativeName ?? "",
+      constructionLicense: companySettings.constructionLicense ?? "",
+      companyStaff: companySettings.staffName ?? "",
+      staffMobile: companySettings.staffMobile ?? "",
+      staffEmail: companySettings.staffEmail ?? "",
+    });
+  }, [isNew, companySettings]);
 
   useEffect(() => {
     if (!existing) return;
