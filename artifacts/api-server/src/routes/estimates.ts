@@ -15,6 +15,8 @@ function formatEstimate(e: typeof estimatesTable.$inferSelect) {
     taxExcludedAmount: parseN(e.taxExcludedAmount),
     taxAmount: parseN(e.taxAmount),
     taxIncludedAmount: parseN(e.taxIncludedAmount),
+    miscExpensesRate: parseN(e.miscExpensesRate),
+    discountAmount: parseN(e.discountAmount),
   };
 }
 
@@ -71,6 +73,12 @@ function extractBody(body: any) {
     companyStaff: body.companyStaff,
     department: body.department,
     memo: body.memo,
+    representativeName: body.representativeName,
+    constructionLicense: body.constructionLicense,
+    staffMobile: body.staffMobile,
+    staffEmail: body.staffEmail,
+    miscExpensesRate: body.miscExpensesRate !== undefined ? String(body.miscExpensesRate) : undefined,
+    discountAmount: body.discountAmount !== undefined ? String(body.discountAmount) : undefined,
   };
 }
 
@@ -137,6 +145,12 @@ router.post("/", async (req, res) => {
       companyStaff: b.companyStaff ?? "",
       department: b.department ?? "",
       memo: b.memo ?? "",
+      representativeName: b.representativeName ?? "",
+      constructionLicense: b.constructionLicense ?? "",
+      staffMobile: b.staffMobile ?? "",
+      staffEmail: b.staffEmail ?? "",
+      miscExpensesRate: b.miscExpensesRate ?? "0",
+      discountAmount: b.discountAmount ?? "0",
     }).returning();
 
     res.status(201).json(formatEstimate(row));
@@ -189,6 +203,8 @@ router.patch("/:id", async (req, res) => {
       "taxRate", "taxExcludedAmount", "taxAmount", "taxIncludedAmount",
       "status", "notes", "architectFirm", "companyName", "companyAddress",
       "companyTel", "companyFax", "companyStaff", "department", "memo",
+      "representativeName", "constructionLicense", "staffMobile", "staffEmail",
+      "miscExpensesRate", "discountAmount",
     ];
     for (const f of fields) {
       if (b[f] !== undefined) updates[f] = b[f];
@@ -290,6 +306,12 @@ router.post("/:id/duplicate", async (req, res) => {
       companyStaff: orig.companyStaff,
       department: orig.department,
       memo: orig.memo,
+      representativeName: orig.representativeName,
+      constructionLicense: orig.constructionLicense,
+      staffMobile: orig.staffMobile,
+      staffEmail: orig.staffEmail,
+      miscExpensesRate: orig.miscExpensesRate,
+      discountAmount: orig.discountAmount,
     }).returning();
 
     if (origItems.length > 0) {

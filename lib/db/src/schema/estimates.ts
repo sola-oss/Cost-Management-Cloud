@@ -33,6 +33,12 @@ export const estimatesTable = pgTable("estimates", {
   companyStaff: text("company_staff").default(""),
   department: text("department").default(""),
   memo: text("memo").default(""),
+  representativeName: text("representative_name").default(""),
+  constructionLicense: text("construction_license").default(""),
+  staffMobile: text("staff_mobile").default(""),
+  staffEmail: text("staff_email").default(""),
+  miscExpensesRate: numeric("misc_expenses_rate", { precision: 5, scale: 2 }).default("0"),
+  discountAmount: numeric("discount_amount", { precision: 15, scale: 2 }).default("0"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

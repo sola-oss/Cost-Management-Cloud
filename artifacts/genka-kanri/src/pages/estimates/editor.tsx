@@ -3,7 +3,6 @@ import { useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, ArrowLeft, Copy, Printer, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -48,6 +47,12 @@ interface EstimateForm {
   companyStaff: string;
   department: string;
   memo: string;
+  representativeName: string;
+  constructionLicense: string;
+  staffMobile: string;
+  staffEmail: string;
+  miscExpensesRate: number;
+  discountAmount: number;
 }
 
 interface Project { id: number; name: string; projectCode: string; clientName: string; location: string; }
@@ -112,7 +117,7 @@ function addMonths(dateStr: string, months: number): string {
 function FieldRow({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
   return (
     <div className={`flex border-b border-slate-300 last:border-b-0 ${className}`}>
-      <div className="bg-slate-100 border-r border-slate-300 px-2 py-1 text-xs text-slate-600 font-medium w-24 shrink-0 flex items-center">
+      <div className="bg-slate-100 border-r border-slate-300 px-2 py-1 text-xs text-slate-600 font-medium w-28 shrink-0 flex items-center">
         {label}
       </div>
       <div className="flex-1 px-2 py-0.5 flex items-center">
@@ -138,6 +143,257 @@ function FormInput({
   );
 }
 
+// ─── 印刷用レイアウト ─────────────────────────────────────────────────────────
+function PrintLayout({
+  form,
+  items,
+  estNumber,
+  taxAmount,
+  taxIncluded,
+  miscExpensesAmount,
+  discountAmount,
+  finalSubtotal,
+}: {
+  form: EstimateForm;
+  items: EstimateItem[];
+  estNumber: string;
+  taxAmount: number;
+  taxIncluded: number;
+  miscExpensesAmount: number;
+  discountAmount: number;
+  finalSubtotal: number;
+}) {
+  const fmt = (n: number) => `¥${n.toLocaleString()}`;
+  const fmtDate = (d: string) => {
+    if (!d) return "";
+    const [y, m, day] = d.split("-");
+    return `${y}年${parseInt(m)}月${parseInt(day)}日`;
+  };
+
+  // level=1 の行をカテゴリとして集計（見積内訳書用）
+  type CategoryGroup = { name: string; subtotal: number };
+  const categories: CategoryGroup[] = [];
+  let currentCat = "";
+  let currentSubtotal = 0;
+  for (const item of items) {
+    if (item.rowType === "pagebreak") continue;
+    if (item.level === 1 && item.rowType === "normal") {
+      if (currentCat) {
+        categories.push({ name: currentCat, subtotal: currentSubtotal });
+        currentSubtotal = 0;
+      }
+      currentCat = item.itemName || item.workType || "";
+    } else if (item.rowType === "normal" || item.rowType === "discount") {
+      const amt = item.quantity != null && item.unitPrice != null
+        ? Math.round(item.quantity * item.unitPrice)
+        : item.amount;
+      currentSubtotal += item.rowType === "discount" ? -Math.abs(amt) : amt;
+    }
+  }
+  if (currentCat) categories.push({ name: currentCat, subtotal: currentSubtotal });
+
+  // 明細書用：カテゴリごとに明細行をグループ化
+  type DetailSection = { catName: string; rows: EstimateItem[] };
+  const detailSections: DetailSection[] = [];
+  let currentSection: DetailSection | null = null;
+  for (const item of items) {
+    if (item.rowType === "pagebreak") {
+      currentSection = null;
+      continue;
+    }
+    if (item.level === 1 && item.rowType === "normal") {
+      currentSection = { catName: item.itemName || item.workType || "", rows: [] };
+      detailSections.push(currentSection);
+    } else {
+      if (!currentSection) {
+        currentSection = { catName: "", rows: [] };
+        detailSections.push(currentSection);
+      }
+      if (item.rowType === "normal" || item.rowType === "discount") {
+        currentSection.rows.push(item);
+      }
+    }
+  }
+
+  return (
+    <div className="hidden print:block text-black font-sans text-[11px]">
+      {/* ===== PAGE 1: 御見積書（表紙） ===== */}
+      <div className="print-page w-[210mm] min-h-[297mm] p-[15mm] box-border">
+        {/* ヘッダー */}
+        <div className="flex justify-between items-start mb-4">
+          <div className="text-xs text-slate-500">
+            <div>見積番号: {estNumber}</div>
+            <div>見積日: {fmtDate(form.estimateDate)}</div>
+          </div>
+          <div className="text-center flex-1">
+            <h1 className="text-3xl font-bold tracking-widest text-slate-900 mb-1">御　見　積　書</h1>
+          </div>
+          <div className="text-xs text-slate-500 text-right w-32"></div>
+        </div>
+
+        {/* 得意先 + 御見積金額 */}
+        <div className="flex justify-between gap-6 mb-4">
+          {/* 左：得意先 */}
+          <div className="flex-1">
+            <div className="text-2xl font-bold border-b-2 border-black pb-1 mb-2">
+              {form.clientName || "\u3000\u3000\u3000\u3000\u3000\u3000"}&nbsp;御中
+            </div>
+            <div className="text-sm mb-3">下記の通り御見積申し上げます。</div>
+            {/* 御見積金額 */}
+            <div className="border border-black p-3 bg-slate-50 mb-3">
+              <div className="text-xs text-slate-600 mb-0.5">御見積金額（税込）</div>
+              <div className="text-3xl font-extrabold text-slate-900">{fmt(taxIncluded)}</div>
+              <div className="flex gap-6 mt-2 text-xs text-slate-600">
+                <span>税抜合計: {fmt(finalSubtotal)}</span>
+                <span>消費税（{form.taxRate}%）: {fmt(taxAmount)}</span>
+              </div>
+            </div>
+            {/* 工事情報 */}
+            <table className="w-full border-collapse text-xs">
+              <tbody>
+                <tr className="border border-slate-400">
+                  <td className="bg-slate-100 border-r border-slate-400 px-2 py-1 font-medium w-24">工事名</td>
+                  <td className="px-2 py-1">{form.subject}</td>
+                </tr>
+                <tr className="border border-slate-400">
+                  <td className="bg-slate-100 border-r border-slate-400 px-2 py-1 font-medium">工事場所</td>
+                  <td className="px-2 py-1">{form.location}</td>
+                </tr>
+                <tr className="border border-slate-400">
+                  <td className="bg-slate-100 border-r border-slate-400 px-2 py-1 font-medium">工事期間</td>
+                  <td className="px-2 py-1">{form.constructionPeriod}</td>
+                </tr>
+                <tr className="border border-slate-400">
+                  <td className="bg-slate-100 border-r border-slate-400 px-2 py-1 font-medium">有効期限</td>
+                  <td className="px-2 py-1">{fmtDate(form.validityPeriod)}</td>
+                </tr>
+                {form.notes && (
+                  <tr className="border border-slate-400">
+                    <td className="bg-slate-100 border-r border-slate-400 px-2 py-1 font-medium">備考</td>
+                    <td className="px-2 py-1">{form.notes}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 右：自社情報 */}
+          <div className="w-60 text-xs border border-slate-400 p-3 self-start">
+            {form.companyName && <div className="font-bold text-sm mb-1">{form.companyName}</div>}
+            {form.representativeName && <div className="mb-0.5">代表取締役　{form.representativeName}</div>}
+            {form.companyAddress && <div className="mb-0.5">{form.companyAddress}</div>}
+            {form.companyTel && <div className="mb-0.5">TEL: {form.companyTel}</div>}
+            {form.companyFax && <div className="mb-0.5">FAX: {form.companyFax}</div>}
+            {form.constructionLicense && <div className="mb-0.5">{form.constructionLicense}</div>}
+            <div className="border-t border-slate-300 mt-2 pt-2">
+              {form.companyStaff && <div className="mb-0.5">担当: {form.companyStaff}</div>}
+              {form.staffMobile && <div className="mb-0.5">携帯: {form.staffMobile}</div>}
+              {form.staffEmail && <div className="mb-0.5">Mail: {form.staffEmail}</div>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ===== PAGE 2: 見積内訳書 ===== */}
+      <div className="print-page w-[210mm] min-h-[297mm] p-[15mm] box-border break-before-page">
+        <div className="text-center mb-4">
+          <h2 className="text-xl font-bold tracking-wider">見　積　内　訳　書</h2>
+          <div className="text-xs text-slate-500 mt-1">（工事名：{form.subject}）</div>
+        </div>
+        <table className="w-full border-collapse text-xs">
+          <thead>
+            <tr className="bg-slate-200">
+              <th className="border border-slate-400 px-3 py-2 text-left">分類・工事種別</th>
+              <th className="border border-slate-400 px-3 py-2 text-right w-36">見積金額（税抜）</th>
+            </tr>
+          </thead>
+          <tbody>
+            {categories.map((cat, i) => (
+              <tr key={i} className={i % 2 === 0 ? "" : "bg-slate-50"}>
+                <td className="border border-slate-400 px-3 py-1.5">{cat.name || "（未分類）"}</td>
+                <td className="border border-slate-400 px-3 py-1.5 text-right">{fmt(cat.subtotal)}</td>
+              </tr>
+            ))}
+            {miscExpensesAmount > 0 && (
+              <tr>
+                <td className="border border-slate-400 px-3 py-1.5">諸経費（{form.miscExpensesRate}%）</td>
+                <td className="border border-slate-400 px-3 py-1.5 text-right">{fmt(miscExpensesAmount)}</td>
+              </tr>
+            )}
+            {discountAmount > 0 && (
+              <tr className="text-red-700">
+                <td className="border border-slate-400 px-3 py-1.5">お値引き</td>
+                <td className="border border-slate-400 px-3 py-1.5 text-right">▲ {fmt(discountAmount)}</td>
+              </tr>
+            )}
+            <tr className="bg-slate-200 font-bold">
+              <td className="border border-slate-400 px-3 py-2">税抜合計</td>
+              <td className="border border-slate-400 px-3 py-2 text-right">{fmt(finalSubtotal)}</td>
+            </tr>
+            <tr>
+              <td className="border border-slate-400 px-3 py-1.5">消費税（{form.taxRate}%）</td>
+              <td className="border border-slate-400 px-3 py-1.5 text-right">{fmt(taxAmount)}</td>
+            </tr>
+            <tr className="bg-slate-800 text-white font-bold">
+              <td className="border border-slate-600 px-3 py-2 text-base">御見積金額（税込）</td>
+              <td className="border border-slate-600 px-3 py-2 text-right text-base">{fmt(taxIncluded)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* ===== PAGE 3+: 見積明細書 ===== */}
+      {detailSections.map((section, si) => (
+        <div key={si} className="print-page w-[210mm] min-h-[297mm] p-[15mm] box-border break-before-page">
+          <div className="text-center mb-3">
+            <h2 className="text-xl font-bold tracking-wider">見　積　明　細　書</h2>
+            <div className="text-xs text-slate-500 mt-0.5">
+              {section.catName && <span>【{section.catName}】</span>}
+            </div>
+          </div>
+          <table className="w-full border-collapse text-[10px]">
+            <thead>
+              <tr className="bg-slate-200">
+                <th className="border border-slate-400 px-1 py-1.5 text-center w-8">No.</th>
+                <th className="border border-slate-400 px-2 py-1.5 text-left">摘要</th>
+                <th className="border border-slate-400 px-2 py-1.5 text-left w-28">備考</th>
+                <th className="border border-slate-400 px-1 py-1.5 text-center w-20">数量・単位</th>
+                <th className="border border-slate-400 px-2 py-1.5 text-right w-20">見積単価</th>
+                <th className="border border-slate-400 px-2 py-1.5 text-right w-24">見積額</th>
+              </tr>
+            </thead>
+            <tbody>
+              {section.rows.map((item, idx) => {
+                const amt = item.quantity != null && item.unitPrice != null
+                  ? Math.round(item.quantity * item.unitPrice)
+                  : item.amount;
+                return (
+                  <tr key={item._key} className={idx % 2 === 0 ? "" : "bg-slate-50"}>
+                    <td className="border border-slate-300 px-1 py-1 text-center text-slate-500">{idx + 1}</td>
+                    <td className="border border-slate-300 px-2 py-1" style={{ paddingLeft: `${(item.level - 2) * 8 + 8}px` }}>
+                      {item.itemName}
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1 text-slate-600">{item.notes}</td>
+                    <td className="border border-slate-300 px-1 py-1 text-center">
+                      {item.quantity != null ? `${item.quantity.toLocaleString()} ${item.unit}` : item.unit}
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1 text-right">
+                      {item.unitPrice != null ? `¥${item.unitPrice.toLocaleString()}` : ""}
+                    </td>
+                    <td className="border border-slate-300 px-2 py-1 text-right font-medium">
+                      {amt > 0 || (item.quantity != null && item.unitPrice != null) ? fmt(amt) : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── メインエディター ─────────────────────────────────────────────────────────
 export default function EstimateEditor({ id }: { id?: number }) {
   const isNew = !id;
@@ -155,6 +411,8 @@ export default function EstimateEditor({ id }: { id?: number }) {
     paymentTerms: "別途契約書通り", taxRate: 10, status: "draft", notes: "",
     architectFirm: "", companyName: "", companyAddress: "",
     companyTel: "", companyFax: "", companyStaff: "", department: "", memo: "",
+    representativeName: "", constructionLicense: "", staffMobile: "", staffEmail: "",
+    miscExpensesRate: 0, discountAmount: 0,
   });
 
   const sf = (patch: Partial<EstimateForm>) => setForm((f) => ({ ...f, ...patch }));
@@ -223,6 +481,12 @@ export default function EstimateEditor({ id }: { id?: number }) {
       companyStaff: existing.companyStaff ?? "",
       department: existing.department ?? "",
       memo: existing.memo ?? "",
+      representativeName: existing.representativeName ?? "",
+      constructionLicense: existing.constructionLicense ?? "",
+      staffMobile: existing.staffMobile ?? "",
+      staffEmail: existing.staffEmail ?? "",
+      miscExpensesRate: existing.miscExpensesRate ?? 0,
+      discountAmount: existing.discountAmount ?? 0,
     });
     if (existing.items?.length > 0) {
       setItems(existing.items.map((it: any, idx: number) => ({
@@ -247,7 +511,7 @@ export default function EstimateEditor({ id }: { id?: number }) {
   };
 
   // ─── 集計 ────────────────────────────────────────────────────────────────
-  const taxExcluded = items
+  const itemsSubtotal = items
     .filter((i) => i.rowType === "normal" || i.rowType === "discount")
     .reduce((s, i) => {
       const a = i.quantity != null && i.unitPrice != null
@@ -255,8 +519,13 @@ export default function EstimateEditor({ id }: { id?: number }) {
         : i.amount;
       return i.rowType === "discount" ? s - Math.abs(a) : s + a;
     }, 0);
-  const taxAmount = Math.round(taxExcluded * form.taxRate / 100);
-  const taxIncluded = taxExcluded + taxAmount;
+  const miscExpensesAmount = form.miscExpensesRate > 0
+    ? Math.round(itemsSubtotal * form.miscExpensesRate / 100)
+    : 0;
+  const finalSubtotal = itemsSubtotal + miscExpensesAmount - form.discountAmount;
+  const taxAmount = Math.round(finalSubtotal * form.taxRate / 100);
+  const taxIncluded = finalSubtotal + taxAmount;
+
   const fmt = (n: number) => `¥${n.toLocaleString()}`;
   const fmtDate = (d: string) => {
     if (!d) return "";
@@ -305,7 +574,7 @@ export default function EstimateEditor({ id }: { id?: number }) {
       const body = {
         ...form,
         projectId: form.projectId || null,
-        taxExcludedAmount: taxExcluded,
+        taxExcludedAmount: finalSubtotal,
         taxAmount,
         taxIncludedAmount: taxIncluded,
       };
@@ -350,6 +619,18 @@ export default function EstimateEditor({ id }: { id?: number }) {
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-100">
+      {/* 印刷専用レイアウト */}
+      <PrintLayout
+        form={form}
+        items={items}
+        estNumber={estNumber}
+        taxAmount={taxAmount}
+        taxIncluded={taxIncluded}
+        miscExpensesAmount={miscExpensesAmount}
+        discountAmount={form.discountAmount}
+        finalSubtotal={finalSubtotal}
+      />
+
       {/* ナビバー */}
       <div className="sticky top-0 z-20 bg-white border-b shadow-sm print:hidden">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center gap-3">
@@ -390,49 +671,61 @@ export default function EstimateEditor({ id }: { id?: number }) {
 
       {/* 金額サマリー */}
       <div className="max-w-5xl mx-auto w-full px-4 pt-4 print:hidden">
-        <div className="bg-white rounded-xl border shadow-sm px-6 py-3 flex gap-8 items-center">
+        <div className="bg-white rounded-xl border shadow-sm px-6 py-3 flex gap-8 items-center flex-wrap">
           <div className="text-center">
-            <div className="text-xs text-slate-500 mb-0.5">税抜金額</div>
-            <div className="text-base font-bold text-slate-700">{fmt(taxExcluded)}</div>
+            <div className="text-xs text-slate-500 mb-0.5">明細合計</div>
+            <div className="text-base font-bold text-slate-700">{fmt(itemsSubtotal)}</div>
+          </div>
+          {miscExpensesAmount > 0 && (
+            <div className="text-center">
+              <div className="text-xs text-slate-500 mb-0.5">諸経費（{form.miscExpensesRate}%）</div>
+              <div className="text-base font-bold text-slate-700">{fmt(miscExpensesAmount)}</div>
+            </div>
+          )}
+          {form.discountAmount > 0 && (
+            <div className="text-center">
+              <div className="text-xs text-slate-500 mb-0.5">お値引き</div>
+              <div className="text-base font-bold text-red-600">▲{fmt(form.discountAmount)}</div>
+            </div>
+          )}
+          <div className="text-center">
+            <div className="text-xs text-slate-500 mb-0.5">税抜合計</div>
+            <div className="text-base font-bold text-slate-700">{fmt(finalSubtotal)}</div>
           </div>
           <div className="text-center">
             <div className="text-xs text-slate-500 mb-0.5">消費税（{form.taxRate}%）</div>
             <div className="text-base font-bold text-slate-700">{fmt(taxAmount)}</div>
           </div>
           <div className="text-center border-l pl-8">
-            <div className="text-xs text-slate-500 mb-0.5">見積金額（税込）</div>
+            <div className="text-xs text-slate-500 mb-0.5">御見積金額（税込）</div>
             <div className="text-2xl font-extrabold text-orange-600">{fmt(taxIncluded)}</div>
           </div>
         </div>
       </div>
 
       {/* タブ */}
-      <div className="max-w-5xl mx-auto w-full px-4 py-4">
+      <div className="max-w-5xl mx-auto w-full px-4 py-4 print:hidden">
         <Tabs value={tab} onValueChange={setTab}>
-          <TabsList className="mb-4 bg-white border print:hidden">
+          <TabsList className="mb-4 bg-white border">
             <TabsTrigger value="cover" className="text-sm">表紙</TabsTrigger>
             <TabsTrigger value="items" className="text-sm">明細</TabsTrigger>
           </TabsList>
 
-          {/* ──── 表紙タブ ─────────────────────────────────────────────────── */}
+          {/* ──── 表紙タブ（大塚フォーマット） ─────────────────────────── */}
           <TabsContent value="cover">
-            {/* 見積書用紙風コンテナ */}
-            <div className="bg-white shadow-md border border-slate-300 rounded-lg overflow-hidden print:shadow-none print:rounded-none">
+            <div className="bg-white shadow-md border border-slate-300 rounded-lg overflow-hidden">
 
               {/* ① ヘッダー行 */}
               <div className="grid grid-cols-3 border-b border-slate-300 items-center px-4 py-3 gap-2">
-                {/* 左：見積番号 */}
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-slate-500 whitespace-nowrap">見積番号</span>
                   <span className="font-mono text-sm font-semibold text-slate-700 border-b border-slate-400 px-1 min-w-[140px]">
                     {estNumber}
                   </span>
                 </div>
-                {/* 中央：御見積書 */}
                 <div className="text-center">
                   <h1 className="text-3xl font-bold tracking-widest text-slate-800">御見積書</h1>
                 </div>
-                {/* 右：見積日 */}
                 <div className="flex items-center gap-2 justify-end">
                   <span className="text-xs text-slate-500 whitespace-nowrap">見積日</span>
                   <input
@@ -444,10 +737,10 @@ export default function EstimateEditor({ id }: { id?: number }) {
                 </div>
               </div>
 
-              {/* ② 得意先エリア（左）＋ ③ 金額サマリー（右） */}
+              {/* ② 得意先エリア（左）＋自社情報（右） */}
               <div className="grid grid-cols-2 border-b border-slate-300">
-                {/* 得意先エリア */}
-                <div className="border-r border-slate-300 p-4 space-y-2">
+                {/* 左：得意先・御見積金額・工事情報 */}
+                <div className="border-r border-slate-300 p-4 space-y-3">
                   {clients.length > 0 && (
                     <Select
                       value={clients.find((c) => c.name === form.clientName)?.clientCode ?? "__manual__"}
@@ -476,6 +769,7 @@ export default function EstimateEditor({ id }: { id?: number }) {
                       </SelectContent>
                     </Select>
                   )}
+                  {/* 得意先名 */}
                   <div className="flex items-baseline gap-2">
                     <input
                       value={form.clientName}
@@ -485,11 +779,8 @@ export default function EstimateEditor({ id }: { id?: number }) {
                     />
                     <span className="text-lg font-medium text-slate-700 whitespace-nowrap">御中</span>
                   </div>
-                  <FormInput
-                    value={form.clientAddress}
-                    onChange={(v) => sf({ clientAddress: v })}
-                    placeholder="住所"
-                  />
+
+                  {/* 下記の通り… */}
                   <Textarea
                     value={form.notes}
                     onChange={(e) => sf({ notes: e.target.value })}
@@ -497,55 +788,75 @@ export default function EstimateEditor({ id }: { id?: number }) {
                     rows={2}
                     className="text-sm border-0 bg-transparent focus:ring-0 resize-none p-0 placeholder:text-slate-300"
                   />
+
+                  {/* 御見積金額 */}
+                  <div className="border border-slate-300 rounded p-3 bg-slate-50">
+                    <div className="text-xs text-slate-500 mb-1">御見積金額（税込）</div>
+                    <div className="text-3xl font-extrabold text-orange-600 mb-2">{fmt(taxIncluded)}</div>
+                    <div className="flex gap-4 text-xs text-slate-600">
+                      <span>税抜: {fmt(finalSubtotal)}</span>
+                      <span>消費税（{form.taxRate}%）: {fmt(taxAmount)}</span>
+                    </div>
+                    {/* 消費税率選択 */}
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="text-xs text-slate-500">消費税率</span>
+                      <Select value={String(form.taxRate)} onValueChange={(v) => sf({ taxRate: parseFloat(v) })}>
+                        <SelectTrigger className="h-6 text-xs w-20">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="10">10%</SelectItem>
+                          <SelectItem value="8">8%</SelectItem>
+                          <SelectItem value="0">非課税</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                 </div>
 
-                {/* 金額サマリー表 */}
-                <div className="p-4">
-                  <div className="border border-slate-300">
-                    <div className="grid grid-cols-2 border-b border-slate-300">
-                      <div className="bg-slate-100 border-r border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 text-center">合計金額</div>
-                      <div className="px-3 py-2 text-right font-bold text-slate-800 text-lg">{fmt(taxIncluded)}</div>
-                    </div>
-                    <div className="grid grid-cols-2 border-b border-slate-300">
-                      <div className="bg-slate-100 border-r border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 text-center">工事代金</div>
-                      <div className="px-3 py-2 text-right font-medium text-slate-700">{fmt(taxExcluded)}</div>
-                    </div>
-                    <div className="grid grid-cols-2">
-                      <div className="bg-slate-100 border-r border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 text-center">消費税</div>
-                      <div className="px-3 py-2 text-right text-slate-600">
-                        <span>{fmt(taxAmount)}</span>
-                        <span className="text-xs text-slate-400 ml-1">({form.taxRate}%)</span>
-                      </div>
-                    </div>
-                  </div>
-                  {/* 消費税率選択 */}
-                  <div className="mt-3 flex items-center gap-2">
-                    <span className="text-xs text-slate-500">消費税率</span>
-                    <Select value={String(form.taxRate)} onValueChange={(v) => sf({ taxRate: parseFloat(v) })}>
-                      <SelectTrigger className="h-7 text-xs w-20">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="10">10%</SelectItem>
-                        <SelectItem value="8">8%</SelectItem>
-                        <SelectItem value="0">非課税</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                {/* 右：自社情報 */}
+                <div>
+                  <FieldRow label="会社名">
+                    <FormInput value={form.companyName} onChange={(v) => sf({ companyName: v })} placeholder="例：レッツ建設株式会社" />
+                  </FieldRow>
+                  <FieldRow label="代表取締役">
+                    <FormInput value={form.representativeName} onChange={(v) => sf({ representativeName: v })} placeholder="例：山田 太郎" />
+                  </FieldRow>
+                  <FieldRow label="住所">
+                    <FormInput value={form.companyAddress} onChange={(v) => sf({ companyAddress: v })} placeholder="例：宮城県仙台市本町一丁目3-5" />
+                  </FieldRow>
+                  <FieldRow label="TEL">
+                    <FormInput value={form.companyTel} onChange={(v) => sf({ companyTel: v })} placeholder="022-224-XXXX" />
+                  </FieldRow>
+                  <FieldRow label="FAX">
+                    <FormInput value={form.companyFax} onChange={(v) => sf({ companyFax: v })} placeholder="022-224-XXXX" />
+                  </FieldRow>
+                  <FieldRow label="建設業許可番号">
+                    <FormInput value={form.constructionLicense} onChange={(v) => sf({ constructionLicense: v })} placeholder="例：宮城県知事許可（般-XX）第XXXX号" />
+                  </FieldRow>
+                  <FieldRow label="担当者">
+                    <FormInput value={form.companyStaff} onChange={(v) => sf({ companyStaff: v })} placeholder="担当者名" />
+                  </FieldRow>
+                  <FieldRow label="携帯番号">
+                    <FormInput value={form.staffMobile} onChange={(v) => sf({ staffMobile: v })} placeholder="090-XXXX-XXXX" />
+                  </FieldRow>
+                  <FieldRow label="メールアドレス">
+                    <FormInput value={form.staffEmail} onChange={(v) => sf({ staffEmail: v })} placeholder="example@company.co.jp" />
+                  </FieldRow>
                 </div>
               </div>
 
-              {/* ④ 工事情報グリッド */}
+              {/* ③ 工事情報グリッド */}
               <div className="grid grid-cols-2 border-b border-slate-300">
                 {/* 左：工事詳細 */}
                 <div className="border-r border-slate-300 border-collapse">
-                  <FieldRow label="件名">
+                  <FieldRow label="工事名">
                     <FormInput value={form.subject} onChange={(v) => sf({ subject: v })} placeholder="例：〇〇邸 新築工事" />
                   </FieldRow>
-                  <FieldRow label="場所">
+                  <FieldRow label="工事場所">
                     <FormInput value={form.location} onChange={(v) => sf({ location: v })} placeholder="例：宮城県仙台市青葉区1-2-1" />
                   </FieldRow>
-                  <FieldRow label="工期">
+                  <FieldRow label="工事期間">
                     <div className="flex items-center gap-1 w-full">
                       <input
                         type="date"
@@ -569,9 +880,6 @@ export default function EstimateEditor({ id }: { id?: number }) {
                         className="bg-transparent border-0 outline-none focus:bg-orange-50 focus:ring-1 focus:ring-orange-300 rounded px-1 py-0.5 text-sm flex-1 min-w-0"
                       />
                     </div>
-                  </FieldRow>
-                  <FieldRow label="支払条件">
-                    <FormInput value={form.paymentTerms} onChange={(v) => sf({ paymentTerms: v })} />
                   </FieldRow>
                   <FieldRow label="有効期限">
                     <div className="flex items-center gap-1.5 w-full">
@@ -603,37 +911,53 @@ export default function EstimateEditor({ id }: { id?: number }) {
                       />
                     </div>
                   </FieldRow>
+                </div>
+
+                {/* 右：諸経費・値引き・メモ */}
+                <div>
+                  <FieldRow label="諸経費率（%）">
+                    <div className="flex items-center gap-2 w-full">
+                      <input
+                        type="number"
+                        value={form.miscExpensesRate || ""}
+                        onChange={(e) => sf({ miscExpensesRate: parseFloat(e.target.value) || 0 })}
+                        placeholder="例：5"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        className="w-20 bg-transparent border-0 outline-none focus:bg-orange-50 focus:ring-1 focus:ring-orange-300 rounded px-1 py-0.5 text-sm text-right"
+                      />
+                      <span className="text-xs text-slate-500">%</span>
+                      {miscExpensesAmount > 0 && (
+                        <span className="text-xs text-slate-600">= {fmt(miscExpensesAmount)}</span>
+                      )}
+                    </div>
+                  </FieldRow>
+                  <FieldRow label="お値引き">
+                    <div className="flex items-center gap-2 w-full">
+                      <span className="text-xs text-slate-500">▲</span>
+                      <input
+                        type="number"
+                        value={form.discountAmount || ""}
+                        onChange={(e) => sf({ discountAmount: parseFloat(e.target.value) || 0 })}
+                        placeholder="0"
+                        min="0"
+                        className="flex-1 bg-transparent border-0 outline-none focus:bg-orange-50 focus:ring-1 focus:ring-orange-300 rounded px-1 py-0.5 text-sm text-right"
+                      />
+                      <span className="text-xs text-slate-500">円</span>
+                    </div>
+                  </FieldRow>
+                  <FieldRow label="支払条件">
+                    <FormInput value={form.paymentTerms} onChange={(v) => sf({ paymentTerms: v })} />
+                  </FieldRow>
                   <FieldRow label="社内メモ" className="border-b-0">
                     <FormInput value={form.memo} onChange={(v) => sf({ memo: v })} placeholder="（印刷されません）" />
                   </FieldRow>
                 </div>
-
-                {/* 右：自社情報 */}
-                <div>
-                  <FieldRow label="建築士事務所">
-                    <FormInput value={form.architectFirm} onChange={(v) => sf({ architectFirm: v })} placeholder="例：一級建築士事務所" />
-                  </FieldRow>
-                  <FieldRow label="会社名">
-                    <FormInput value={form.companyName} onChange={(v) => sf({ companyName: v })} placeholder="例：レッツ建設株式会社" />
-                  </FieldRow>
-                  <FieldRow label="住所">
-                    <FormInput value={form.companyAddress} onChange={(v) => sf({ companyAddress: v })} placeholder="例：宮城県仙台市本町一丁目3-5" />
-                  </FieldRow>
-                  <FieldRow label="TEL">
-                    <FormInput value={form.companyTel} onChange={(v) => sf({ companyTel: v })} placeholder="022-224-XXXX" />
-                  </FieldRow>
-                  <FieldRow label="FAX">
-                    <FormInput value={form.companyFax} onChange={(v) => sf({ companyFax: v })} placeholder="022-224-XXXX" />
-                  </FieldRow>
-                  <FieldRow label="" className="border-b-0">
-                    <span className="text-xs text-slate-400">（追記欄）</span>
-                  </FieldRow>
-                </div>
               </div>
 
-              {/* ⑤ フッター行 */}
+              {/* ④ フッター行 */}
               <div className="grid grid-cols-2 gap-0">
-                {/* 左：作成日・担当・部門 */}
                 <div className="border-r border-slate-300">
                   <FieldRow label="作成日">
                     <input
@@ -643,15 +967,10 @@ export default function EstimateEditor({ id }: { id?: number }) {
                       className="text-sm bg-transparent border-0 focus:outline-none focus:bg-orange-50 focus:ring-1 focus:ring-orange-300 rounded px-1 py-0.5"
                     />
                   </FieldRow>
-                  <FieldRow label="担当者">
-                    <FormInput value={form.companyStaff} onChange={(v) => sf({ companyStaff: v })} placeholder="担当者名" />
-                  </FieldRow>
-                  <FieldRow label="部門" className="border-b-0">
-                    <FormInput value={form.department} onChange={(v) => sf({ department: v })} placeholder="例：本社建築一課" />
+                  <FieldRow label="建築士事務所" className="border-b-0">
+                    <FormInput value={form.architectFirm} onChange={(v) => sf({ architectFirm: v })} placeholder="例：一級建築士事務所" />
                   </FieldRow>
                 </div>
-
-                {/* 右：関連工事・ステータス */}
                 <div>
                   <FieldRow label="関連工事">
                     <Select value={form.projectId || "none"} onValueChange={(v) => handleProjectChange(v === "none" ? "" : v)}>
@@ -668,7 +987,7 @@ export default function EstimateEditor({ id }: { id?: number }) {
                       </SelectContent>
                     </Select>
                   </FieldRow>
-                  <FieldRow label="ステータス">
+                  <FieldRow label="ステータス" className="border-b-0">
                     <Select value={form.status} onValueChange={(v) => sf({ status: v })}>
                       <SelectTrigger className="h-7 text-xs border-0 shadow-none focus:ring-0 w-full">
                         <SelectValue />
@@ -681,13 +1000,11 @@ export default function EstimateEditor({ id }: { id?: number }) {
                       </SelectContent>
                     </Select>
                   </FieldRow>
-                  <div className="h-[37px]" />
                 </div>
               </div>
             </div>
 
-            {/* 保存ボタン */}
-            <div className="mt-4 flex justify-end print:hidden">
+            <div className="mt-4 flex justify-end">
               <Button
                 className="bg-orange-500 hover:bg-orange-600 text-white gap-2"
                 onClick={handleSave}
@@ -712,12 +1029,13 @@ export default function EstimateEditor({ id }: { id?: number }) {
                     <tr className="bg-slate-50 border-b border-slate-300 text-slate-500">
                       <th className="text-center px-2 py-2 w-8 border-r border-slate-200">No</th>
                       <th className="text-center px-2 py-2 w-16 border-r border-slate-200">階層</th>
-                      <th className="text-left px-2 py-2 w-28 border-r border-slate-200">工種</th>
-                      <th className="text-left px-2 py-2 border-r border-slate-200">品名・摘要</th>
+                      <th className="text-left px-2 py-2 w-24 border-r border-slate-200">工種</th>
+                      <th className="text-left px-2 py-2 border-r border-slate-200">摘要</th>
+                      <th className="text-left px-2 py-2 w-32 border-r border-slate-200">備考（型番・仕様）</th>
                       <th className="text-right px-2 py-2 w-20 border-r border-slate-200">数量</th>
                       <th className="text-center px-2 py-2 w-14 border-r border-slate-200">単位</th>
-                      <th className="text-right px-2 py-2 w-24 border-r border-slate-200">単価</th>
-                      <th className="text-right px-2 py-2 w-28 border-r border-slate-200">見積金額</th>
+                      <th className="text-right px-2 py-2 w-24 border-r border-slate-200">見積単価</th>
+                      <th className="text-right px-2 py-2 w-28 border-r border-slate-200">見積額</th>
                       <th className="text-center px-2 py-2 w-20 border-r border-slate-200">種別</th>
                       <th className="px-2 py-2 w-20 text-center">操作</th>
                     </tr>
@@ -739,7 +1057,7 @@ export default function EstimateEditor({ id }: { id?: number }) {
                         return (
                           <tr key={item._key} className="border-b border-dashed border-slate-300 bg-slate-50">
                             <td className="px-2 py-1 text-center text-slate-400">{idx + 1}</td>
-                            <td colSpan={7} className="px-3 py-1 text-center text-slate-400 text-xs italic">
+                            <td colSpan={8} className="px-3 py-1 text-center text-slate-400 text-xs italic">
                               ── 改ページ ──
                             </td>
                             <td className="px-2 py-1 text-center">
@@ -798,10 +1116,20 @@ export default function EstimateEditor({ id }: { id?: number }) {
                               <input
                                 value={item.itemName}
                                 onChange={(e) => updateRow(item._key, { itemName: e.target.value })}
-                                placeholder={isSpecial ? ROW_TYPE_LABELS[item.rowType] : "品名・摘要"}
+                                placeholder={isSpecial ? ROW_TYPE_LABELS[item.rowType] : "摘要"}
                                 className={`w-full bg-transparent focus:bg-orange-50 border-0 text-xs px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-300 rounded ${item.rowType === "total" ? "font-bold" : ""}`}
                               />
                             </div>
+                          </td>
+                          <td className="px-1 py-1 border-r border-slate-100">
+                            {!isSpecial && (
+                              <input
+                                value={item.notes}
+                                onChange={(e) => updateRow(item._key, { notes: e.target.value })}
+                                placeholder="型番・仕様など"
+                                className="w-full bg-transparent focus:bg-orange-50 border-0 text-xs px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-300 rounded"
+                              />
+                            )}
                           </td>
                           <td className="px-1 py-1 border-r border-slate-100">
                             {!isSpecial && (
@@ -902,25 +1230,45 @@ export default function EstimateEditor({ id }: { id?: number }) {
                 <Button variant="outline" size="sm" onClick={() => addRow()} className="gap-1.5 text-xs">
                   <Plus className="w-3.5 h-3.5" />行を追加
                 </Button>
-                <div className="flex items-center gap-6 text-sm">
+                <div className="flex items-center gap-6 text-sm flex-wrap justify-end">
+                  <div className="text-right">
+                    <span className="text-xs text-slate-500 mr-2">明細合計</span>
+                    <span className="font-semibold text-slate-800">{fmt(itemsSubtotal)}</span>
+                  </div>
+                  {miscExpensesAmount > 0 && (
+                    <div className="text-right">
+                      <span className="text-xs text-slate-500 mr-2">諸経費</span>
+                      <span className="font-semibold text-slate-800">{fmt(miscExpensesAmount)}</span>
+                    </div>
+                  )}
+                  {form.discountAmount > 0 && (
+                    <div className="text-right">
+                      <span className="text-xs text-slate-500 mr-2">値引き</span>
+                      <span className="font-semibold text-red-600">▲{fmt(form.discountAmount)}</span>
+                    </div>
+                  )}
                   <div className="text-right">
                     <span className="text-xs text-slate-500 mr-2">税抜合計</span>
-                    <span className="font-semibold text-slate-700">{fmt(taxExcluded)}</span>
+                    <span className="font-semibold text-slate-800">{fmt(finalSubtotal)}</span>
                   </div>
                   <div className="text-right">
-                    <span className="text-xs text-slate-500 mr-2">消費税（{form.taxRate}%）</span>
-                    <span className="font-semibold text-slate-700">{fmt(taxAmount)}</span>
+                    <span className="text-xs text-slate-500 mr-2">消費税</span>
+                    <span className="font-semibold text-slate-800">{fmt(taxAmount)}</span>
                   </div>
                   <div className="text-right border-l pl-6">
-                    <span className="text-xs text-slate-500 mr-2">見積金額</span>
-                    <span className="text-lg font-bold text-orange-600">{fmt(taxIncluded)}</span>
+                    <span className="text-xs text-slate-500 mr-2">見積金額（税込）</span>
+                    <span className="text-lg font-extrabold text-orange-600">{fmt(taxIncluded)}</span>
                   </div>
                 </div>
               </div>
             </div>
 
             <div className="mt-4 flex justify-end">
-              <Button className="bg-orange-500 hover:bg-orange-600 text-white gap-2" onClick={handleSave} disabled={saving}>
+              <Button
+                className="bg-orange-500 hover:bg-orange-600 text-white gap-2"
+                onClick={handleSave}
+                disabled={saving}
+              >
                 <Save className="w-4 h-4" />
                 {saving ? "保存中…" : "保存する"}
               </Button>
