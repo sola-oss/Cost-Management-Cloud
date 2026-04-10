@@ -169,6 +169,11 @@ function PrintLayout({
     const [y, m, day] = d.split("-");
     return `${y}年${parseInt(m)}月${parseInt(day)}日`;
   };
+  const fmtDateSlash = (d: string) => {
+    if (!d) return "";
+    const [y, m, day] = d.split("-");
+    return `${y}/${parseInt(m)}/${parseInt(day)}`;
+  };
   const pageHeader = (
     <div className="flex justify-between text-[9px] text-slate-500 mb-3 pb-1 border-b border-slate-300">
       <span>見積番号: {estNumber}</span>
@@ -205,7 +210,7 @@ function PrintLayout({
         {/* ヘッダー：見積番号（左）・発行日（右） */}
         <div className="flex justify-between text-[10px] text-slate-500 mb-4">
           <span>見積番号: {estNumber}</span>
-          <span>発行日: {fmtDate(form.estimateDate)}</span>
+          <span>発行日: {fmtDateSlash(form.estimateDate)}</span>
         </div>
 
         {/* タイトル */}
