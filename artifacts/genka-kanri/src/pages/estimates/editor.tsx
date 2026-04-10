@@ -1052,7 +1052,6 @@ export default function EstimateEditor({ id }: { id?: number }) {
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-300 text-slate-500">
                       <th className="text-center px-2 py-2 w-8 border-r border-slate-200">No</th>
-                      <th className="text-center px-2 py-2 w-16 border-r border-slate-200">階層</th>
                       <th className="text-left px-2 py-2 w-24 border-r border-slate-200">工種</th>
                       <th className="text-left px-2 py-2 border-r border-slate-200">摘要</th>
                       <th className="text-left px-2 py-2 w-32 border-r border-slate-200">備考（型番・仕様）</th>
@@ -1081,7 +1080,7 @@ export default function EstimateEditor({ id }: { id?: number }) {
                         return (
                           <tr key={item._key} className="border-b border-dashed border-slate-300 bg-slate-50">
                             <td className="px-2 py-1 text-center text-slate-400">{idx + 1}</td>
-                            <td colSpan={8} className="px-3 py-1 text-center text-slate-400 text-xs italic">
+                            <td colSpan={7} className="px-3 py-1 text-center text-slate-400 text-xs italic">
                               ── 改ページ ──
                             </td>
                             <td className="px-2 py-1 text-center">
@@ -1104,21 +1103,6 @@ export default function EstimateEditor({ id }: { id?: number }) {
                       return (
                         <tr key={item._key} className={`border-b border-slate-200 hover:bg-orange-50 transition-colors ${rowBg}`}>
                           <td className="px-2 py-1 text-center text-slate-400 border-r border-slate-100">{idx + 1}</td>
-                          <td className="px-1 py-1 border-r border-slate-100">
-                            <Select
-                              value={String(item.level)}
-                              onValueChange={(v) => updateRow(item._key, { level: parseInt(v) as any })}
-                            >
-                              <SelectTrigger className="h-6 text-xs w-14 px-1 border-slate-200">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {[1, 2, 3, 4, 5].map((l) => (
-                                  <SelectItem key={l} value={String(l)}>{LEVEL_LABELS[l]}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </td>
                           <td className="px-1 py-1 border-r border-slate-100">
                             {!isSpecial && (
                               <>
