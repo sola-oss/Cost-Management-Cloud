@@ -172,7 +172,7 @@ function PrintLayout({
   const fmtDateSlash = (d: string) => {
     if (!d) return "";
     const [y, m, day] = d.split("-");
-    return `${y}/${parseInt(m)}/${parseInt(day)}`;
+    return `${y}/${m.padStart(2, "0")}/${day.padStart(2, "0")}`;
   };
   const pageHeader = (
     <div className="flex justify-between text-[9px] text-slate-500 mb-3 pb-1 border-b border-slate-300">
@@ -218,12 +218,12 @@ function PrintLayout({
           <h1 className="text-3xl font-bold tracking-widest text-slate-900">御　見　積　書</h1>
         </div>
 
-        {/* 得意先名（底線のみ、右端に御中） */}
-        <div className="flex items-end border-b-2 border-black pb-1 mb-2">
-          <span className="text-xl font-bold flex-1">
+        {/* 得意先名（名前部分に底線、右端に御中） */}
+        <div className="flex items-end mb-2">
+          <span className="text-xl font-bold flex-1 border-b-2 border-black pb-1">
             {form.clientName || "\u3000\u3000\u3000\u3000\u3000\u3000\u3000\u3000"}
           </span>
-          <span className="text-base font-bold ml-4">御中</span>
+          <span className="text-base font-bold ml-4 pb-1">御中</span>
         </div>
         <div className="text-xs mb-5">下記の通り、御見積申し上げます。</div>
 
