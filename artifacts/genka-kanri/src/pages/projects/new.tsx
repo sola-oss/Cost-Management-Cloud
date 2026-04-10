@@ -48,6 +48,7 @@ interface EstimateListItem {
   estimateNumber: string;
   subject: string;
   clientName: string;
+  location: string | null;
   taxExcludedAmount: number | null;
   taxIncludedAmount: number | null;
   estimateDate: string | null;
@@ -1083,6 +1084,9 @@ export default function NewProject() {
                         form.setValue("estimateNumber", est.estimateNumber);
                         form.setValue("name", est.subject || "");
                         form.setValue("clientName", est.clientName || "");
+                        form.setValue("location", est.location || "");
+                        const foundClient = clients.find((c) => c.name === est.clientName);
+                        form.setValue("clientCode", foundClient?.clientCode || "");
                         if (est.taxExcludedAmount != null) {
                           setContractLines((prev) => {
                             const next = [...prev];
