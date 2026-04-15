@@ -194,7 +194,7 @@ export default function ProjectLedger() {
     : (project.location || "").replace(/[市区町村郡].+/, "");
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="ledger-wrapper min-h-screen bg-gray-50">
       {/* ── Screen controls ── */}
       <div className="print:hidden flex items-center gap-3 p-4 bg-white border-b shadow-sm">
         <Button variant="outline" size="icon" asChild>
@@ -576,7 +576,16 @@ export default function ProjectLedger() {
         @media print {
           @page { size: A4 portrait; margin: 8mm; }
           .print\\:hidden { display: none !important; }
-          body { background: white; }
+          html, body {
+            height: auto !important;
+            min-height: 0 !important;
+            background: white !important;
+          }
+          .ledger-wrapper {
+            min-height: 0 !important;
+            height: auto !important;
+            background: white !important;
+          }
           .ledger-page { max-width: 100% !important; padding: 0 !important; }
         }
       `}</style>
