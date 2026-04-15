@@ -204,6 +204,7 @@ function PrintLayout({
 
   return (
     <div className="hidden print:block text-black font-sans text-[11px]">
+      <style>{`@media print { @page { margin: 0 !important; } }`}</style>
 
       {/* ===== PAGE 1: 御見積書（表紙） ===== */}
       <div className="print-page w-[210mm] min-h-[297mm] p-[15mm] box-border">

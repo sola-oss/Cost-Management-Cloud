@@ -194,7 +194,7 @@ export default function ProjectLedger() {
     : (project.location || "").replace(/[市区町村郡].+/, "");
 
   return (
-    <div className="ledger-wrapper min-h-screen bg-gray-50">
+    <div className="ledger-wrapper bg-gray-50">
       {/* ── Screen controls ── */}
       <div className="print:hidden flex items-center gap-3 p-4 bg-white border-b shadow-sm">
         <Button variant="outline" size="icon" asChild>
