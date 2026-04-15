@@ -196,7 +196,6 @@
   .print-page {
     page-break-after: always;
     break-after: page;
-    min-height: 297mm;
     width: 210mm;
     box-sizing: border-box;
   }
@@ -204,10 +203,5 @@
   .print-page:last-child {
     page-break-after: avoid;
     break-after: avoid;
-  }
-
-  .break-before-page {
-    page-break-before: always;
-    break-before: page;
   }
 }
