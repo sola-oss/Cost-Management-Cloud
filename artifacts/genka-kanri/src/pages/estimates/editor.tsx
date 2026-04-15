@@ -181,13 +181,17 @@ function PrintLayout({
     </div>
   );
 
-  // 工種ごとにグループ化（pagebreakは無視、rowType=normal/discountのみ対象）
+  // 工種ごとにグループ化
+  // - pagebreak/total/tax行は除外
+  // - workTypeの前後空白・連続空白を正規化してグループキーとして使用
+  // - 全workTypeが空の場合は「（未分類）」として1グループにまとめる
+  // - items配列の順序通りに出現順でグループを構築し、groups.mapで全グループを明細ページに出力
   type Group = { name: string; rows: EstimateItem[]; subtotal: number };
   const groups: Group[] = [];
   const groupMap = new Map<string, Group>();
   for (const item of items) {
     if (item.rowType === "pagebreak" || item.rowType === "total" || item.rowType === "tax") continue;
-    const wt = item.workType?.trim() || "（未分類）";
+    const wt = (item.workType ?? "").replace(/\s+/g, " ").trim() || "（未分類）";
     if (!groupMap.has(wt)) {
       const g: Group = { name: wt, rows: [], subtotal: 0 };
       groupMap.set(wt, g);
@@ -207,7 +211,7 @@ function PrintLayout({
       <style>{`@media print { @page { margin: 0 !important; } }`}</style>
 
       {/* ===== PAGE 1: 御見積書（表紙） ===== */}
-      <div className="print-page w-[210mm] p-[15mm] box-border">
+      <div className="print-page w-[210mm] min-h-[297mm] p-[15mm] box-border">
         {/* ヘッダー：見積番号（左）・発行日（右） */}
         <div className="flex justify-between text-[10px] text-slate-500 mb-4">
           <span>見積番号: {estNumber}</span>
@@ -275,7 +279,7 @@ function PrintLayout({
       </div>
 
       {/* ===== PAGE 2: 見積内訳書 ===== */}
-      <div className="print-page w-[210mm] p-[15mm] box-border break-before-page">
+      <div className="print-page w-[210mm] min-h-[297mm] p-[15mm] box-border break-before-page">
         {pageHeader}
         <div className="text-center mb-4">
           <h2 className="text-xl font-bold tracking-wider">見　積　内　訳　書</h2>
@@ -322,7 +326,7 @@ function PrintLayout({
 
       {/* ===== PAGE 3+: 見積明細書（工種ごと1ページ） ===== */}
       {groups.map((group, gi) => (
-        <div key={gi} className="print-page w-[210mm] p-[15mm] box-border break-before-page">
+        <div key={gi} className="print-page w-[210mm] min-h-[297mm] p-[15mm] box-border break-before-page">
           {pageHeader}
           <div className="text-center mb-3">
             <h2 className="text-xl font-bold tracking-wider">見　積　明　細　書</h2>
