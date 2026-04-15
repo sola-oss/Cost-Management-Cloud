@@ -663,6 +663,14 @@ export default function EstimateEditor({ id }: { id?: number }) {
                 <Button variant="outline" size="sm" onClick={handleDuplicate} className="gap-1.5 text-xs">
                   <Copy className="w-3.5 h-3.5" />複写
                 </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 text-xs"
+                  onClick={() => window.open(`${BASE}/estimates/${id}/print`, "_blank")}
+                >
+                  <Printer className="w-3.5 h-3.5" />印刷
+                </Button>
               </>
             )}
             <Button

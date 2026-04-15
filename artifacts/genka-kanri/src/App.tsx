@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, useRoute } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -21,6 +21,7 @@ import PaymentAssessment from "@/pages/payment-assessment";
 import EstimateList from "@/pages/estimates/index";
 import NewEstimate from "@/pages/estimates/new";
 import EstimateDetail from "@/pages/estimates/detail";
+import EstimatePrint from "@/pages/estimates/print";
 import WorkTypeMaster from "@/pages/master/work-types";
 import ClientMaster from "@/pages/master/clients";
 import CompanySettings from "@/pages/settings/index";
@@ -33,6 +34,18 @@ import ProjectLedger from "@/pages/projects/ledger";
 const queryClient = new QueryClient();
 
 function Router() {
+  const [isPrint] = useRoute("/estimates/:id/print");
+
+  if (isPrint) {
+    return (
+      <Switch>
+        <Route path="/estimates/:id/print">
+          {(params) => <EstimatePrint id={parseInt(params.id)} />}
+        </Route>
+      </Switch>
+    );
+  }
+
   return (
     <AppLayout>
       <Switch>
