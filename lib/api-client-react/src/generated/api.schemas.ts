@@ -519,6 +519,10 @@ export interface BudgetItem {
   revisedBudget: number;
   /** 表示順 */
   sortOrder: number;
+  /** 当初予算ロック */
+  isOriginalLocked: boolean;
+  /** 当初予算額（ロック時の原本） */
+  originalBudgetAmount: number;
   createdAt: string;
   updatedAt: string;
 }

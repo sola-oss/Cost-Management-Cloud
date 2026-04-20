@@ -541,6 +541,9 @@ export const ListBudgetItemsParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const listBudgetItemsResponseItemsItemIsOriginalLockedDefault = false;
+export const listBudgetItemsResponseItemsItemOriginalBudgetAmountDefault = 0;
+
 export const ListBudgetItemsResponse = zod.object({
   items: zod.array(
     zod.object({
@@ -554,6 +557,14 @@ export const ListBudgetItemsResponse = zod.object({
       initialBudget: zod.number().describe("当初予算"),
       revisedBudget: zod.number().describe("実行予算"),
       sortOrder: zod.number().describe("表示順"),
+      isOriginalLocked: zod
+        .boolean()
+        .default(listBudgetItemsResponseItemsItemIsOriginalLockedDefault)
+        .describe("当初予算ロック"),
+      originalBudgetAmount: zod
+        .number()
+        .default(listBudgetItemsResponseItemsItemOriginalBudgetAmountDefault)
+        .describe("当初予算額（ロック時の原本）"),
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
     }),
@@ -600,6 +611,9 @@ export const UpdateBudgetItemBody = zod.object({
   sortOrder: zod.number().optional(),
 });
 
+export const updateBudgetItemResponseIsOriginalLockedDefault = false;
+export const updateBudgetItemResponseOriginalBudgetAmountDefault = 0;
+
 export const UpdateBudgetItemResponse = zod.object({
   id: zod.number(),
   projectId: zod.number(),
@@ -611,6 +625,14 @@ export const UpdateBudgetItemResponse = zod.object({
   initialBudget: zod.number().describe("当初予算"),
   revisedBudget: zod.number().describe("実行予算"),
   sortOrder: zod.number().describe("表示順"),
+  isOriginalLocked: zod
+    .boolean()
+    .default(updateBudgetItemResponseIsOriginalLockedDefault)
+    .describe("当初予算ロック"),
+  originalBudgetAmount: zod
+    .number()
+    .default(updateBudgetItemResponseOriginalBudgetAmountDefault)
+    .describe("当初予算額（ロック時の原本）"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });

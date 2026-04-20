@@ -1534,6 +1534,14 @@ components:
         sortOrder:
           type: integer
           description: 表示順
+        isOriginalLocked:
+          type: boolean
+          description: 当初予算ロック
+          default: false
+        originalBudgetAmount:
+          type: number
+          description: 当初予算額（ロック時の原本）
+          default: 0
         createdAt:
           type: string
           format: date-time
@@ -1551,6 +1559,8 @@ components:
         - initialBudget
         - revisedBudget
         - sortOrder
+        - isOriginalLocked
+        - originalBudgetAmount
         - createdAt
         - updatedAt
 

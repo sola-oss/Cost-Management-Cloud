@@ -225,25 +225,36 @@ function BudgetTab({ projectId }: { projectId: number }) {
 
   async function saveEdit(id: number) {
     const ca = parseFloat(editingValues.contractAmount) || 0;
-    const ib = parseFloat(editingValues.initialBudget) || 0;
     const rb = parseFloat(editingValues.revisedBudget) || 0;
     if (!editingValues.workTypeCode || !editingValues.workTypeName) {
       toast({ title: "入力エラー", description: "工種コードと工種名称は必須です。", variant: "destructive" });
       return;
     }
+    const targetItem = items.find(i => i.id === id);
+    const isLocked = targetItem?.isOriginalLocked ?? false;
     setSavingId(id);
     try {
+      const payload: {
+        workTypeCode: string;
+        workTypeName: string;
+        supplierName: string;
+        contractAmount: number;
+        initialBudget?: number;
+        revisedBudget: number;
+      } = {
+        workTypeCode: editingValues.workTypeCode,
+        workTypeName: editingValues.workTypeName,
+        supplierName: editingValues.supplierName,
+        contractAmount: ca,
+        revisedBudget: rb,
+      };
+      if (!isLocked) {
+        payload.initialBudget = parseFloat(editingValues.initialBudget) || 0;
+      }
       await updateBudgetItem.mutateAsync({
         id: projectId,
         itemId: id,
-        data: {
-          workTypeCode: editingValues.workTypeCode,
-          workTypeName: editingValues.workTypeName,
-          supplierName: editingValues.supplierName,
-          contractAmount: ca,
-          initialBudget: ib,
-          revisedBudget: rb,
-        },
+        data: payload,
       });
       invalidate();
       setEditingId(null);
@@ -455,12 +466,19 @@ function BudgetTab({ projectId }: { projectId: number }) {
                               />
                             </TableCell>
                             <TableCell className="py-1.5">
-                              <Input
-                                className="h-7 text-xs text-right"
-                                type="number"
-                                value={editingValues.initialBudget}
-                                onChange={(e) => setEditingValues((v) => ({ ...v, initialBudget: e.target.value }))}
-                              />
+                              {items.find(i => i.id === editingId)?.isOriginalLocked ? (
+                                <div className="h-7 text-xs text-right px-2 py-1 bg-slate-100 text-slate-500 rounded flex items-center justify-end gap-1">
+                                  <span>{(parseFloat(editingValues.initialBudget) || 0).toLocaleString("ja-JP")}</span>
+                                  <span className="text-slate-400">🔒</span>
+                                </div>
+                              ) : (
+                                <Input
+                                  className="h-7 text-xs text-right"
+                                  type="number"
+                                  value={editingValues.initialBudget}
+                                  onChange={(e) => setEditingValues((v) => ({ ...v, initialBudget: e.target.value }))}
+                                />
+                              )}
                             </TableCell>
                             <TableCell className="py-1.5">
                               <Input

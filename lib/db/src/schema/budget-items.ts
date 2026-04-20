@@ -1,4 +1,4 @@
-import { pgTable, serial, text, numeric, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, numeric, integer, boolean, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { projectsTable } from "./projects";
@@ -14,6 +14,8 @@ export const budgetItemsTable = pgTable("budget_items", {
   initialBudget: numeric("initial_budget", { precision: 15, scale: 2 }).notNull().default("0"),
   revisedBudget: numeric("revised_budget", { precision: 15, scale: 2 }).notNull().default("0"),
   sortOrder: integer("sort_order").notNull().default(0),
+  isOriginalLocked: boolean("is_original_locked").notNull().default(false),
+  originalBudgetAmount: numeric("original_budget_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

@@ -15,13 +15,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
-  ArrowLeft, Save, Trash2, Plus, RefreshCw, Settings2, Copy, ChevronDown, ChevronRight,
+  ArrowLeft, Save, Trash2, Plus, RefreshCw, Settings2, Copy, ChevronDown, ChevronRight, Download, Lock,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
 type WorkType = { id: number; code: string; name: string; constructionType?: string };
+
 
 type RowState = {
   id?: number;
@@ -34,6 +35,7 @@ type RowState = {
   revisedBudget: string;
   isDirty: boolean;
   isNew: boolean;
+  isOriginalLocked: boolean;
 };
 
 function fmt(n: number) {
@@ -97,6 +99,7 @@ export default function BudgetManagement() {
   const [rows, setRows] = useState<RowState[]>([]);
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const [displayMode, setDisplayMode] = useState<"contract" | "progress">("contract");
   const [profitMode, setProfitMode] = useState<"profit" | "remaining">("profit");
@@ -122,15 +125,18 @@ export default function BudgetManagement() {
         revisedBudget: String(item.revisedBudget),
         isDirty: false,
         isNew: false,
+        isOriginalLocked: item.isOriginalLocked ?? false,
       })));
       setSelectedRows(new Set());
     }
   }, [budgetData]);
 
   function handleCellChange(rowIdx: number, col: keyof RowState, value: string) {
-    setRows(prev => prev.map((r, i) =>
-      i === rowIdx ? { ...r, [col]: value, isDirty: true } : r
-    ));
+    setRows(prev => prev.map((r, i) => {
+      if (i !== rowIdx) return r;
+      if (col === "initialBudget" && r.isOriginalLocked) return r;
+      return { ...r, [col]: value, isDirty: true };
+    }));
   }
 
   function handleSelectWorkType(rowIdx: number, wt: WorkType) {
@@ -139,12 +145,68 @@ export default function BudgetManagement() {
     ));
   }
 
+  async function handleImportFromEstimate() {
+    if (rows.length > 0) {
+      toast({ title: "当初予算は登録済みです", variant: "destructive" });
+      return;
+    }
+    setImporting(true);
+    try {
+      const previewRes = await fetch(
+        `/api/projects/${projectId}/budget-items/import-from-estimate?dryRun=true`,
+        { method: "POST", headers: { "Content-Type": "application/json" } }
+      );
+      if (previewRes.status === 404) {
+        const body = await previewRes.json() as { message: string };
+        toast({ title: "取込みエラー", description: body.message, variant: "destructive" });
+        return;
+      }
+      if (previewRes.status === 409) {
+        toast({ title: "当初予算は登録済みです", variant: "destructive" });
+        return;
+      }
+      if (!previewRes.ok) {
+        toast({ title: "取込みエラー", description: "見積書情報の取得に失敗しました。", variant: "destructive" });
+        return;
+      }
+      const preview = await previewRes.json() as { estimateNumber: string; importableCount: number };
+
+      const confirmed = window.confirm(
+        `見積書 ${preview.estimateNumber} の明細 ${preview.importableCount} 件を当初予算として取込みます。よろしいですか？`
+      );
+      if (!confirmed) return;
+
+      const importRes = await fetch(`/api/projects/${projectId}/budget-items/import-from-estimate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (importRes.status === 409) {
+        toast({ title: "当初予算は登録済みです", variant: "destructive" });
+        return;
+      }
+      if (!importRes.ok) {
+        const body = await importRes.json().catch(() => ({})) as { message?: string };
+        toast({ title: "取込みエラー", description: body.message ?? "取込みに失敗しました。", variant: "destructive" });
+        return;
+      }
+      const importData = await importRes.json() as { estimateNumber: string; importedCount: number };
+      queryClient.invalidateQueries({ queryKey: getListBudgetItemsQueryKey(projectId) });
+      queryClient.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
+      toast({ title: `見積書 ${importData.estimateNumber} から ${importData.importedCount} 件を取込みました` });
+    } catch {
+      toast({ title: "取込みエラー", description: "予期しないエラーが発生しました。", variant: "destructive" });
+    } finally {
+      setImporting(false);
+    }
+  }
+
   function handleAddRow() {
     const newRow: RowState = {
       workTypeCode: "", workTypeName: "",
       supplierCode: "", supplierName: "",
       contractAmount: "0", initialBudget: "0", revisedBudget: "0",
-      isDirty: true, isNew: true,
+      isDirty: true, isNew: true, isOriginalLocked: false,
     };
     setRows(prev => [...prev, newRow]);
     setTimeout(() => {
@@ -253,16 +315,27 @@ export default function BudgetManagement() {
       const row = rows[i];
       if (!row.isDirty && !row.isNew) continue;
       if (!row.workTypeCode && !row.workTypeName) continue;
-      const data = {
+      const data: {
+        workTypeCode: string;
+        workTypeName: string;
+        supplierCode: string;
+        supplierName: string;
+        contractAmount: number;
+        initialBudget?: number;
+        revisedBudget: number;
+        sortOrder: number;
+      } = {
         workTypeCode: row.workTypeCode || "—",
         workTypeName: row.workTypeName || "—",
         supplierCode: row.supplierCode,
         supplierName: row.supplierName,
         contractAmount: parseN(row.contractAmount),
-        initialBudget: parseN(row.initialBudget),
         revisedBudget: parseN(row.revisedBudget),
         sortOrder: i,
       };
+      if (!row.isOriginalLocked) {
+        data.initialBudget = parseN(row.initialBudget);
+      }
       try {
         if (row.id) {
           await updateItem.mutateAsync({ id: projectId, itemId: row.id, data });
@@ -477,6 +550,23 @@ export default function BudgetManagement() {
                 </div>
 
                 <div className="ml-auto flex gap-2">
+                  <div className="relative group">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className={`h-7 text-xs px-2 ${rows.length > 0 ? "opacity-50 cursor-not-allowed border-slate-200 text-slate-400" : "border-blue-300 text-blue-700 hover:bg-blue-50"}`}
+                      onClick={handleImportFromEstimate}
+                      disabled={rows.length > 0 || importing}
+                    >
+                      <Download className="w-3.5 h-3.5 mr-1" />
+                      {importing ? "取込み中..." : "見積書から取込"}
+                    </Button>
+                    {rows.length > 0 && (
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-700 text-white text-xs rounded whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-30">
+                        当初予算は登録済みです
+                      </div>
+                    )}
+                  </div>
                   <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={handleAddRow}>
                     <Plus className="w-3.5 h-3.5 mr-1" /> 行追加
                   </Button>
@@ -582,6 +672,11 @@ export default function BudgetManagement() {
                                       ))}
                                     </SelectContent>
                                   </Select>
+                                ) : col.key === "initialBudget" && row.isOriginalLocked ? (
+                                  <div className="w-full h-full px-2 py-1 bg-slate-100 text-right text-xs text-slate-500 flex items-center justify-end gap-1" style={{ minHeight: "28px" }}>
+                                    <span>{parseN(row.initialBudget).toLocaleString("ja-JP")}</span>
+                                    <Lock className="w-3 h-3 text-slate-400 shrink-0" />
+                                  </div>
                                 ) : (
                                   <input
                                     ref={el => { cellRefs.current[`${rowIdx}-${col.key}`] = el; }}
