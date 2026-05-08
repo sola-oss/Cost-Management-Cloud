@@ -46,11 +46,23 @@ interface CompanySettings {
   fax: string;
   invoiceRegistrationNumber: string;
   representativeName: string;
+  constructionLicense: string;
+  staffName: string;
+  staffMobile: string;
+  staffEmail: string;
   bankName: string;
   bankBranch: string;
   bankAccountType: string;
   bankAccountNumber: string;
   bankAccountName: string;
+}
+
+interface Project {
+  id: number;
+  name: string;
+  location: string;
+  startDate: string;
+  endDate: string;
 }
 
 function fmtMoney(n: number) {
@@ -82,8 +94,19 @@ export default function InvoicePrint({ id }: { id: number }) {
     },
   });
 
+  const projectId = invoice?.projectId ?? null;
+  const { data: project, isLoading: loadingProject } = useQuery<Project>({
+    queryKey: ["project-print", projectId],
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/projects/${projectId}`);
+      if (!r.ok) return null;
+      return r.json();
+    },
+    enabled: !!projectId,
+  });
+
   useEffect(() => {
-    if (!loadingInvoice && !loadingCompany && invoice) {
+    if (!loadingInvoice && !loadingCompany && !loadingProject && invoice) {
       document.title = `請求書_${invoice.invoiceNumber}`;
       const timer = setTimeout(() => window.print(), 400);
       return () => clearTimeout(timer);
@@ -91,7 +114,7 @@ export default function InvoicePrint({ id }: { id: number }) {
     return undefined;
   }, [loadingInvoice, loadingCompany, invoice]);
 
-  if (loadingInvoice || loadingCompany) {
+  if (loadingInvoice || loadingCompany || (projectId && loadingProject)) {
     return (
       <div className="flex items-center justify-center h-screen text-slate-500">
         読み込み中…
@@ -201,13 +224,19 @@ export default function InvoicePrint({ id }: { id: number }) {
                 <span>消費税　{fmtMoney(invoice.taxTotal)}-</span>
               </div>
 
-              {/* 工事名 */}
-              {invoice.projectName && (
-                <div className="mt-4 flex border-b border-slate-400 py-2 min-h-[28px] text-xs">
-                  <span className="font-medium w-20 shrink-0">工事名</span>
-                  <span className="flex-1 pl-2">{invoice.projectName}</span>
+              {/* 工事情報 */}
+              {[
+                { label: "工事名", value: invoice.projectName },
+                { label: "工事場所", value: project?.location },
+                { label: "工事期間", value: project?.startDate && project?.endDate
+                  ? `${fmtDate(project.startDate)}〜${fmtDate(project.endDate)}`
+                  : project?.startDate ? fmtDate(project.startDate) : undefined },
+              ].filter(({ value }) => !!value).map(({ label, value }) => (
+                <div key={label} className="mt-2 flex border-b border-slate-400 py-2 min-h-[28px] text-xs">
+                  <span className="font-medium w-20 shrink-0">{label}</span>
+                  <span className="flex-1 pl-2">{value}</span>
                 </div>
-              )}
+              ))}
             </div>
 
             {/* 右：自社情報（見積書と同じスタイル） */}
@@ -227,6 +256,14 @@ export default function InvoicePrint({ id }: { id: number }) {
               )}
               {company?.tel && <div>TEL：{company.tel}</div>}
               {company?.fax && <div>FAX：{company.fax}</div>}
+              {company?.constructionLicense && (
+                <div className="mt-1">建設業許可 {company.constructionLicense}</div>
+              )}
+              {company?.staffName && (
+                <div className="mt-1">担当者：{company.staffName}</div>
+              )}
+              {company?.staffMobile && <div>携帯番号：{company.staffMobile}</div>}
+              {company?.staffEmail && <div>MAIL：{company.staffEmail}</div>}
               {registrationNumber && (
                 <div className="mt-1">登録番号：{registrationNumber}</div>
               )}
