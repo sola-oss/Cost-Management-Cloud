@@ -462,19 +462,20 @@ export default function InvoiceEditor({ id }: Props) {
             )}
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           {id && (
             <>
               <Button
                 variant="outline"
+                size="sm"
                 onClick={() => window.open(`${BASE}/invoices/${id}/print`, "_blank")}
-                className="gap-2"
+                className="gap-1.5"
               >
-                <Printer className="w-4 h-4" />
+                <Printer className="w-3.5 h-3.5" />
                 印刷
               </Button>
-              <Button variant="outline" onClick={handlePDF} className="gap-2">
-                <FileDown className="w-4 h-4" />
+              <Button variant="outline" size="sm" onClick={handlePDF} className="gap-1.5">
+                <FileDown className="w-3.5 h-3.5" />
                 PDF出力
               </Button>
             </>
