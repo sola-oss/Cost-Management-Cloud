@@ -211,33 +211,36 @@ export default function InvoiceEditor({ id }: Props) {
     setProjectId(pid);
     const p = projects?.items.find((x) => x.id === pid);
     if (p) setProjectName(p.name || "");
-    fetchBillingSummary(pid);
+    // Auto-load budget items for new invoices
+    if (!id) {
+      loadBudgetItemsForProject(pid, { silent: true });
+    } else {
+      fetchBillingSummary(pid);
+    }
   };
 
   const fetchBillingSummary = async (pid: number) => {
     try {
       const r = await fetch(`${BASE}/api/projects/${pid}/budget-items`);
       if (!r.ok) return;
-      const data: { totalRevisedBudget: number; billedToDate: number } = await r.json();
+      const data: { items: BudgetItem[]; totalRevisedBudget: number } = await r.json();
       setContractAmount(data.totalRevisedBudget ?? 0);
-      setBilledToDate(data.billedToDate ?? 0);
     } catch {
       // ignore, billing summary is best-effort
     }
   };
 
-  const handleLoadBudgetItems = async () => {
-    if (!projectId) {
-      toast({ title: "工事を選択してください", variant: "destructive" });
-      return;
-    }
+  const loadBudgetItemsForProject = async (pid: number, opts?: { silent?: boolean }) => {
     setLoadingBudget(true);
     try {
-      const r = await fetch(`${BASE}/api/projects/${projectId}/budget-items`);
+      const r = await fetch(`${BASE}/api/projects/${pid}/budget-items`);
       if (!r.ok) throw new Error("Failed to load");
       const data: { items: BudgetItem[]; totalRevisedBudget: number } = await r.json();
+      setContractAmount(data.totalRevisedBudget ?? 0);
       if (data.items.length === 0) {
-        toast({ title: "実行予算明細がありません", description: "工事の実行予算タブから明細を登録してください", variant: "destructive" });
+        if (!opts?.silent) {
+          toast({ title: "実行予算明細がありません", description: "工事の実行予算タブから明細を登録してください", variant: "destructive" });
+        }
         return;
       }
       const loadedItems: InvoiceItem[] = data.items.map((bi, idx) => ({
@@ -251,13 +254,24 @@ export default function InvoiceEditor({ id }: Props) {
         budgetItemId: bi.id,
       }));
       setItems(loadedItems);
-      setContractAmount(data.totalRevisedBudget);
-      toast({ title: "実行予算を読み込みました", description: `${loadedItems.length}件の明細を展開しました` });
+      if (!opts?.silent) {
+        toast({ title: "実行予算を読み込みました", description: `${loadedItems.length}件の明細を展開しました` });
+      }
     } catch {
-      toast({ title: "読み込みに失敗しました", variant: "destructive" });
+      if (!opts?.silent) {
+        toast({ title: "読み込みに失敗しました", variant: "destructive" });
+      }
     } finally {
       setLoadingBudget(false);
     }
+  };
+
+  const handleLoadBudgetItems = async () => {
+    if (!projectId) {
+      toast({ title: "工事を選択してください", variant: "destructive" });
+      return;
+    }
+    await loadBudgetItemsForProject(projectId);
   };
 
   const updateItem = (idx: number, field: keyof InvoiceItem, value: string | number) => {
