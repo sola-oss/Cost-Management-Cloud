@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Receipt, Plus, Search, Trash2, ChevronRight, Printer } from "lucide-react";
+import { Receipt, Plus, Search, Trash2, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -192,13 +192,6 @@ export default function InvoiceList() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => window.open(`${BASE}/invoices/${inv.id}/print`, "_blank")}
-                            className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-700"
-                            title="印刷"
-                          >
-                            <Printer className="w-4 h-4" />
-                          </button>
                           <button
                             onClick={() => {
                               if (confirm("この請求書を削除しますか？")) delMut.mutate(inv.id);
