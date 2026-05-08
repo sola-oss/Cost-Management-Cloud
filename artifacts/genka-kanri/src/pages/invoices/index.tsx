@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, Plus, FileText, Receipt } from "lucide-react";
+import { Loader2, Plus, FileText, Receipt, Printer } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -88,6 +88,7 @@ export default function InvoiceList() {
                 <TableHead className="text-right">請求金額</TableHead>
                 <TableHead>入金期限</TableHead>
                 <TableHead>ステータス</TableHead>
+                <TableHead className="w-10"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -104,6 +105,20 @@ export default function InvoiceList() {
                   <TableCell className="text-right font-medium">{formatAmount(inv.totalAmount)}</TableCell>
                   <TableCell className="text-slate-600">{formatDate(inv.dueDate)}</TableCell>
                   <TableCell><StatusBadge status={inv.status} /></TableCell>
+                  <TableCell>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-slate-400 hover:text-slate-700"
+                      title="印刷"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        window.open(`${BASE}/invoices/${inv.id}/print`, "_blank");
+                      }}
+                    >
+                      <Printer className="w-4 h-4" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
