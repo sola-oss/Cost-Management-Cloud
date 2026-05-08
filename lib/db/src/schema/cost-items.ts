@@ -2,6 +2,8 @@ import { pgTable, serial, text, numeric, date, timestamp, integer } from "drizzl
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { projectsTable } from "./projects";
+import { vendorsTable } from "./vendors";
+import { workTypesTable } from "./work-types";
 
 export const costCategoryEnum = ["material", "labor", "subcontract", "expense"] as const;
 export type CostCategory = typeof costCategoryEnum[number];
@@ -19,6 +21,10 @@ export const costItemsTable = pgTable("cost_items", {
   incurredDate: date("incurred_date").notNull(),
   invoiceNumber: text("invoice_number"),
   notes: text("notes"),
+  sourceType: text("source_type").$type<"manual" | "purchase_invoice">().notNull().default("manual"),
+  sourceId: integer("source_id"),
+  vendorId: integer("vendor_id").references(() => vendorsTable.id, { onDelete: "set null" }),
+  workTypeId: integer("work_type_id").references(() => workTypesTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
