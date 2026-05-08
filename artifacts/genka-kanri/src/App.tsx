@@ -28,19 +28,31 @@ import CompanySettings from "@/pages/settings/index";
 import InvoiceList from "@/pages/invoices/index";
 import NewInvoice from "@/pages/invoices/new";
 import InvoiceDetail from "@/pages/invoices/detail";
+import InvoicePrint from "@/pages/invoices/print";
 import ConstructionHistory from "@/pages/projects/history";
 import ProjectLedger from "@/pages/projects/ledger";
 
 const queryClient = new QueryClient();
 
 function Router() {
-  const [isPrint] = useRoute("/estimates/:id/print");
+  const [isEstimatePrint] = useRoute("/estimates/:id/print");
+  const [isInvoicePrint] = useRoute("/invoices/:id/print");
 
-  if (isPrint) {
+  if (isEstimatePrint) {
     return (
       <Switch>
         <Route path="/estimates/:id/print">
           {(params) => <EstimatePrint id={parseInt(params.id)} />}
+        </Route>
+      </Switch>
+    );
+  }
+
+  if (isInvoicePrint) {
+    return (
+      <Switch>
+        <Route path="/invoices/:id/print">
+          {(params) => <InvoicePrint id={parseInt(params.id)} />}
         </Route>
       </Switch>
     );

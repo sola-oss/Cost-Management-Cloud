@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Plus, Trash2, ArrowLeft, Save, FileDown, Download } from "lucide-react";
+import { Loader2, Plus, Trash2, ArrowLeft, Save, FileDown, Download, Printer } from "lucide-react";
 import { Link } from "wouter";
 import { generateInvoicePDF } from "./pdf";
 
@@ -450,10 +450,20 @@ export default function InvoiceEditor({ id }: Props) {
         </div>
         <div className="flex gap-2">
           {id && (
-            <Button variant="outline" onClick={handlePDF} className="gap-2">
-              <FileDown className="w-4 h-4" />
-              PDF出力
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                onClick={() => window.open(`${BASE}/invoices/${id}/print`, "_blank")}
+                className="gap-2"
+              >
+                <Printer className="w-4 h-4" />
+                印刷
+              </Button>
+              <Button variant="outline" onClick={handlePDF} className="gap-2">
+                <FileDown className="w-4 h-4" />
+                PDF出力
+              </Button>
+            </>
           )}
           <Button onClick={handleSave} disabled={saving} className="gap-2">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
