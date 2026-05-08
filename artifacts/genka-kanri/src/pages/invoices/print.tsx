@@ -23,6 +23,7 @@ interface Invoice {
   clientName: string;
   clientAddress: string;
   projectName: string;
+  projectId?: number | null;
   invoiceRegistrationNumber: string;
   billingType: "full" | "progress";
   taxExcludedAmount10: number;

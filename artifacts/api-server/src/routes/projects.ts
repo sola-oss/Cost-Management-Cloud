@@ -202,7 +202,7 @@ router.get("/:id", async (req, res) => {
       };
     });
 
-    res.json({
+    return res.json({
       ...project,
       contractAmount,
       taxRate: project.taxRate != null ? parseNumeric(project.taxRate) : null,
@@ -223,7 +223,7 @@ router.get("/:id", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get project");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -287,7 +287,7 @@ router.put("/:id", async (req, res) => {
     const [updated] = await db.update(projectsTable).set(updateData).where(eq(projectsTable.id, id)).returning();
     if (!updated) return res.status(404).json({ message: "工事が見つかりません" });
 
-    res.json({
+    return res.json({
       ...updated,
       contractAmount: parseNumeric(updated.contractAmount),
       taxRate: updated.taxRate != null ? parseNumeric(updated.taxRate) : null,
@@ -297,7 +297,7 @@ router.put("/:id", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to update project");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -335,7 +335,7 @@ router.get("/:id/summary", async (req, res) => {
     const grossProfitRate = contractAmount > 0 ? (grossProfit / contractAmount) * 100 : 0;
     const budgetUsageRate = totalBudget > 0 ? (totalActualCost / totalBudget) * 100 : 0;
 
-    res.json({
+    return res.json({
       projectId: id,
       contractAmount,
       totalBudget,
@@ -347,7 +347,7 @@ router.get("/:id/summary", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get project summary");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -389,7 +389,7 @@ router.get("/:id/ledger", async (req, res) => {
     const totalPaid = invoicesWithPayments.reduce((s, inv) => s + inv.paidAmount, 0);
     const totalUnpaid = totalInvoiced - totalPaid;
 
-    res.json({
+    return res.json({
       project: {
         ...project,
         contractAmount,
@@ -414,7 +414,7 @@ router.get("/:id/ledger", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get project ledger");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 

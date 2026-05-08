@@ -178,7 +178,7 @@ router.get("/:id", async (req, res) => {
       .where(eq(estimateItemsTable.estimateId, id))
       .orderBy(estimateItemsTable.rowIndex);
 
-    res.json({
+    return res.json({
       ...formatEstimate(row.estimate),
       projectName: row.projectName ?? null,
       projectCode: row.projectCode ?? null,
@@ -186,7 +186,7 @@ router.get("/:id", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get estimate");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -212,10 +212,10 @@ router.patch("/:id", async (req, res) => {
 
     const [row] = await db.update(estimatesTable).set(updates).where(eq(estimatesTable.id, id)).returning();
     if (!row) return res.status(404).json({ message: "Not found" });
-    res.json(formatEstimate(row));
+    return res.json(formatEstimate(row));
   } catch (err) {
     req.log.error({ err }, "Failed to update estimate");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -332,10 +332,10 @@ router.post("/:id/duplicate", async (req, res) => {
       );
     }
 
-    res.status(201).json(formatEstimate(newEst));
+    return res.status(201).json(formatEstimate(newEst));
   } catch (err) {
     req.log.error({ err }, "Failed to duplicate estimate");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 

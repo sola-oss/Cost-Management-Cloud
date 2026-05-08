@@ -296,10 +296,10 @@ router.post("/calculate", async (req, res) => {
       return (a.workType ?? "").localeCompare(b.workType ?? "");
     });
 
-    res.json({ items, total: items.length, effectiveStart, effectiveEnd });
+    return res.json({ items, total: items.length, effectiveStart, effectiveEnd });
   } catch (err) {
     req.log.error({ err }, "Failed to calculate payment assessment");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -485,14 +485,14 @@ router.post("/confirm", async (req, res) => {
       }
     }
 
-    res.status(201).json({
+    return res.status(201).json({
       created: createdRows.length,
       updated: updatedRows.length,
       items: [...createdRows, ...updatedRows],
     });
   } catch (err) {
     req.log.error({ err }, "Failed to confirm payment assessment");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 

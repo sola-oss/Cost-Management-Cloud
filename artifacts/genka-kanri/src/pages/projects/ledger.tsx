@@ -136,9 +136,9 @@ function CellTh({ children, className = "" }: { children: React.ReactNode; class
   );
 }
 
-function CellTd({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function CellTd({ children, className = "", colSpan }: { children: React.ReactNode; className?: string; colSpan?: number }) {
   return (
-    <td className={`border border-gray-600 text-[10px] px-1 py-0.5 ${className}`}>
+    <td colSpan={colSpan} className={`border border-gray-600 text-[10px] px-1 py-0.5 ${className}`}>
       {children || BLANK}
     </td>
   );

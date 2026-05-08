@@ -182,7 +182,7 @@ router.get("/:id", async (req, res) => {
       billedToDate = await computeBilledToDate(row.projectId, id, row.invoiceDate);
     }
 
-    res.json({
+    return res.json({
       ...formatInvoice(row),
       items: items.map(formatItem),
       payments: payments.map(formatPayment),
@@ -191,7 +191,7 @@ router.get("/:id", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get invoice");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -241,7 +241,7 @@ router.patch("/:id", async (req, res) => {
       billedToDate = await computeBilledToDate(updated.projectId, id, updated.invoiceDate);
     }
 
-    res.json({
+    return res.json({
       ...formatInvoice(updated),
       items: items.map(formatItem),
       payments: payments.map(formatPayment),
@@ -250,7 +250,7 @@ router.patch("/:id", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to update invoice");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -293,10 +293,10 @@ router.post("/:id/items", async (req, res) => {
     if (!inv) return res.status(404).json({ message: "Not found" });
 
     const saved = await db.select().from(invoiceItemsTable).where(eq(invoiceItemsTable.invoiceId, invoiceId)).orderBy(invoiceItemsTable.rowIndex);
-    res.json({ items: saved.map(formatItem) });
+    return res.json({ items: saved.map(formatItem) });
   } catch (err) {
     req.log.error({ err }, "Failed to save invoice items");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 

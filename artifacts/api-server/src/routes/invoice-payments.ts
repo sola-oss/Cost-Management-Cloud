@@ -53,7 +53,8 @@ async function recalcStatus(invoiceId: number) {
 // ─── GET /api/invoices/:id/payments ────────────────────────────────────────────
 router.get("/", async (req, res) => {
   try {
-    const invoiceId = parseInt(req.params.id);
+    const p = req.params as Record<string, string>;
+    const invoiceId = parseInt(p.id);
     const payments = await db
       .select()
       .from(invoicePaymentsTable)
@@ -69,7 +70,8 @@ router.get("/", async (req, res) => {
 // ─── POST /api/invoices/:id/payments ──────────────────────────────────────────
 router.post("/", async (req, res) => {
   try {
-    const invoiceId = parseInt(req.params.id);
+    const p = req.params as Record<string, string>;
+    const invoiceId = parseInt(p.id);
     const { paymentDate, amount, paymentMethod, notes } = req.body;
 
     if (!paymentDate || !amount) {
@@ -96,22 +98,23 @@ router.post("/", async (req, res) => {
       .where(eq(invoicePaymentsTable.invoiceId, invoiceId))
       .orderBy(invoicePaymentsTable.paymentDate);
 
-    res.status(201).json({
+    return res.status(201).json({
       payment: formatPayment(payment),
       invoice: formatInvoice(inv),
       payments: payments.map(formatPayment),
     });
   } catch (err) {
     req.log.error({ err }, "Failed to create payment");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
 // ─── PATCH /api/invoices/:id/payments/:pid ────────────────────────────────────
 router.patch("/:pid", async (req, res) => {
   try {
-    const invoiceId = parseInt(req.params.id);
-    const paymentId = parseInt(req.params.pid);
+    const p = req.params as Record<string, string>;
+    const invoiceId = parseInt(p.id);
+    const paymentId = parseInt(p.pid);
     const { paymentDate, amount, paymentMethod, notes } = req.body;
 
     const [existing] = await db
@@ -141,22 +144,23 @@ router.patch("/:pid", async (req, res) => {
       .where(eq(invoicePaymentsTable.invoiceId, invoiceId))
       .orderBy(invoicePaymentsTable.paymentDate);
 
-    res.json({
+    return res.json({
       payment: formatPayment(payment),
       invoice: formatInvoice(inv),
       payments: payments.map(formatPayment),
     });
   } catch (err) {
     req.log.error({ err }, "Failed to update payment");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
 // ─── DELETE /api/invoices/:id/payments/:pid ────────────────────────────────────
 router.delete("/:pid", async (req, res) => {
   try {
-    const invoiceId = parseInt(req.params.id);
-    const paymentId = parseInt(req.params.pid);
+    const p = req.params as Record<string, string>;
+    const invoiceId = parseInt(p.id);
+    const paymentId = parseInt(p.pid);
 
     const [existing] = await db
       .select({ id: invoicePaymentsTable.id })
@@ -176,13 +180,13 @@ router.delete("/:pid", async (req, res) => {
       .where(eq(invoicePaymentsTable.invoiceId, invoiceId))
       .orderBy(invoicePaymentsTable.paymentDate);
 
-    res.json({
+    return res.json({
       invoice: formatInvoice(inv),
       payments: payments.map(formatPayment),
     });
   } catch (err) {
     req.log.error({ err }, "Failed to delete payment");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 

@@ -84,10 +84,10 @@ router.post("/", async (req, res) => {
       })
       .returning();
 
-    res.status(201).json(formatPayment(payment));
+    return res.status(201).json(formatPayment(payment));
   } catch (err) {
     req.log.error({ err }, "Failed to create payment");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -115,10 +115,10 @@ router.patch("/:id/pay", async (req, res) => {
       .where(eq(paymentsTable.id, id))
       .returning();
 
-    res.json(formatPayment(updated));
+    return res.json(formatPayment(updated));
   } catch (err) {
     req.log.error({ err }, "Failed to mark payment as paid");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -134,10 +134,10 @@ router.patch("/:id/unpay", async (req, res) => {
       .returning();
 
     if (!updated) return res.status(404).json({ message: "支払が見つかりません" });
-    res.json(formatPayment(updated));
+    return res.json(formatPayment(updated));
   } catch (err) {
     req.log.error({ err }, "Failed to revert payment");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 

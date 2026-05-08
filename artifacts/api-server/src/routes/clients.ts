@@ -27,13 +27,13 @@ router.post("/", async (req, res) => {
       tel: tel ?? null,
       contactName: contactName ?? null,
     }).returning();
-    res.status(201).json(client);
+    return res.status(201).json(client);
   } catch (err: unknown) {
     req.log.error({ err }, "Failed to create client");
     if (err instanceof Error && (err as NodeJS.ErrnoException & { code?: string }).code === "23505") {
       return res.status(409).json({ message: "その得意先コードはすでに使用されています" });
     }
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -54,13 +54,13 @@ router.put("/:id", async (req, res) => {
       updatedAt: new Date(),
     }).where(eq(clientsTable.id, id)).returning();
     if (!updated) return res.status(404).json({ message: "得意先が見つかりません" });
-    res.json(updated);
+    return res.json(updated);
   } catch (err: unknown) {
     req.log.error({ err }, "Failed to update client");
     if (err instanceof Error && (err as NodeJS.ErrnoException & { code?: string }).code === "23505") {
       return res.status(409).json({ message: "その得意先コードはすでに使用されています" });
     }
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -69,10 +69,10 @@ router.delete("/:id", async (req, res) => {
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ message: "Invalid id" });
     await db.delete(clientsTable).where(eq(clientsTable.id, id));
-    res.status(204).send();
+    return res.status(204).send();
   } catch (err) {
     req.log.error({ err }, "Failed to delete client");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 

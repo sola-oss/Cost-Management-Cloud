@@ -22,7 +22,8 @@ function serializeItem(item: typeof budgetItemsTable.$inferSelect) {
 
 router.get("/", async (req, res) => {
   try {
-    const projectId = parseInt(req.params.id);
+    const p = req.params as Record<string, string>;
+    const projectId = parseInt(p.id);
     const items = await db
       .select()
       .from(budgetItemsTable)
@@ -59,7 +60,8 @@ router.get("/", async (req, res) => {
 
 router.post("/import-from-estimate", async (req, res) => {
   try {
-    const projectId = parseInt(req.params.id);
+    const p = req.params as Record<string, string>;
+    const projectId = parseInt(p.id);
     const dryRun = req.query.dryRun === "true";
 
     const existingItems = await db
@@ -139,20 +141,21 @@ router.post("/import-from-estimate", async (req, res) => {
       )
       .returning();
 
-    res.status(201).json({
+    return res.status(201).json({
       estimateNumber: estimate.estimateNumber,
       importedCount: inserted.length,
       items: inserted.map(serializeItem),
     });
   } catch (err) {
     req.log.error({ err }, "Failed to import budget items from estimate");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
 router.post("/", async (req, res) => {
   try {
-    const projectId = parseInt(req.params.id);
+    const p = req.params as Record<string, string>;
+    const projectId = parseInt(p.id);
     const { workTypeCode, workTypeName, supplierCode, supplierName, contractAmount, initialBudget, revisedBudget, sortOrder } = req.body;
 
     const [item] = await db
@@ -179,8 +182,9 @@ router.post("/", async (req, res) => {
 
 router.put("/:itemId", async (req, res) => {
   try {
-    const projectId = parseInt(req.params.id);
-    const itemId = parseInt(req.params.itemId);
+    const p = req.params as Record<string, string>;
+    const projectId = parseInt(p.id);
+    const itemId = parseInt(p.itemId);
     const { workTypeCode, workTypeName, supplierCode, supplierName, contractAmount, initialBudget, revisedBudget, sortOrder } = req.body;
 
     const [existing] = await db
@@ -217,17 +221,18 @@ router.put("/:itemId", async (req, res) => {
       return res.status(404).json({ message: "予算明細が見つかりません" });
     }
 
-    res.json(serializeItem(updated));
+    return res.json(serializeItem(updated));
   } catch (err) {
     req.log.error({ err }, "Failed to update budget item");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
 router.delete("/:itemId", async (req, res) => {
   try {
-    const projectId = parseInt(req.params.id);
-    const itemId = parseInt(req.params.itemId);
+    const p = req.params as Record<string, string>;
+    const projectId = parseInt(p.id);
+    const itemId = parseInt(p.itemId);
 
     const [existing] = await db
       .select()
@@ -239,10 +244,10 @@ router.delete("/:itemId", async (req, res) => {
     }
 
     await db.delete(budgetItemsTable).where(eq(budgetItemsTable.id, itemId));
-    res.status(204).send();
+    return res.status(204).send();
   } catch (err) {
     req.log.error({ err }, "Failed to delete budget item");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 

@@ -29,10 +29,10 @@ router.get("/", async (req, res) => {
         staffEmail: "",
       });
     }
-    res.json(rows[0]);
+    return res.json(rows[0]);
   } catch (err) {
     req.log.error({ err }, "Failed to get company settings");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -79,10 +79,10 @@ router.put("/", async (req, res) => {
       .where(eq(companySettingsTable.id, existingId))
       .returning();
 
-    res.json(row);
+    return res.json(row);
   } catch (err) {
     req.log.error({ err }, "Failed to update company settings");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 

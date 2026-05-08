@@ -18,7 +18,8 @@ function toDateString(val: unknown): string | null {
 
 router.get("/", async (req, res) => {
   try {
-    const projectId = parseInt(req.params.projectId);
+    const p = req.params as Record<string, string>;
+    const projectId = parseInt(p.projectId);
     const [record] = await db
       .select()
       .from(constructionHistoriesTable)
@@ -28,19 +29,20 @@ router.get("/", async (req, res) => {
       return res.status(404).json({ message: "工事経歴書が見つかりません" });
     }
 
-    res.json({
+    return res.json({
       ...record,
       contractAmount: record.contractAmount != null ? parseFloat(record.contractAmount) : null,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get construction history");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
 router.post("/", async (req, res) => {
   try {
-    const projectId = parseInt(req.params.projectId);
+    const p = req.params as Record<string, string>;
+    const projectId = parseInt(p.projectId);
     const {
       constructionName, location, clientName, contractAmount, startDate, endDate,
       constructionType, contractType, primeContractorName,

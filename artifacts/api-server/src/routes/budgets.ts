@@ -43,10 +43,10 @@ router.get("/", async (req, res) => {
     const totalActual = items.reduce((s, i) => s + i.actualAmount, 0);
     const totalVariance = totalBudget - totalActual;
 
-    res.json({ items, totalBudget, totalActual, totalVariance });
+    return res.json({ items, totalBudget, totalActual, totalVariance });
   } catch (err) {
     req.log.error({ err }, "Failed to list budgets");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -95,7 +95,7 @@ router.put("/:id", async (req, res) => {
     const variance = budgetAmountNum - actualAmount;
     const usageRate = budgetAmountNum > 0 ? (actualAmount / budgetAmountNum) * 100 : 0;
 
-    res.json({
+    return res.json({
       ...updated,
       budgetAmount: budgetAmountNum,
       actualAmount,
@@ -104,7 +104,7 @@ router.put("/:id", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to update budget");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 

@@ -66,7 +66,7 @@ router.get("/", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to list cost items");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -121,7 +121,7 @@ router.put("/:id", async (req, res) => {
     const [updated] = await db.update(costItemsTable).set(updateData).where(eq(costItemsTable.id, id)).returning();
     if (!updated) return res.status(404).json({ message: "原価項目が見つかりません" });
 
-    res.json({
+    return res.json({
       ...updated,
       amount: parseNumeric(updated.amount),
       quantity: updated.quantity ? parseNumeric(updated.quantity) : null,
@@ -129,7 +129,7 @@ router.put("/:id", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to update cost item");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
