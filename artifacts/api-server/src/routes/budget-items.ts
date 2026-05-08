@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, asc, and, desc } from "drizzle-orm";
-import { db, budgetItemsTable, estimatesTable, estimateItemsTable, projectsTable } from "@workspace/db";
+import { db, budgetItemsTable, estimatesTable, estimateItemsTable, projectsTable, invoicesTable } from "@workspace/db";
 
 const router: IRouter = Router({ mergeParams: true });
 
@@ -33,11 +33,23 @@ router.get("/", async (req, res) => {
     const totalInitialBudget = items.reduce((s, i) => s + parseNumeric(i.initialBudget), 0);
     const totalRevisedBudget = items.reduce((s, i) => s + parseNumeric(i.revisedBudget), 0);
 
+    // billedToDate here is the total of ALL invoices for this project.
+    // This is intentional: this endpoint is used in the invoice create flow (no current
+    // invoice ID exists yet), so all existing project invoices are "prior" billing.
+    // When editing an existing invoice, use GET /api/invoices/:id which applies
+    // proper date-based filtering (invoiceDate < current) to exclude later invoices.
+    const invoices = await db
+      .select({ totalAmount: invoicesTable.totalAmount })
+      .from(invoicesTable)
+      .where(eq(invoicesTable.projectId, projectId));
+    const billedToDate = invoices.reduce((s, inv) => s + parseNumeric(inv.totalAmount), 0);
+
     res.json({
       items: items.map(serializeItem),
       totalContractAmount,
       totalInitialBudget,
       totalRevisedBudget,
+      billedToDate,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to list budget items");

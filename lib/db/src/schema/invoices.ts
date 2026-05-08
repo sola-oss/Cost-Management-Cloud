@@ -1,9 +1,13 @@
 import { pgTable, serial, text, numeric, date, integer, timestamp } from "drizzle-orm/pg-core";
 import { projectsTable } from "./projects";
 import { clientsTable } from "./clients";
+import { budgetItemsTable } from "./budget-items";
 
 export const invoiceStatusEnum = ["unpaid", "partial", "paid"] as const;
 export type InvoiceStatus = typeof invoiceStatusEnum[number];
+
+export const billingTypeEnum = ["full", "progress"] as const;
+export type BillingType = typeof billingTypeEnum[number];
 
 export const invoicesTable = pgTable("invoices", {
   id: serial("id").primaryKey(),
@@ -16,6 +20,7 @@ export const invoicesTable = pgTable("invoices", {
   projectId: integer("project_id").references(() => projectsTable.id, { onDelete: "set null" }),
   projectName: text("project_name").default(""),
   invoiceRegistrationNumber: text("invoice_registration_number").default(""),
+  billingType: text("billing_type").$type<BillingType>().notNull().default("full"),
   taxExcludedAmount10: numeric("tax_excluded_amount_10", { precision: 15, scale: 2 }).notNull().default("0"),
   taxAmount10: numeric("tax_amount_10", { precision: 15, scale: 2 }).notNull().default("0"),
   taxExcludedAmount8: numeric("tax_excluded_amount_8", { precision: 15, scale: 2 }).notNull().default("0"),
@@ -40,6 +45,7 @@ export const invoiceItemsTable = pgTable("invoice_items", {
   unitPrice: numeric("unit_price", { precision: 15, scale: 2 }).notNull().default("0"),
   taxRate: numeric("tax_rate", { precision: 5, scale: 2 }).notNull().default("10"),
   amount: numeric("amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  budgetItemId: integer("budget_item_id").references(() => budgetItemsTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

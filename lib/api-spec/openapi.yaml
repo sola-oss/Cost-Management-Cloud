@@ -19,6 +19,8 @@ tags:
     description: 実行予算明細
   - name: dashboard
     description: ダッシュボード・集計
+  - name: invoices
+    description: 請求管理
 
 paths:
   /healthz:
@@ -471,6 +473,130 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BudgetVsActualResponse"
+
+  /invoices:
+    get:
+      operationId: listInvoices
+      tags: [invoices]
+      summary: 請求書一覧取得
+      responses:
+        "200":
+          description: 請求書一覧
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceListResponse"
+    post:
+      operationId: createInvoice
+      tags: [invoices]
+      summary: 請求書作成
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInvoiceRequest"
+      responses:
+        "201":
+          description: 作成成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Invoice"
+
+  /invoices/{id}:
+    get:
+      operationId: getInvoice
+      tags: [invoices]
+      summary: 請求書詳細取得
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 請求書詳細（明細・入金・出来高KPI含む）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceDetail"
+    patch:
+      operationId: updateInvoice
+      tags: [invoices]
+      summary: 請求書更新
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateInvoiceRequest"
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceDetail"
+    delete:
+      operationId: deleteInvoice
+      tags: [invoices]
+      summary: 請求書削除
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: 削除成功
+
+  /invoices/{id}/items:
+    post:
+      operationId: saveInvoiceItems
+      tags: [invoices]
+      summary: 請求明細一括保存（全削除→再登録）
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/InvoiceItemInput"
+              required:
+                - items
+      responses:
+        "200":
+          description: 保存成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/InvoiceItem"
+                required:
+                  - items
 
   /clients:
     get:
@@ -1721,6 +1847,324 @@ components:
               - total
       required:
         - months
+
+    Invoice:
+      type: object
+      properties:
+        id:
+          type: integer
+        invoiceNumber:
+          type: string
+          description: 請求書番号
+        invoiceDate:
+          type: string
+          format: date
+        dueDate:
+          type: string
+          format: date
+          nullable: true
+        clientId:
+          type: integer
+          nullable: true
+        clientName:
+          type: string
+        clientAddress:
+          type: string
+          nullable: true
+        projectId:
+          type: integer
+          nullable: true
+        projectName:
+          type: string
+          nullable: true
+        invoiceRegistrationNumber:
+          type: string
+          nullable: true
+        billingType:
+          type: string
+          enum: [full, progress]
+          description: 請求タイプ（一括/出来高）
+          default: full
+        taxExcludedAmount10:
+          type: number
+        taxAmount10:
+          type: number
+        taxExcludedAmount8:
+          type: number
+        taxAmount8:
+          type: number
+        taxExcludedTotal:
+          type: number
+        taxTotal:
+          type: number
+        totalAmount:
+          type: number
+        paidAmount:
+          type: number
+        status:
+          type: string
+          enum: [unpaid, partial, paid]
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - invoiceNumber
+        - invoiceDate
+        - clientName
+        - billingType
+        - taxExcludedAmount10
+        - taxAmount10
+        - taxExcludedAmount8
+        - taxAmount8
+        - taxExcludedTotal
+        - taxTotal
+        - totalAmount
+        - paidAmount
+        - status
+        - createdAt
+        - updatedAt
+
+    InvoiceItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        invoiceId:
+          type: integer
+        rowIndex:
+          type: integer
+        itemName:
+          type: string
+        quantity:
+          type: number
+        unit:
+          type: string
+          nullable: true
+        unitPrice:
+          type: number
+        taxRate:
+          type: number
+        amount:
+          type: number
+        budgetItemId:
+          type: integer
+          nullable: true
+          description: 対応する実行予算明細ID
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - invoiceId
+        - rowIndex
+        - itemName
+        - quantity
+        - unitPrice
+        - taxRate
+        - amount
+        - createdAt
+
+    InvoiceItemInput:
+      type: object
+      properties:
+        rowIndex:
+          type: integer
+        itemName:
+          type: string
+        quantity:
+          type: number
+        unit:
+          type: string
+          nullable: true
+        unitPrice:
+          type: number
+        taxRate:
+          type: number
+        amount:
+          type: number
+        budgetItemId:
+          type: integer
+          nullable: true
+          description: 対応する実行予算明細ID
+      required:
+        - itemName
+        - quantity
+        - unitPrice
+        - taxRate
+        - amount
+
+    InvoicePaymentRecord:
+      type: object
+      properties:
+        id:
+          type: integer
+        invoiceId:
+          type: integer
+        paymentDate:
+          type: string
+          format: date
+        amount:
+          type: number
+        paymentMethod:
+          type: string
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - invoiceId
+        - paymentDate
+        - amount
+        - paymentMethod
+        - createdAt
+
+    InvoiceDetail:
+      allOf:
+        - $ref: "#/components/schemas/Invoice"
+        - type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: "#/components/schemas/InvoiceItem"
+            payments:
+              type: array
+              items:
+                $ref: "#/components/schemas/InvoicePaymentRecord"
+            contractAmount:
+              type: number
+              description: 実行予算総額（出来高請求用）
+            billedToDate:
+              type: number
+              description: 過去請求累計額（本請求書より前の日付の請求合計）
+          required:
+            - items
+            - payments
+            - contractAmount
+            - billedToDate
+
+    InvoiceListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Invoice"
+        total:
+          type: integer
+      required:
+        - items
+        - total
+
+    CreateInvoiceRequest:
+      type: object
+      properties:
+        invoiceDate:
+          type: string
+          format: date
+        dueDate:
+          type: string
+          format: date
+          nullable: true
+        clientId:
+          type: integer
+          nullable: true
+        clientName:
+          type: string
+        clientAddress:
+          type: string
+          nullable: true
+        projectId:
+          type: integer
+          nullable: true
+        projectName:
+          type: string
+          nullable: true
+        invoiceRegistrationNumber:
+          type: string
+          nullable: true
+        billingType:
+          type: string
+          enum: [full, progress]
+          default: full
+        taxExcludedAmount10:
+          type: number
+        taxAmount10:
+          type: number
+        taxExcludedAmount8:
+          type: number
+        taxAmount8:
+          type: number
+        taxExcludedTotal:
+          type: number
+        taxTotal:
+          type: number
+        totalAmount:
+          type: number
+        notes:
+          type: string
+          nullable: true
+      required:
+        - invoiceDate
+        - clientName
+
+    UpdateInvoiceRequest:
+      type: object
+      properties:
+        invoiceDate:
+          type: string
+          format: date
+        dueDate:
+          type: string
+          format: date
+          nullable: true
+        clientId:
+          type: integer
+          nullable: true
+        clientName:
+          type: string
+        clientAddress:
+          type: string
+          nullable: true
+        projectId:
+          type: integer
+          nullable: true
+        projectName:
+          type: string
+          nullable: true
+        invoiceRegistrationNumber:
+          type: string
+          nullable: true
+        billingType:
+          type: string
+          enum: [full, progress]
+        taxExcludedAmount10:
+          type: number
+        taxAmount10:
+          type: number
+        taxExcludedAmount8:
+          type: number
+        taxAmount8:
+          type: number
+        taxExcludedTotal:
+          type: number
+        taxTotal:
+          type: number
+        totalAmount:
+          type: number
+        notes:
+          type: string
+          nullable: true
 
     BudgetVsActualResponse:
       type: object

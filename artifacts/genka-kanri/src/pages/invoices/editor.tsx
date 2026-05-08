@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Plus, Trash2, ArrowLeft, Save, FileDown } from "lucide-react";
+import { Loader2, Plus, Trash2, ArrowLeft, Save, FileDown, Download } from "lucide-react";
 import { Link } from "wouter";
 import { generateInvoicePDF } from "./pdf";
 
@@ -22,6 +22,13 @@ interface CompanySettings {
   bankName: string; bankBranch: string; bankAccountType: string; bankAccountNumber: string; bankAccountName: string;
 }
 
+interface BudgetItem {
+  id: number;
+  workTypeCode: string;
+  workTypeName: string;
+  revisedBudget: number;
+}
+
 interface InvoiceItem {
   id?: number;
   rowIndex: number;
@@ -31,6 +38,7 @@ interface InvoiceItem {
   unitPrice: number;
   taxRate: number;
   amount: number;
+  budgetItemId?: number | null;
 }
 
 interface InvoicePayment {
@@ -52,6 +60,7 @@ interface Invoice {
   projectId: number | null;
   projectName: string;
   invoiceRegistrationNumber: string;
+  billingType: "full" | "progress";
   taxExcludedAmount10: number;
   taxAmount10: number;
   taxExcludedAmount8: number;
@@ -64,6 +73,8 @@ interface Invoice {
   notes: string;
   items: InvoiceItem[];
   payments: InvoicePayment[];
+  contractAmount?: number;
+  billedToDate?: number;
 }
 
 const newItem = (idx: number): InvoiceItem => ({
@@ -74,6 +85,7 @@ const newItem = (idx: number): InvoiceItem => ({
   unitPrice: 0,
   taxRate: 10,
   amount: 0,
+  budgetItemId: null,
 });
 
 function calcTotals(items: InvoiceItem[]) {
@@ -124,6 +136,14 @@ export default function InvoiceEditor({ id }: Props) {
   const [addingPayment, setAddingPayment] = useState(false);
   const [invoice, setInvoice] = useState<Invoice | null>(null);
 
+  // Billing type
+  const [billingType, setBillingType] = useState<"full" | "progress">("full");
+  // Progress billing specific fields
+  const [contractAmount, setContractAmount] = useState(0);
+  const [billedToDate, setBilledToDate] = useState(0);
+  const [progressAmount, setProgressAmount] = useState("");
+  const [loadingBudget, setLoadingBudget] = useState(false);
+
   const { data: clients } = useQuery<{ items: Client[] }>({
     queryKey: ["/api/clients"],
     queryFn: async () => { const r = await fetch(`${BASE}/api/clients`); return r.json(); },
@@ -162,6 +182,12 @@ export default function InvoiceEditor({ id }: Props) {
       setItems(existingInvoice.items.length > 0 ? existingInvoice.items : [newItem(0)]);
       setPayments(existingInvoice.payments || []);
       setInvoice(existingInvoice);
+      setBillingType(existingInvoice.billingType || "full");
+      setContractAmount(existingInvoice.contractAmount ?? 0);
+      setBilledToDate(existingInvoice.billedToDate ?? 0);
+      if (existingInvoice.billingType === "progress") {
+        setProgressAmount(String(existingInvoice.totalAmount ?? ""));
+      }
     }
   }, [existingInvoice]);
 
@@ -185,6 +211,53 @@ export default function InvoiceEditor({ id }: Props) {
     setProjectId(pid);
     const p = projects?.items.find((x) => x.id === pid);
     if (p) setProjectName(p.name || "");
+    fetchBillingSummary(pid);
+  };
+
+  const fetchBillingSummary = async (pid: number) => {
+    try {
+      const r = await fetch(`${BASE}/api/projects/${pid}/budget-items`);
+      if (!r.ok) return;
+      const data: { totalRevisedBudget: number; billedToDate: number } = await r.json();
+      setContractAmount(data.totalRevisedBudget ?? 0);
+      setBilledToDate(data.billedToDate ?? 0);
+    } catch {
+      // ignore, billing summary is best-effort
+    }
+  };
+
+  const handleLoadBudgetItems = async () => {
+    if (!projectId) {
+      toast({ title: "工事を選択してください", variant: "destructive" });
+      return;
+    }
+    setLoadingBudget(true);
+    try {
+      const r = await fetch(`${BASE}/api/projects/${projectId}/budget-items`);
+      if (!r.ok) throw new Error("Failed to load");
+      const data: { items: BudgetItem[]; totalRevisedBudget: number } = await r.json();
+      if (data.items.length === 0) {
+        toast({ title: "実行予算明細がありません", description: "工事の実行予算タブから明細を登録してください", variant: "destructive" });
+        return;
+      }
+      const loadedItems: InvoiceItem[] = data.items.map((bi, idx) => ({
+        rowIndex: idx,
+        itemName: bi.workTypeName,
+        quantity: 1,
+        unit: "式",
+        unitPrice: bi.revisedBudget,
+        taxRate: 10,
+        amount: bi.revisedBudget,
+        budgetItemId: bi.id,
+      }));
+      setItems(loadedItems);
+      setContractAmount(data.totalRevisedBudget);
+      toast({ title: "実行予算を読み込みました", description: `${loadedItems.length}件の明細を展開しました` });
+    } catch {
+      toast({ title: "読み込みに失敗しました", variant: "destructive" });
+    } finally {
+      setLoadingBudget(false);
+    }
   };
 
   const updateItem = (idx: number, field: keyof InvoiceItem, value: string | number) => {
@@ -204,9 +277,30 @@ export default function InvoiceEditor({ id }: Props) {
 
   const totals = calcTotals(items);
 
+  // For progress billing, totalAmount is the manual entry (今回請求額 incl. tax)
+  const progressAmountNum = parseFloat(progressAmount) || 0;
+
+  const getEffectiveTotals = () => {
+    if (billingType === "progress") {
+      const taxExcluded = Math.round(progressAmountNum / 1.1);
+      const tax = progressAmountNum - taxExcluded;
+      return {
+        taxExcludedAmount10: taxExcluded,
+        taxAmount10: tax,
+        taxExcludedAmount8: 0,
+        taxAmount8: 0,
+        taxExcludedTotal: taxExcluded,
+        taxTotal: tax,
+        totalAmount: progressAmountNum,
+      };
+    }
+    return totals;
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
+      const effectiveTotals = getEffectiveTotals();
       const body = {
         invoiceDate,
         dueDate: dueDate || null,
@@ -217,7 +311,8 @@ export default function InvoiceEditor({ id }: Props) {
         projectName,
         invoiceRegistrationNumber: registrationNumber,
         notes,
-        ...totals,
+        billingType,
+        ...effectiveTotals,
       };
 
       let savedInvoice: Invoice;
@@ -239,12 +334,12 @@ export default function InvoiceEditor({ id }: Props) {
         savedInvoice = await r.json();
       }
 
+      const itemsToSave = items.map((it, idx) => ({ ...it, rowIndex: idx }));
+
       const itemsR = await fetch(`${BASE}/api/invoices/${savedInvoice.id}/items`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: items.map((it, idx) => ({ ...it, rowIndex: idx })),
-        }),
+        body: JSON.stringify({ items: itemsToSave }),
       });
       if (!itemsR.ok) throw new Error("Failed to save items");
 
@@ -327,8 +422,12 @@ export default function InvoiceEditor({ id }: Props) {
 
   const currentInvoice = invoice || existingInvoice;
   const paidAmount = currentInvoice?.paidAmount ?? 0;
-  const totalAmount = totals.totalAmount;
+  const effectiveTotals = getEffectiveTotals();
+  const totalAmount = effectiveTotals.totalAmount;
   const balance = totalAmount - paidAmount;
+
+  // Progress billing KPI
+  const progressRemainder = contractAmount - billedToDate - progressAmountNum;
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -421,6 +520,54 @@ export default function InvoiceEditor({ id }: Props) {
           </div>
         </section>
 
+        {/* 請求タイプ */}
+        <section className="bg-white rounded-xl border p-6">
+          <h2 className="text-base font-semibold text-slate-700 border-b pb-2 mb-4">請求タイプ</h2>
+          <div className="flex gap-6">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="billingType"
+                value="full"
+                checked={billingType === "full"}
+                onChange={() => setBillingType("full")}
+                className="w-4 h-4 text-primary"
+              />
+              <span className="text-sm font-medium text-slate-700">一括請求</span>
+              <span className="text-xs text-slate-500">明細単位で金額を自由に編集できます</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="billingType"
+                value="progress"
+                checked={billingType === "progress"}
+                onChange={() => setBillingType("progress")}
+                className="w-4 h-4 text-primary"
+              />
+              <span className="text-sm font-medium text-slate-700">出来高請求</span>
+              <span className="text-xs text-slate-500">契約金額に対する今回請求額を入力します</span>
+            </label>
+          </div>
+
+          {/* Budget load button */}
+          <div className="mt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={handleLoadBudgetItems}
+              disabled={!projectId || loadingBudget}
+            >
+              {loadingBudget ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+              実行予算を読み込む
+            </Button>
+            {!projectId && (
+              <p className="text-xs text-slate-400 mt-1">工事を選択すると実行予算明細を請求明細に展開できます</p>
+            )}
+          </div>
+        </section>
+
         {/* 明細 */}
         <section className="bg-white rounded-xl border p-6">
           <h2 className="text-base font-semibold text-slate-700 border-b pb-2 mb-4">明細</h2>
@@ -509,45 +656,101 @@ export default function InvoiceEditor({ id }: Props) {
             行を追加
           </Button>
 
-          {/* 税率別集計 */}
-          <div className="mt-6 border-t pt-4 space-y-2 max-w-sm ml-auto">
-            {totals.taxExcludedAmount10 > 0 && (
-              <>
-                <div className="flex justify-between text-sm text-slate-600">
-                  <span>10%対象額</span>
-                  <span>{fmt(totals.taxExcludedAmount10)}</span>
-                </div>
-                <div className="flex justify-between text-sm text-slate-600">
-                  <span>消費税（10%）</span>
-                  <span>{fmt(totals.taxAmount10)}</span>
-                </div>
-              </>
-            )}
-            {totals.taxExcludedAmount8 > 0 && (
-              <>
-                <div className="flex justify-between text-sm text-slate-600">
-                  <span>8%対象額（軽減税率）</span>
-                  <span>{fmt(totals.taxExcludedAmount8)}</span>
-                </div>
-                <div className="flex justify-between text-sm text-slate-600">
-                  <span>消費税（8%）</span>
-                  <span>{fmt(totals.taxAmount8)}</span>
-                </div>
-              </>
-            )}
-            <div className="flex justify-between text-sm text-slate-600 border-t pt-2">
-              <span>税抜合計</span>
-              <span>{fmt(totals.taxExcludedTotal)}</span>
+          {/* 一括請求: 税率別集計 */}
+          {billingType === "full" && (
+            <div className="mt-6 border-t pt-4 space-y-2 max-w-sm ml-auto">
+              {totals.taxExcludedAmount10 > 0 && (
+                <>
+                  <div className="flex justify-between text-sm text-slate-600">
+                    <span>10%対象額</span>
+                    <span>{fmt(totals.taxExcludedAmount10)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-slate-600">
+                    <span>消費税（10%）</span>
+                    <span>{fmt(totals.taxAmount10)}</span>
+                  </div>
+                </>
+              )}
+              {totals.taxExcludedAmount8 > 0 && (
+                <>
+                  <div className="flex justify-between text-sm text-slate-600">
+                    <span>8%対象額（軽減税率）</span>
+                    <span>{fmt(totals.taxExcludedAmount8)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-slate-600">
+                    <span>消費税（8%）</span>
+                    <span>{fmt(totals.taxAmount8)}</span>
+                  </div>
+                </>
+              )}
+              <div className="flex justify-between text-sm text-slate-600 border-t pt-2">
+                <span>税抜合計</span>
+                <span>{fmt(totals.taxExcludedTotal)}</span>
+              </div>
+              <div className="flex justify-between text-sm text-slate-600">
+                <span>消費税合計</span>
+                <span>{fmt(totals.taxTotal)}</span>
+              </div>
+              <div className="flex justify-between text-base font-bold text-slate-800 border-t pt-2">
+                <span>税込合計</span>
+                <span className="text-primary">{fmt(totals.totalAmount)}</span>
+              </div>
             </div>
-            <div className="flex justify-between text-sm text-slate-600">
-              <span>消費税合計</span>
-              <span>{fmt(totals.taxTotal)}</span>
+          )}
+
+          {/* 出来高請求: KPI パネル */}
+          {billingType === "progress" && (
+            <div className="mt-6 border-t pt-4">
+              <h3 className="text-sm font-semibold text-slate-700 mb-3">出来高状況</h3>
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div className="bg-blue-50 rounded-lg p-3">
+                  <p className="text-xs text-slate-500">契約金額（実行予算総額）</p>
+                  <p className="text-lg font-bold text-blue-700">{fmt(contractAmount)}</p>
+                </div>
+                <div className="bg-slate-50 rounded-lg p-3">
+                  <p className="text-xs text-slate-500">既請求額（累計）</p>
+                  <p className="text-lg font-bold text-slate-700">{fmt(billedToDate)}</p>
+                </div>
+              </div>
+
+              <div className="border rounded-lg p-4 bg-amber-50">
+                <Label className="text-sm font-semibold text-slate-700">
+                  今回請求額（税込） <span className="text-red-500">*</span>
+                </Label>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-slate-500 text-sm">¥</span>
+                  <Input
+                    type="number"
+                    value={progressAmount}
+                    onChange={(e) => setProgressAmount(e.target.value)}
+                    placeholder="0"
+                    className="max-w-[200px]"
+                    min="0"
+                  />
+                </div>
+                <p className="text-xs text-slate-500 mt-1">税込金額を直接入力してください（10%税率として計算されます）</p>
+              </div>
+
+              <div className="mt-4 grid grid-cols-3 gap-3">
+                <div className="bg-white border rounded-lg p-3 text-center">
+                  <p className="text-xs text-slate-500">今回請求額</p>
+                  <p className="text-base font-bold text-amber-700">{fmt(progressAmountNum)}</p>
+                </div>
+                <div className={`border rounded-lg p-3 text-center ${progressRemainder >= 0 ? "bg-white" : "bg-red-50"}`}>
+                  <p className="text-xs text-slate-500">残額</p>
+                  <p className={`text-base font-bold ${progressRemainder >= 0 ? "text-slate-700" : "text-red-600"}`}>
+                    {fmt(progressRemainder)}
+                  </p>
+                </div>
+                <div className="bg-white border rounded-lg p-3 text-center">
+                  <p className="text-xs text-slate-500">出来高率</p>
+                  <p className="text-base font-bold text-slate-700">
+                    {contractAmount > 0 ? Math.round(((billedToDate + progressAmountNum) / contractAmount) * 100) : 0}%
+                  </p>
+                </div>
+              </div>
             </div>
-            <div className="flex justify-between text-base font-bold text-slate-800 border-t pt-2">
-              <span>税込合計</span>
-              <span className="text-primary">{fmt(totals.totalAmount)}</span>
-            </div>
-          </div>
+          )}
         </section>
 
         {/* 備考 */}
@@ -593,10 +796,10 @@ export default function InvoiceEditor({ id }: Props) {
                   <TableBody>
                     {payments.map((p) => (
                       <TableRow key={p.id}>
-                        <TableCell>{p.paymentDate.replace(/-/g, "/")}</TableCell>
-                        <TableCell>{p.paymentMethod}</TableCell>
-                        <TableCell className="text-right font-medium">{fmt(p.amount)}</TableCell>
-                        <TableCell className="text-slate-500 text-sm">{p.notes}</TableCell>
+                        <TableCell className="text-sm">{p.paymentDate}</TableCell>
+                        <TableCell className="text-sm">{p.paymentMethod}</TableCell>
+                        <TableCell className="text-sm text-right font-medium">{fmt(p.amount)}</TableCell>
+                        <TableCell className="text-sm text-slate-500">{p.notes}</TableCell>
                         <TableCell>
                           <Button
                             variant="ghost"

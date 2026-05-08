@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, desc } from "drizzle-orm";
-import { db, invoicesTable, invoiceItemsTable, invoicePaymentsTable } from "@workspace/db";
+import { eq, desc, ne, and, lt, or } from "drizzle-orm";
+import { db, invoicesTable, invoiceItemsTable, invoicePaymentsTable, budgetItemsTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -19,6 +19,7 @@ function formatInvoice(inv: typeof invoicesTable.$inferSelect) {
     taxTotal: parseN(inv.taxTotal),
     totalAmount: parseN(inv.totalAmount),
     paidAmount: parseN(inv.paidAmount),
+    billingType: inv.billingType ?? "full",
   };
 }
 
@@ -29,6 +30,7 @@ function formatItem(i: typeof invoiceItemsTable.$inferSelect) {
     unitPrice: parseN(i.unitPrice),
     taxRate: parseN(i.taxRate),
     amount: parseN(i.amount),
+    budgetItemId: i.budgetItemId ?? null,
   };
 }
 
@@ -62,7 +64,7 @@ async function recalcStatus(invoiceId: number) {
   if (!inv) return;
 
   const payments = await db.select({ amount: invoicePaymentsTable.amount }).from(invoicePaymentsTable).where(eq(invoicePaymentsTable.invoiceId, invoiceId));
-  const paidTotal = payments.reduce((sum, p) => sum + parseN(p.amount), 0);
+  const paidTotal = payments.reduce((s, p) => s + parseN(p.amount), 0);
   const total = parseN(inv.totalAmount);
 
   let status: "unpaid" | "partial" | "paid" = "unpaid";
@@ -77,6 +79,29 @@ async function recalcStatus(invoiceId: number) {
     status,
     updatedAt: new Date(),
   }).where(eq(invoicesTable.id, invoiceId));
+}
+
+/**
+ * Compute billedToDate: sum of totalAmount for invoices of the same project
+ * that precede the current invoice chronologically (invoiceDate < current, or same
+ * date with lower id). Excludes the current invoice itself.
+ */
+async function computeBilledToDate(projectId: number, currentId: number, currentDate: string): Promise<number> {
+  const pastInvoices = await db
+    .select({ totalAmount: invoicesTable.totalAmount })
+    .from(invoicesTable)
+    .where(and(
+      eq(invoicesTable.projectId, projectId),
+      ne(invoicesTable.id, currentId),
+      or(
+        lt(invoicesTable.invoiceDate, currentDate),
+        and(
+          eq(invoicesTable.invoiceDate, currentDate),
+          lt(invoicesTable.id, currentId)
+        )
+      )
+    ));
+  return pastInvoices.reduce((s, inv) => s + parseN(inv.totalAmount), 0);
 }
 
 // ─── GET /api/invoices ────────────────────────────────────────────────────────
@@ -115,6 +140,7 @@ router.post("/", async (req, res) => {
       projectId: b.projectId ? parseInt(b.projectId) : null,
       projectName: b.projectName ?? "",
       invoiceRegistrationNumber: b.invoiceRegistrationNumber ?? "",
+      billingType: b.billingType === "progress" ? "progress" : "full",
       taxExcludedAmount10: String(b.taxExcludedAmount10 ?? 0),
       taxAmount10: String(b.taxAmount10 ?? 0),
       taxExcludedAmount8: String(b.taxExcludedAmount8 ?? 0),
@@ -144,10 +170,24 @@ router.get("/:id", async (req, res) => {
     const items = await db.select().from(invoiceItemsTable).where(eq(invoiceItemsTable.invoiceId, id)).orderBy(invoiceItemsTable.rowIndex);
     const payments = await db.select().from(invoicePaymentsTable).where(eq(invoicePaymentsTable.invoiceId, id)).orderBy(invoicePaymentsTable.paymentDate);
 
+    let contractAmount = 0;
+    let billedToDate = 0;
+
+    if (row.projectId) {
+      const budgetItems = await db
+        .select({ revisedBudget: budgetItemsTable.revisedBudget })
+        .from(budgetItemsTable)
+        .where(eq(budgetItemsTable.projectId, row.projectId));
+      contractAmount = budgetItems.reduce((s, bi) => s + parseN(bi.revisedBudget), 0);
+      billedToDate = await computeBilledToDate(row.projectId, id, row.invoiceDate);
+    }
+
     res.json({
       ...formatInvoice(row),
       items: items.map(formatItem),
       payments: payments.map(formatPayment),
+      contractAmount,
+      billedToDate,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get invoice");
@@ -171,6 +211,7 @@ router.patch("/:id", async (req, res) => {
     }
     if (b.clientId !== undefined) updates.clientId = b.clientId ? parseInt(b.clientId) : null;
     if (b.projectId !== undefined) updates.projectId = b.projectId ? parseInt(b.projectId) : null;
+    if (b.billingType !== undefined) updates.billingType = b.billingType === "progress" ? "progress" : "full";
 
     const numFields = [
       "taxExcludedAmount10", "taxAmount10", "taxExcludedAmount8", "taxAmount8",
@@ -188,10 +229,24 @@ router.patch("/:id", async (req, res) => {
     const items = await db.select().from(invoiceItemsTable).where(eq(invoiceItemsTable.invoiceId, id)).orderBy(invoiceItemsTable.rowIndex);
     const payments = await db.select().from(invoicePaymentsTable).where(eq(invoicePaymentsTable.invoiceId, id)).orderBy(invoicePaymentsTable.paymentDate);
 
+    let contractAmount = 0;
+    let billedToDate = 0;
+
+    if (updated.projectId) {
+      const budgetItems = await db
+        .select({ revisedBudget: budgetItemsTable.revisedBudget })
+        .from(budgetItemsTable)
+        .where(eq(budgetItemsTable.projectId, updated.projectId));
+      contractAmount = budgetItems.reduce((s, bi) => s + parseN(bi.revisedBudget), 0);
+      billedToDate = await computeBilledToDate(updated.projectId, id, updated.invoiceDate);
+    }
+
     res.json({
       ...formatInvoice(updated),
       items: items.map(formatItem),
       payments: payments.map(formatPayment),
+      contractAmount,
+      billedToDate,
     });
   } catch (err) {
     req.log.error({ err }, "Failed to update invoice");
@@ -229,6 +284,7 @@ router.post("/:id/items", async (req, res) => {
           unitPrice: String(it.unitPrice ?? 0),
           taxRate: String(it.taxRate ?? 10),
           amount: String(it.amount ?? 0),
+          budgetItemId: it.budgetItemId ? parseInt(it.budgetItemId) : null,
         }))
       );
     }

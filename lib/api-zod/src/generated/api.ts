@@ -753,6 +753,291 @@ export const GetBudgetVsActualResponse = zod.object({
 });
 
 /**
+ * @summary 請求書一覧取得
+ */
+export const listInvoicesResponseItemsItemBillingTypeDefault = `full`;
+
+export const ListInvoicesResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      invoiceNumber: zod.string().describe("請求書番号"),
+      invoiceDate: zod.coerce.date(),
+      dueDate: zod.coerce.date().nullish(),
+      clientId: zod.number().nullish(),
+      clientName: zod.string(),
+      clientAddress: zod.string().nullish(),
+      projectId: zod.number().nullish(),
+      projectName: zod.string().nullish(),
+      invoiceRegistrationNumber: zod.string().nullish(),
+      billingType: zod
+        .enum(["full", "progress"])
+        .default(listInvoicesResponseItemsItemBillingTypeDefault)
+        .describe("請求タイプ（一括\/出来高）"),
+      taxExcludedAmount10: zod.number(),
+      taxAmount10: zod.number(),
+      taxExcludedAmount8: zod.number(),
+      taxAmount8: zod.number(),
+      taxExcludedTotal: zod.number(),
+      taxTotal: zod.number(),
+      totalAmount: zod.number(),
+      paidAmount: zod.number(),
+      status: zod.enum(["unpaid", "partial", "paid"]),
+      notes: zod.string().nullish(),
+      createdAt: zod.coerce.date(),
+      updatedAt: zod.coerce.date(),
+    }),
+  ),
+  total: zod.number(),
+});
+
+/**
+ * @summary 請求書作成
+ */
+export const createInvoiceBodyBillingTypeDefault = `full`;
+
+export const CreateInvoiceBody = zod.object({
+  invoiceDate: zod.coerce.date(),
+  dueDate: zod.coerce.date().nullish(),
+  clientId: zod.number().nullish(),
+  clientName: zod.string(),
+  clientAddress: zod.string().nullish(),
+  projectId: zod.number().nullish(),
+  projectName: zod.string().nullish(),
+  invoiceRegistrationNumber: zod.string().nullish(),
+  billingType: zod
+    .enum(["full", "progress"])
+    .default(createInvoiceBodyBillingTypeDefault),
+  taxExcludedAmount10: zod.number().optional(),
+  taxAmount10: zod.number().optional(),
+  taxExcludedAmount8: zod.number().optional(),
+  taxAmount8: zod.number().optional(),
+  taxExcludedTotal: zod.number().optional(),
+  taxTotal: zod.number().optional(),
+  totalAmount: zod.number().optional(),
+  notes: zod.string().nullish(),
+});
+
+/**
+ * @summary 請求書詳細取得
+ */
+export const GetInvoiceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const getInvoiceResponseOneBillingTypeDefault = `full`;
+
+export const GetInvoiceResponse = zod
+  .object({
+    id: zod.number(),
+    invoiceNumber: zod.string().describe("請求書番号"),
+    invoiceDate: zod.coerce.date(),
+    dueDate: zod.coerce.date().nullish(),
+    clientId: zod.number().nullish(),
+    clientName: zod.string(),
+    clientAddress: zod.string().nullish(),
+    projectId: zod.number().nullish(),
+    projectName: zod.string().nullish(),
+    invoiceRegistrationNumber: zod.string().nullish(),
+    billingType: zod
+      .enum(["full", "progress"])
+      .default(getInvoiceResponseOneBillingTypeDefault)
+      .describe("請求タイプ（一括\/出来高）"),
+    taxExcludedAmount10: zod.number(),
+    taxAmount10: zod.number(),
+    taxExcludedAmount8: zod.number(),
+    taxAmount8: zod.number(),
+    taxExcludedTotal: zod.number(),
+    taxTotal: zod.number(),
+    totalAmount: zod.number(),
+    paidAmount: zod.number(),
+    status: zod.enum(["unpaid", "partial", "paid"]),
+    notes: zod.string().nullish(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  })
+  .and(
+    zod.object({
+      items: zod.array(
+        zod.object({
+          id: zod.number(),
+          invoiceId: zod.number(),
+          rowIndex: zod.number(),
+          itemName: zod.string(),
+          quantity: zod.number(),
+          unit: zod.string().nullish(),
+          unitPrice: zod.number(),
+          taxRate: zod.number(),
+          amount: zod.number(),
+          budgetItemId: zod
+            .number()
+            .nullish()
+            .describe("対応する実行予算明細ID"),
+          createdAt: zod.coerce.date(),
+        }),
+      ),
+      payments: zod.array(
+        zod.object({
+          id: zod.number(),
+          invoiceId: zod.number(),
+          paymentDate: zod.coerce.date(),
+          amount: zod.number(),
+          paymentMethod: zod.string(),
+          notes: zod.string().nullish(),
+          createdAt: zod.coerce.date(),
+        }),
+      ),
+      contractAmount: zod.number().describe("実行予算総額（出来高請求用）"),
+      billedToDate: zod
+        .number()
+        .describe("過去請求累計額（本請求書より前の日付の請求合計）"),
+    }),
+  );
+
+/**
+ * @summary 請求書更新
+ */
+export const UpdateInvoiceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateInvoiceBody = zod.object({
+  invoiceDate: zod.coerce.date().optional(),
+  dueDate: zod.coerce.date().nullish(),
+  clientId: zod.number().nullish(),
+  clientName: zod.string().optional(),
+  clientAddress: zod.string().nullish(),
+  projectId: zod.number().nullish(),
+  projectName: zod.string().nullish(),
+  invoiceRegistrationNumber: zod.string().nullish(),
+  billingType: zod.enum(["full", "progress"]).optional(),
+  taxExcludedAmount10: zod.number().optional(),
+  taxAmount10: zod.number().optional(),
+  taxExcludedAmount8: zod.number().optional(),
+  taxAmount8: zod.number().optional(),
+  taxExcludedTotal: zod.number().optional(),
+  taxTotal: zod.number().optional(),
+  totalAmount: zod.number().optional(),
+  notes: zod.string().nullish(),
+});
+
+export const updateInvoiceResponseOneBillingTypeDefault = `full`;
+
+export const UpdateInvoiceResponse = zod
+  .object({
+    id: zod.number(),
+    invoiceNumber: zod.string().describe("請求書番号"),
+    invoiceDate: zod.coerce.date(),
+    dueDate: zod.coerce.date().nullish(),
+    clientId: zod.number().nullish(),
+    clientName: zod.string(),
+    clientAddress: zod.string().nullish(),
+    projectId: zod.number().nullish(),
+    projectName: zod.string().nullish(),
+    invoiceRegistrationNumber: zod.string().nullish(),
+    billingType: zod
+      .enum(["full", "progress"])
+      .default(updateInvoiceResponseOneBillingTypeDefault)
+      .describe("請求タイプ（一括\/出来高）"),
+    taxExcludedAmount10: zod.number(),
+    taxAmount10: zod.number(),
+    taxExcludedAmount8: zod.number(),
+    taxAmount8: zod.number(),
+    taxExcludedTotal: zod.number(),
+    taxTotal: zod.number(),
+    totalAmount: zod.number(),
+    paidAmount: zod.number(),
+    status: zod.enum(["unpaid", "partial", "paid"]),
+    notes: zod.string().nullish(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  })
+  .and(
+    zod.object({
+      items: zod.array(
+        zod.object({
+          id: zod.number(),
+          invoiceId: zod.number(),
+          rowIndex: zod.number(),
+          itemName: zod.string(),
+          quantity: zod.number(),
+          unit: zod.string().nullish(),
+          unitPrice: zod.number(),
+          taxRate: zod.number(),
+          amount: zod.number(),
+          budgetItemId: zod
+            .number()
+            .nullish()
+            .describe("対応する実行予算明細ID"),
+          createdAt: zod.coerce.date(),
+        }),
+      ),
+      payments: zod.array(
+        zod.object({
+          id: zod.number(),
+          invoiceId: zod.number(),
+          paymentDate: zod.coerce.date(),
+          amount: zod.number(),
+          paymentMethod: zod.string(),
+          notes: zod.string().nullish(),
+          createdAt: zod.coerce.date(),
+        }),
+      ),
+      contractAmount: zod.number().describe("実行予算総額（出来高請求用）"),
+      billedToDate: zod
+        .number()
+        .describe("過去請求累計額（本請求書より前の日付の請求合計）"),
+    }),
+  );
+
+/**
+ * @summary 請求書削除
+ */
+export const DeleteInvoiceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary 請求明細一括保存（全削除→再登録）
+ */
+export const SaveInvoiceItemsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SaveInvoiceItemsBody = zod.object({
+  items: zod.array(
+    zod.object({
+      rowIndex: zod.number().optional(),
+      itemName: zod.string(),
+      quantity: zod.number(),
+      unit: zod.string().nullish(),
+      unitPrice: zod.number(),
+      taxRate: zod.number(),
+      amount: zod.number(),
+      budgetItemId: zod.number().nullish().describe("対応する実行予算明細ID"),
+    }),
+  ),
+});
+
+export const SaveInvoiceItemsResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      invoiceId: zod.number(),
+      rowIndex: zod.number(),
+      itemName: zod.string(),
+      quantity: zod.number(),
+      unit: zod.string().nullish(),
+      unitPrice: zod.number(),
+      taxRate: zod.number(),
+      amount: zod.number(),
+      budgetItemId: zod.number().nullish().describe("対応する実行予算明細ID"),
+      createdAt: zod.coerce.date(),
+    }),
+  ),
+});
+
+/**
  * @summary 得意先一覧取得
  */
 export const ListClientsResponse = zod.object({

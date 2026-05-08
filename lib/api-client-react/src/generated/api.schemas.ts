@@ -600,6 +600,160 @@ export interface MonthlyCostsResponse {
   months: MonthlyCostsResponseMonthsItem[];
 }
 
+/**
+ * 請求タイプ（一括/出来高）
+ */
+export type InvoiceBillingType =
+  (typeof InvoiceBillingType)[keyof typeof InvoiceBillingType];
+
+export const InvoiceBillingType = {
+  full: "full",
+  progress: "progress",
+} as const;
+
+export type InvoiceStatus = (typeof InvoiceStatus)[keyof typeof InvoiceStatus];
+
+export const InvoiceStatus = {
+  unpaid: "unpaid",
+  partial: "partial",
+  paid: "paid",
+} as const;
+
+export interface Invoice {
+  id: number;
+  /** 請求書番号 */
+  invoiceNumber: string;
+  invoiceDate: string;
+  dueDate?: string | null;
+  clientId?: number | null;
+  clientName: string;
+  clientAddress?: string | null;
+  projectId?: number | null;
+  projectName?: string | null;
+  invoiceRegistrationNumber?: string | null;
+  /** 請求タイプ（一括/出来高） */
+  billingType: InvoiceBillingType;
+  taxExcludedAmount10: number;
+  taxAmount10: number;
+  taxExcludedAmount8: number;
+  taxAmount8: number;
+  taxExcludedTotal: number;
+  taxTotal: number;
+  totalAmount: number;
+  paidAmount: number;
+  status: InvoiceStatus;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InvoiceItem {
+  id: number;
+  invoiceId: number;
+  rowIndex: number;
+  itemName: string;
+  quantity: number;
+  unit?: string | null;
+  unitPrice: number;
+  taxRate: number;
+  amount: number;
+  /** 対応する実行予算明細ID */
+  budgetItemId?: number | null;
+  createdAt: string;
+}
+
+export interface InvoiceItemInput {
+  rowIndex?: number;
+  itemName: string;
+  quantity: number;
+  unit?: string | null;
+  unitPrice: number;
+  taxRate: number;
+  amount: number;
+  /** 対応する実行予算明細ID */
+  budgetItemId?: number | null;
+}
+
+export interface InvoicePaymentRecord {
+  id: number;
+  invoiceId: number;
+  paymentDate: string;
+  amount: number;
+  paymentMethod: string;
+  notes?: string | null;
+  createdAt: string;
+}
+
+export type InvoiceDetail = Invoice & {
+  items: InvoiceItem[];
+  payments: InvoicePaymentRecord[];
+  /** 実行予算総額（出来高請求用） */
+  contractAmount: number;
+  /** 過去請求累計額（本請求書より前の日付の請求合計） */
+  billedToDate: number;
+};
+
+export interface InvoiceListResponse {
+  items: Invoice[];
+  total: number;
+}
+
+export type CreateInvoiceRequestBillingType =
+  (typeof CreateInvoiceRequestBillingType)[keyof typeof CreateInvoiceRequestBillingType];
+
+export const CreateInvoiceRequestBillingType = {
+  full: "full",
+  progress: "progress",
+} as const;
+
+export interface CreateInvoiceRequest {
+  invoiceDate: string;
+  dueDate?: string | null;
+  clientId?: number | null;
+  clientName: string;
+  clientAddress?: string | null;
+  projectId?: number | null;
+  projectName?: string | null;
+  invoiceRegistrationNumber?: string | null;
+  billingType?: CreateInvoiceRequestBillingType;
+  taxExcludedAmount10?: number;
+  taxAmount10?: number;
+  taxExcludedAmount8?: number;
+  taxAmount8?: number;
+  taxExcludedTotal?: number;
+  taxTotal?: number;
+  totalAmount?: number;
+  notes?: string | null;
+}
+
+export type UpdateInvoiceRequestBillingType =
+  (typeof UpdateInvoiceRequestBillingType)[keyof typeof UpdateInvoiceRequestBillingType];
+
+export const UpdateInvoiceRequestBillingType = {
+  full: "full",
+  progress: "progress",
+} as const;
+
+export interface UpdateInvoiceRequest {
+  invoiceDate?: string;
+  dueDate?: string | null;
+  clientId?: number | null;
+  clientName?: string;
+  clientAddress?: string | null;
+  projectId?: number | null;
+  projectName?: string | null;
+  invoiceRegistrationNumber?: string | null;
+  billingType?: UpdateInvoiceRequestBillingType;
+  taxExcludedAmount10?: number;
+  taxAmount10?: number;
+  taxExcludedAmount8?: number;
+  taxAmount8?: number;
+  taxExcludedTotal?: number;
+  taxTotal?: number;
+  totalAmount?: number;
+  notes?: string | null;
+}
+
 export type BudgetVsActualResponseItemsItem = {
   category: string;
   label: string;
@@ -660,4 +814,12 @@ export type GetMonthlyCostsParams = {
 
 export type GetBudgetVsActualParams = {
   projectId?: number;
+};
+
+export type SaveInvoiceItemsBody = {
+  items: InvoiceItemInput[];
+};
+
+export type SaveInvoiceItems200 = {
+  items: InvoiceItem[];
 };
