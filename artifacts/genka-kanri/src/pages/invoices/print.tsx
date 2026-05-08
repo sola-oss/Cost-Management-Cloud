@@ -59,7 +59,8 @@ function fmtMoney(n: number) {
 
 function fmtDate(d: string | null) {
   if (!d) return "";
-  return d.replace(/-/g, "/");
+  const [y, m, day] = d.split("-");
+  return `${y}/${m}/${day}`;
 }
 
 export default function InvoicePrint({ id }: { id: number }) {
@@ -122,8 +123,11 @@ export default function InvoicePrint({ id }: { id: number }) {
         company.bankAccountName,
       ]
         .filter(Boolean)
-        .join(" ")
+        .join("　")
     : "";
+
+  const registrationNumber =
+    company?.invoiceRegistrationNumber || invoice.invoiceRegistrationNumber;
 
   return (
     <>
@@ -139,7 +143,7 @@ export default function InvoicePrint({ id }: { id: number }) {
       <div className="no-print fixed top-4 right-4 z-50 flex gap-2">
         <button
           onClick={() => window.print()}
-          className="flex items-center gap-2 bg-teal-700 hover:bg-teal-800 text-white text-sm font-medium px-4 py-2 rounded shadow"
+          className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium px-4 py-2 rounded shadow"
         >
           <Printer className="w-4 h-4" />
           印刷 / PDFで保存
@@ -156,13 +160,8 @@ export default function InvoicePrint({ id }: { id: number }) {
       <div className="text-black font-sans text-[11px]">
         <div className="print-page w-[210mm] min-h-[297mm] p-[15mm] box-border">
 
-          {/* タイトル */}
-          <div className="text-center mb-5">
-            <h1 className="text-3xl font-bold tracking-widest text-slate-900">請　求　書</h1>
-          </div>
-
-          {/* メタ情報ヘッダー */}
-          <div className="flex justify-between text-[10px] text-slate-500 mb-5">
+          {/* ヘッダー：請求番号（左）・日付（右） */}
+          <div className="flex justify-between text-[10px] text-slate-500 mb-4">
             <span>請求番号: {invoice.invoiceNumber}</span>
             <div className="text-right space-y-0.5">
               <div>請求日: {fmtDate(invoice.invoiceDate)}</div>
@@ -170,11 +169,16 @@ export default function InvoicePrint({ id }: { id: number }) {
             </div>
           </div>
 
+          {/* タイトル */}
+          <div className="text-center mb-5">
+            <h1 className="text-3xl font-bold tracking-widest text-slate-900">請　求　書</h1>
+          </div>
+
           {/* 2カラム：得意先（左）・自社情報（右） */}
-          <div className="flex gap-6 mb-6">
+          <div className="flex gap-6 mb-5">
             {/* 左：得意先 */}
             <div className="flex-1">
-              <div className="flex items-end mb-1">
+              <div className="flex items-end mb-2">
                 <span className="text-xl font-bold flex-1 border-b-2 border-black pb-1">
                   {invoice.clientName || "\u3000\u3000\u3000\u3000\u3000\u3000\u3000"}
                 </span>
@@ -183,18 +187,34 @@ export default function InvoicePrint({ id }: { id: number }) {
               {invoice.clientAddress && (
                 <div className="text-[10px] text-slate-600 mt-1">{invoice.clientAddress}</div>
               )}
+              <div className="text-xs mt-3">下記の通り、ご請求申し上げます。</div>
+
+              {/* 請求金額ボックス */}
+              <div className="mt-5 flex items-center">
+                <span className="text-sm font-medium w-28 shrink-0">ご請求金額</span>
+                <span className="text-xl font-extrabold text-slate-900 border border-black px-5 py-1 leading-tight">
+                  {fmtMoney(invoice.totalAmount)}
+                </span>
+              </div>
+              <div className="flex gap-10 text-xs text-slate-600 mt-1 pl-28">
+                <span>税抜合計　{fmtMoney(invoice.taxExcludedTotal)}-</span>
+                <span>消費税　{fmtMoney(invoice.taxTotal)}-</span>
+              </div>
+
+              {/* 工事名 */}
               {invoice.projectName && (
-                <div className="text-[10px] text-slate-600 mt-0.5">
-                  工事名: {invoice.projectName}
+                <div className="mt-4 flex border-b border-slate-400 py-2 min-h-[28px] text-xs">
+                  <span className="font-medium w-20 shrink-0">工事名</span>
+                  <span className="flex-1 pl-2">{invoice.projectName}</span>
                 </div>
               )}
-              <div className="text-xs mt-3">下記の通り、ご請求申し上げます。</div>
             </div>
 
-            {/* 右：自社情報 */}
-            <div className="w-52 shrink-0 text-[10px] self-start leading-relaxed text-right">
+            {/* 右：自社情報（見積書と同じスタイル） */}
+            <div className="w-52 shrink-0 text-[10px] self-start leading-relaxed">
+              <img src={`${BASE}/otsuka-logo.png`} alt="会社ロゴ" className="w-40 mb-2" />
               {company?.companyName && (
-                <div className="font-bold text-sm mb-0.5">{company.companyName}</div>
+                <div className="font-bold mb-0.5">{company.companyName}</div>
               )}
               {company?.representativeName && (
                 <div>代表取締役　{company.representativeName}</div>
@@ -205,25 +225,17 @@ export default function InvoicePrint({ id }: { id: number }) {
                   {company.address}
                 </div>
               )}
-              {company?.tel && <div>TEL: {company.tel}</div>}
-              {company?.fax && <div>FAX: {company.fax}</div>}
-              {(company?.invoiceRegistrationNumber || invoice.invoiceRegistrationNumber) && (
-                <div className="text-teal-700 mt-0.5">
-                  登録番号: {company?.invoiceRegistrationNumber || invoice.invoiceRegistrationNumber}
-                </div>
+              {company?.tel && <div>TEL：{company.tel}</div>}
+              {company?.fax && <div>FAX：{company.fax}</div>}
+              {registrationNumber && (
+                <div className="mt-1">登録番号：{registrationNumber}</div>
               )}
             </div>
           </div>
 
-          {/* 請求金額サマリー */}
-          <div className="bg-teal-700 text-white px-5 py-3 rounded mb-6 flex items-center justify-between">
-            <span className="font-bold text-sm">請求金額（税込）</span>
-            <span className="font-bold text-xl">{fmtMoney(invoice.totalAmount)}</span>
-          </div>
-
           {/* 出来高請求: 出来高状況サマリー */}
           {isProgress && (
-            <div className="mb-6 border border-slate-300 rounded">
+            <div className="mb-4 border border-slate-300 rounded">
               <div className="bg-slate-100 px-3 py-1.5 text-xs font-semibold border-b border-slate-300">
                 出来高状況
               </div>
@@ -232,10 +244,7 @@ export default function InvoicePrint({ id }: { id: number }) {
                   { label: "今回出来高", value: fmtMoney(invoice.totalAmount) },
                   { label: "前回迄累計", value: fmtMoney(billedToDate) },
                   { label: "今回請求額", value: fmtMoney(invoice.totalAmount) },
-                  {
-                    label: "今後請求残高",
-                    value: fmtMoney(Math.max(0, progressRemainder)),
-                  },
+                  { label: "今後請求残高", value: fmtMoney(Math.max(0, progressRemainder)) },
                 ].map(({ label, value }) => (
                   <div key={label} className="px-3 py-2 text-center">
                     <div className="text-[9px] text-slate-500 mb-0.5">{label}</div>
@@ -246,38 +255,38 @@ export default function InvoicePrint({ id }: { id: number }) {
             </div>
           )}
 
-          {/* 明細テーブル（一括請求）/ 請求内容（出来高） */}
+          {/* 明細テーブル */}
           {!isProgress ? (
             <table className="w-full border-collapse text-[10px] mb-4">
               <thead>
-                <tr className="bg-slate-800 text-white">
-                  <th className="border border-slate-600 px-1 py-1.5 text-center w-8">No.</th>
-                  <th className="border border-slate-600 px-2 py-1.5 text-left">品名・内容</th>
-                  <th className="border border-slate-600 px-2 py-1.5 text-right w-14">数量</th>
-                  <th className="border border-slate-600 px-2 py-1.5 text-center w-10">単位</th>
-                  <th className="border border-slate-600 px-2 py-1.5 text-right w-24">単価</th>
-                  <th className="border border-slate-600 px-2 py-1.5 text-center w-12">税率</th>
-                  <th className="border border-slate-600 px-2 py-1.5 text-right w-24">金額</th>
+                <tr className="bg-slate-100">
+                  <th className="border border-slate-400 px-2 py-2 text-center w-8">No.</th>
+                  <th className="border border-slate-400 px-3 py-2 text-left">品名・内容</th>
+                  <th className="border border-slate-400 px-2 py-2 text-right w-14">数量</th>
+                  <th className="border border-slate-400 px-2 py-2 text-center w-10">単位</th>
+                  <th className="border border-slate-400 px-2 py-2 text-right w-24">単価</th>
+                  <th className="border border-slate-400 px-2 py-2 text-center w-12">税率</th>
+                  <th className="border border-slate-400 px-2 py-2 text-right w-24">金額</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((it, idx) => (
                   <tr key={idx} className={idx % 2 === 1 ? "bg-slate-50" : ""}>
-                    <td className="border border-slate-300 px-1 py-1 text-center text-slate-500">
+                    <td className="border border-slate-300 px-1 py-1.5 text-center text-slate-500">
                       {idx + 1}
                     </td>
-                    <td className="border border-slate-300 px-2 py-1">{it.itemName}</td>
-                    <td className="border border-slate-300 px-2 py-1 text-right">
+                    <td className="border border-slate-300 px-3 py-1.5">{it.itemName}</td>
+                    <td className="border border-slate-300 px-2 py-1.5 text-right">
                       {it.quantity.toLocaleString()}
                     </td>
-                    <td className="border border-slate-300 px-2 py-1 text-center">{it.unit}</td>
-                    <td className="border border-slate-300 px-2 py-1 text-right">
+                    <td className="border border-slate-300 px-2 py-1.5 text-center">{it.unit}</td>
+                    <td className="border border-slate-300 px-2 py-1.5 text-right">
                       {fmtMoney(it.unitPrice)}
                     </td>
-                    <td className="border border-slate-300 px-2 py-1 text-center">
+                    <td className="border border-slate-300 px-2 py-1.5 text-center">
                       {it.taxRate}%
                     </td>
-                    <td className="border border-slate-300 px-2 py-1 text-right font-medium">
+                    <td className="border border-slate-300 px-2 py-1.5 text-right font-medium">
                       {fmtMoney(it.amount)}
                     </td>
                   </tr>
@@ -295,7 +304,7 @@ export default function InvoicePrint({ id }: { id: number }) {
             </div>
           )}
 
-          {/* 税区分別内訳 */}
+          {/* 税区分別内訳（右寄せ） */}
           <div className="flex justify-end mb-6">
             <div className="w-64">
               {invoice.taxExcludedAmount10 > 0 && (
@@ -330,7 +339,7 @@ export default function InvoicePrint({ id }: { id: number }) {
                 <span>消費税合計</span>
                 <span>{fmtMoney(invoice.taxTotal)}</span>
               </div>
-              <div className="flex justify-between py-2 text-sm font-bold text-teal-700 border-t-2 border-teal-700 mt-1">
+              <div className="flex justify-between py-2 text-sm font-bold text-slate-800 border-t-2 border-slate-800 mt-1">
                 <span>税込合計</span>
                 <span>{fmtMoney(invoice.totalAmount)}</span>
               </div>
