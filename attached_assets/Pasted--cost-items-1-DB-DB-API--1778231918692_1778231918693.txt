@@ -1,0 +1,67 @@
+# タスク：仕入伝票・発注書テーブルの新設と cost_items の拡張（フェーズ1：DB基盤のみ）
+
+## 重要な制約
+
+**このタスクは DB スキーマの変更のみ**を行います。API ルート、フロントエンド、サービス層、ルーティング、テストの変更は**一切行わないでください**。フェーズ2以降で対応します。
+
+「ついでに API も作っておきました」「フロント側も対応しました」という気を利かせた追加作業は不要です。スキーマ追加とマイグレーション実行のみで完結させてください。
+
+## 背景
+
+現状、仕入入力画面（/purchases）はUIが伝票形式に見えますが、内部的には `cost_items` テーブルに直書きされています。レッツ原価管理Go2の「発注 → 仕入伝票 → 原価明細」の3層構造に移行するため、まず DB 基盤を整備します。
+
+リポジトリの現状確認結果（既知の事実）：
+- `lib/db/src/schema/` には `cost-items.ts`, `projects.ts`, `vendors.ts`, `work-types.ts`, `budget-items.ts`, `budgets.ts`, `payments.ts`, `invoices.ts`, `clients.ts`, `estimates.ts`, `company-settings.ts`, `construction-histories.ts`, `index.ts` が存在
+- `purchase-invoices.ts` および `purchase-orders.ts` は **存在しない**（新規作成対象）
+- `cost-items.ts` の主キーは `serial`、金額は `numeric(15,2)`、数量は `numeric(12,3)`、タイムスタンプは `timestamp({ withTimezone: true })`
+
+## 実装手順（この順番で実行）
+
+### ステップ1：lib/db/src/schema/purchase-orders.ts を新規作成
+
+ファイルの先頭で必要なものを import：
+- drizzle-orm/pg-core から: pgTable, serial, text, integer, numeric, date, timestamp, boolean
+- drizzle-zod から: createInsertSchema
+- zod/v4 から: z
+- ./projects から: projectsTable
+- ./vendors から: vendorsTable（ファイル内の export 名を必ず確認してから import すること）
+- ./work-types から: workTypesTable（ファイル内の export 名を必ず確認してから import すること）
+- ./cost-items から: costCategoryEnum, CostCategory（再利用する）
+
+#### purchaseOrdersTable（発注ヘッダ）
+
+カラム定義：
+- `id`: serial("id").primaryKey()
+- `orderNumber`: text("order_number").notNull().unique()  ※例: PO-20260508-0001
+- `projectId`: integer("project_id").notNull().references(() => projectsTable.id, { onDelete: "cascade" })
+- `vendorId`: integer("vendor_id").notNull().references(() => vendorsTable.id)
+- `orderDate`: date("order_date").notNull()
+- `expectedDeliveryDate`: date("expected_delivery_date")  ※nullable
+- `status`: text("status").$type<"draft" | "ordered" | "partial" | "completed" | "cancelled">().notNull().default("draft")
+- `subtotal`: numeric("subtotal", { precision: 15, scale: 2 }).notNull().default("0")
+- `taxAmount`: numeric("tax_amount", { precision: 15, scale: 2 }).notNull().default("0")
+- `totalAmount`: numeric("total_amount", { precision: 15, scale: 2 }).notNull().default("0")
+- `notes`: text("notes")  ※nullable
+- `createdAt`: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+- `updatedAt`: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+
+#### purchaseOrderItemsTable（発注明細）
+
+カラム定義：
+- `id`: serial PK
+- `purchaseOrderId`: integer notNull、references purchaseOrdersTable.id with onDelete cascade
+- `lineNumber`: integer("line_number").notNull()
+- `category`: text $type<CostCategory>() notNull（cost-items.ts から import した型を使う）
+- `workTypeId`: integer("work_type_id")  ※nullable、references workTypesTable.id
+- `description`: text notNull
+- `specification`: text  ※nullable
+- `quantity`: numeric(12,3) notNull
+- `unit`: text notNull
+- `unitPrice`: numeric(15,2) notNull
+- `amount`: numeric(15,2) notNull
+- `taxRate`: numeric(5,2) notNull default "10"
+- `deliveredQuantity`: numeric(12,3) notNull default "0"  ※発注残管理用
+- `createdAt`, `updatedAt`: 既存パターン
+
+ファイル末尾で以下をエクスポート：
+```typescript

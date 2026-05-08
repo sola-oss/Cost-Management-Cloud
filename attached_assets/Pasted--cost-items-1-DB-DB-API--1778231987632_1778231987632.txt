@@ -1,0 +1,232 @@
+# タスク：仕入伝票・発注書テーブルの新設と cost_items の拡張（フェーズ1：DB基盤のみ）
+
+## 重要な制約
+
+**このタスクは DB スキーマの変更のみ**を行います。API ルート、フロントエンド、サービス層、ルーティング、テストの変更は**一切行わないでください**。フェーズ2以降で対応します。
+
+「ついでに API も作っておきました」「フロント側も対応しました」という気を利かせた追加作業は不要です。スキーマ追加とマイグレーション実行のみで完結させてください。
+
+## 背景
+
+現状、仕入入力画面（/purchases）はUIが伝票形式に見えますが、内部的には `cost_items` テーブルに直書きされています。レッツ原価管理Go2の「発注 → 仕入伝票 → 原価明細」の3層構造に移行するため、まず DB 基盤を整備します。
+
+リポジトリの現状確認結果（既知の事実）：
+- `lib/db/src/schema/` には `cost-items.ts`, `projects.ts`, `vendors.ts`, `work-types.ts`, `budget-items.ts`, `budgets.ts`, `payments.ts`, `invoices.ts`, `clients.ts`, `estimates.ts`, `company-settings.ts`, `construction-histories.ts`, `index.ts` が存在
+- `purchase-invoices.ts` および `purchase-orders.ts` は **存在しない**（新規作成対象）
+- `cost-items.ts` の主キーは `serial`、金額は `numeric(15,2)`、数量は `numeric(12,3)`、タイムスタンプは `timestamp({ withTimezone: true })`
+
+## 実装手順（この順番で実行）
+
+### ステップ1：lib/db/src/schema/purchase-orders.ts を新規作成
+
+ファイルの先頭で必要なものを import：
+- drizzle-orm/pg-core から: pgTable, serial, text, integer, numeric, date, timestamp, boolean
+- drizzle-zod から: createInsertSchema
+- zod/v4 から: z
+- ./projects から: projectsTable
+- ./vendors から: vendorsTable（ファイル内の export 名を必ず確認してから import すること）
+- ./work-types から: workTypesTable（ファイル内の export 名を必ず確認してから import すること）
+- ./cost-items から: costCategoryEnum, CostCategory（再利用する）
+
+#### purchaseOrdersTable（発注ヘッダ）
+
+カラム定義：
+- `id`: serial("id").primaryKey()
+- `orderNumber`: text("order_number").notNull().unique()  ※例: PO-20260508-0001
+- `projectId`: integer("project_id").notNull().references(() => projectsTable.id, { onDelete: "cascade" })
+- `vendorId`: integer("vendor_id").notNull().references(() => vendorsTable.id)
+- `orderDate`: date("order_date").notNull()
+- `expectedDeliveryDate`: date("expected_delivery_date")  ※nullable
+- `status`: text("status").$type<"draft" | "ordered" | "partial" | "completed" | "cancelled">().notNull().default("draft")
+- `subtotal`: numeric("subtotal", { precision: 15, scale: 2 }).notNull().default("0")
+- `taxAmount`: numeric("tax_amount", { precision: 15, scale: 2 }).notNull().default("0")
+- `totalAmount`: numeric("total_amount", { precision: 15, scale: 2 }).notNull().default("0")
+- `notes`: text("notes")  ※nullable
+- `createdAt`: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+- `updatedAt`: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+
+#### purchaseOrderItemsTable（発注明細）
+
+カラム定義：
+- `id`: serial PK
+- `purchaseOrderId`: integer notNull、references purchaseOrdersTable.id with onDelete cascade
+- `lineNumber`: integer("line_number").notNull()
+- `category`: text $type<CostCategory>() notNull（cost-items.ts から import した型を使う）
+- `workTypeId`: integer("work_type_id")  ※nullable、references workTypesTable.id
+- `description`: text notNull
+- `specification`: text  ※nullable
+- `quantity`: numeric(12,3) notNull
+- `unit`: text notNull
+- `unitPrice`: numeric(15,2) notNull
+- `amount`: numeric(15,2) notNull
+- `taxRate`: numeric(5,2) notNull default "10"
+- `deliveredQuantity`: numeric(12,3) notNull default "0"  ※発注残管理用
+- `createdAt`, `updatedAt`: 既存パターン
+
+ファイル末尾で以下をエクスポート：
+```typescript
+export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrdersTable).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPurchaseOrder = z.infer<typeof insertPurchaseOrderSchema>;
+export type PurchaseOrder = typeof purchaseOrdersTable.$inferSelect;
+
+export const insertPurchaseOrderItemSchema = createInsertSchema(purchaseOrderItemsTable).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPurchaseOrderItem = z.infer<typeof insertPurchaseOrderItemSchema>;
+export type PurchaseOrderItem = typeof purchaseOrderItemsTable.$inferSelect;
+```
+
+### ステップ2：lib/db/src/schema/purchase-invoices.ts を新規作成
+
+import はステップ1と同様。加えて：
+- ./purchase-orders から: purchaseOrdersTable, purchaseOrderItemsTable
+
+#### purchaseInvoicesTable（仕入伝票ヘッダ）
+
+カラム定義：
+- `id`: serial PK
+- `voucherNumber`: text("voucher_number").notNull().unique()  ※例: ST-20260508-0001
+- `projectId`: integer notNull、references projectsTable.id with onDelete cascade
+- `vendorId`: integer notNull、references vendorsTable.id
+- `purchaseOrderId`: integer  ※nullable、references purchaseOrdersTable.id（リレー元発注）
+- `purchaseDate`: date notNull
+- `paymentDueDate`: date  ※nullable
+- `status`: text $type<"provisional" | "confirmed" | "assessed" | "paid" | "cancelled">() notNull default "confirmed"
+- `taxCalculationMethod`: text $type<"detail_exclusive" | "detail_inclusive" | "total_exclusive">() notNull default "detail_exclusive"
+- `isProvisional`: boolean("is_provisional").notNull().default(false)  ※仮伝票フラグ
+- `invoiceRegistrationNumber`: text("invoice_registration_number")  ※nullable、インボイス番号 T+13桁
+- `isTaxableInvoice`: boolean("is_taxable_invoice").notNull().default(true)  ※適格請求書発行事業者か
+- `subtotal`, `taxAmount`, `totalAmount`: numeric(15,2) notNull default "0"
+- `notes`: text  ※nullable
+- `createdAt`, `updatedAt`: 既存パターン
+
+#### purchaseInvoiceItemsTable（仕入伝票明細）
+
+カラム定義：
+- `id`: serial PK
+- `purchaseInvoiceId`: integer notNull、references purchaseInvoicesTable.id with onDelete cascade
+- `purchaseOrderItemId`: integer  ※nullable、references purchaseOrderItemsTable.id（リレー元発注明細）
+- `lineNumber`: integer notNull
+- `category`: text $type<CostCategory>() notNull
+- `workTypeId`: integer  ※nullable、references workTypesTable.id
+- `description`: text notNull
+- `specification`: text  ※nullable
+- `quantity`: numeric(12,3) notNull
+- `unit`: text notNull
+- `unitPrice`: numeric(15,2) notNull
+- `amount`: numeric(15,2) notNull
+- `taxRate`: numeric(5,2) notNull default "10"
+- `costItemId`: integer("cost_item_id")  ※nullable、cost_items との同期で生成された ID を保持（フェーズ2で使用、ここでは FK 制約は付けず単なる integer カラム）
+- `createdAt`, `updatedAt`: 既存パターン
+
+ファイル末尾で同様に Insert スキーマと型をエクスポート（命名は purchaseInvoice / purchaseInvoiceItem）。
+
+### ステップ3：lib/db/src/schema/cost-items.ts を拡張
+
+**既存のカラム・型・enum・スキーマ定義は一切削除・変更しないでください。**追記のみ行います。
+
+`costItemsTable` の `pgTable("cost_items", { ... })` の中に、既存カラムの末尾（`updatedAt` の前）に以下4カラムを追加：
+
+```typescript
+sourceType: text("source_type").$type<"manual" | "purchase_invoice">().notNull().default("manual"),
+sourceId: integer("source_id"),
+vendorId: integer("vendor_id").references(() => vendorsTable.id),
+workTypeId: integer("work_type_id").references(() => workTypesTable.id),
+```
+
+ファイル先頭の import に以下を追加（既に boolean があれば不要）：
+- `boolean` を drizzle-orm/pg-core から（既に integer があれば追加不要、確認のこと）
+- `vendorsTable` を ./vendors から
+- `workTypesTable` を ./work-types から
+
+`sourceId` は将来的に `purchase_invoice_items.id` を参照しますが、循環依存を避けるためフェーズ1では FK 制約を付けず、単なる integer カラムとして追加してください。
+
+`insertCostItemSchema` の `omit({ id: true, createdAt: true, updatedAt: true })` はそのまま維持。新規カラムは insert 時に省略可能（default または nullable）なので omit リストに追加する必要はありません。
+
+### ステップ4：lib/db/src/schema/index.ts に追記
+
+既存の export 文の末尾に2行追加：
+
+```typescript
+export * from "./purchase-orders";
+export * from "./purchase-invoices";
+```
+
+順序は既存の最後（`./construction-histories` の後）に追加してください。
+
+### ステップ5：マイグレーション実行
+
+Replit のシェルで以下を実行：
+
+```bash
+pnpm --filter @workspace/db run push
+```
+
+エラーが出た場合：
+- 内容をそのまま報告して、いったん作業を停止してください
+- `push-force` は絶対に使わないでください（既存データを壊す可能性があるため）
+
+成功した場合は次のステップへ。
+
+### ステップ6：型チェック
+
+リポジトリルートで以下を実行：
+
+```bash
+pnpm run typecheck
+```
+
+エラーが出た場合は内容を報告して停止。
+
+### ステップ7：完了報告
+
+以下のフォーマットで報告してください：
+
+```
+## フェーズ1 完了報告
+
+### 追加・変更ファイル
+- [新規] lib/db/src/schema/purchase-orders.ts
+- [新規] lib/db/src/schema/purchase-invoices.ts
+- [変更] lib/db/src/schema/cost-items.ts（4カラム追加）
+- [変更] lib/db/src/schema/index.ts（2行追加）
+
+### マイグレーション結果
+（pnpm push の出力をそのまま貼る）
+
+### 型チェック結果
+（pnpm run typecheck の出力をそのまま貼る）
+
+### 既存 cost_items に追加されたカラム
+- source_type (text, notNull, default 'manual')
+- source_id (integer, nullable)
+- vendor_id (integer, nullable, FK to vendors.id)
+- work_type_id (integer, nullable, FK to work_types.id)
+
+### 新規作成されたテーブル
+- purchase_orders（発注ヘッダ）
+- purchase_order_items（発注明細）
+- purchase_invoices（仕入伝票ヘッダ）
+- purchase_invoice_items（仕入伝票明細）
+
+### 確認事項
+- 既存の /purchases 仕入入力画面は引き続き正常動作するか（コードは変更していないので動くはずだが、起動確認推奨）
+```
+
+## 絶対にやってはいけないこと
+
+- 既存の `cost_items` カラムの削除、型変更、リネーム
+- 既存の `vendor`（text）カラムの削除（新規 `vendor_id` と並存させる）
+- 既存の他のスキーマファイル（projects, budgets, payments, vendors, work-types, invoices, clients, estimates, company-settings, construction-histories）の変更
+- API ルート（`artifacts/api-server/src/routes/` 配下）の変更
+- フロントエンドコード（`artifacts/genka-kanri/src/` 配下）の変更
+- OpenAPI spec（`lib/api-spec/`）の変更
+- Orval codegen（`lib/api-client-react/`、`lib/api-zod/`）の再生成
+- `push-force` の使用
+- マイグレーション SQL ファイルの手動編集
+- 既存テーブルへの index 追加や制約追加（必要であればフェーズ2以降で）
+
+## 不明点があった場合
+
+実装中に判断に迷う点があれば、勝手に進めず一度報告してから確認を取ってください。特に：
+- import 先のファイル内エクスポート名が想定と違う場合
+- pnpm push で警告が出た場合
+- 既存スキーマと型が衝突した場合
