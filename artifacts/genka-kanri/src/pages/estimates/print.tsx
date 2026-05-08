@@ -202,7 +202,7 @@ export default function EstimatePrint({ id }: { id: number }) {
 
             {/* 右：自社情報 */}
             <div className="w-52 shrink-0 text-[10px] self-start leading-relaxed">
-              <img src={`${BASE}/test-logo.png`} alt="会社ロゴ" className="w-40 mb-2" />
+              <img src={`${BASE}/otsuka-logo.png`} alt="会社ロゴ" className="w-40 mb-2" />
               {companyName && <div className="font-bold mb-0.5">{companyName}</div>}
               {representativeName && <div>代表取締役　{representativeName}</div>}
               {companyAddress && <div>{companyAddress}</div>}

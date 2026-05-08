@@ -169,7 +169,7 @@ router.put("/:itemId", async (req, res) => {
   try {
     const projectId = parseInt(req.params.id);
     const itemId = parseInt(req.params.itemId);
-    const { workTypeCode, workTypeName, supplierCode, supplierName, contractAmount, initialBudget, originalBudgetAmount, revisedBudget, sortOrder } = req.body;
+    const { workTypeCode, workTypeName, supplierCode, supplierName, contractAmount, initialBudget, revisedBudget, sortOrder } = req.body;
 
     const [existing] = await db
       .select()
@@ -180,7 +180,7 @@ router.put("/:itemId", async (req, res) => {
       return res.status(404).json({ message: "予算明細が見つかりません" });
     }
 
-    if (existing.isOriginalLocked && (initialBudget !== undefined || originalBudgetAmount !== undefined)) {
+    if (existing.isOriginalLocked && initialBudget !== undefined) {
       return res.status(422).json({ message: "当初予算はロックされています。変更できません。" });
     }
 

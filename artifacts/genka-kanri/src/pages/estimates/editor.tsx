@@ -264,7 +264,7 @@ function PrintLayout({
 
           {/* 右：自社情報（プレーンテキスト） */}
           <div className="w-52 shrink-0 text-[10px] self-start leading-relaxed">
-            <img src={`${BASE}/test-logo.png`} alt="会社ロゴ" className="w-40 mb-2" />
+            <img src={`${BASE}/otsuka-logo.png`} alt="会社ロゴ" className="w-40 mb-2" />
             {form.companyName && <div className="font-bold mb-0.5">{form.companyName}</div>}
             {form.representativeName && <div>代表取締役　{form.representativeName}</div>}
             {form.companyAddress && <div>{form.companyAddress}</div>}
