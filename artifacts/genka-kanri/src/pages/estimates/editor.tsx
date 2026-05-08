@@ -3,9 +3,11 @@ import { useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, ArrowLeft, Copy, Printer, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -111,36 +113,6 @@ function addMonths(dateStr: string, months: number): string {
   const d = new Date(dateStr);
   d.setMonth(d.getMonth() + months);
   return d.toISOString().slice(0, 10);
-}
-
-// ─── 補助コンポーネント ───────────────────────────────────────────────────────
-function FieldRow({ label, children, className = "" }: { label: string; children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`flex border-b border-slate-300 last:border-b-0 ${className}`}>
-      <div className="bg-slate-100 border-r border-slate-300 px-2 py-1 text-xs text-slate-600 font-medium w-28 shrink-0 flex items-center">
-        {label}
-      </div>
-      <div className="flex-1 px-2 py-0.5 flex items-center">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function FormInput({
-  value, onChange, placeholder = "", className = "", type = "text",
-}: {
-  value: string; onChange: (v: string) => void; placeholder?: string; className?: string; type?: string;
-}) {
-  return (
-    <input
-      type={type}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className={`w-full bg-transparent border-0 outline-none focus:bg-orange-50 focus:ring-1 focus:ring-orange-300 rounded px-1 py-0.5 text-sm placeholder:text-slate-300 transition-colors ${className}`}
-    />
-  );
 }
 
 // ─── 印刷用レイアウト ─────────────────────────────────────────────────────────
@@ -388,7 +360,6 @@ export default function EstimateEditor({ id }: { id?: number }) {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [tab, setTab] = useState("cover");
   const [saving, setSaving] = useState(false);
   const today = new Date().toISOString().slice(0, 10);
 
@@ -538,12 +509,7 @@ export default function EstimateEditor({ id }: { id?: number }) {
   const taxAmount = Math.round(finalSubtotal * form.taxRate / 100);
   const taxIncluded = finalSubtotal + taxAmount;
 
-  const fmt = (n: number) => `¥${n.toLocaleString()}`;
-  const fmtDate = (d: string) => {
-    if (!d) return "";
-    const [y, m, day] = d.split("-");
-    return `${y}年${parseInt(m)}月${parseInt(day)}日`;
-  };
+  const fmtMoney = (n: number) => `¥${n.toLocaleString()}`;
 
   // ─── 明細操作 ─────────────────────────────────────────────────────────────
   function addRow(afterIdx?: number) {
@@ -630,8 +596,8 @@ export default function EstimateEditor({ id }: { id?: number }) {
   const estNumber = existing?.estimateNumber ?? "（新規）";
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-100">
-      {/* 印刷専用レイアウト */}
+    <div className="p-6 max-w-5xl mx-auto">
+      {/* 印刷専用レイアウト（print:block） */}
       <PrintLayout
         form={form}
         items={items}
@@ -643,639 +609,665 @@ export default function EstimateEditor({ id }: { id?: number }) {
         finalSubtotal={finalSubtotal}
       />
 
-      {/* ナビバー */}
-      <div className="sticky top-0 z-20 bg-white border-b shadow-sm print:hidden">
-        <div className="max-w-5xl mx-auto px-4 h-14 flex items-center gap-3">
-          <button onClick={() => navigate("/estimates")} className="p-2 rounded hover:bg-slate-100">
+      {/* ─── ヘッダー ───────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between mb-6 print:hidden">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" className="rounded-full" onClick={() => navigate("/estimates")}>
             <ArrowLeft className="w-4 h-4" />
-          </button>
-          <div className="flex-1 flex items-center gap-2">
-            <span className="font-semibold text-slate-700">見積書</span>
-            <span className="text-slate-300">|</span>
-            <span className="font-mono text-sm text-slate-500">{estNumber}</span>
-            <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${STATUS_COLOR[form.status]}`}>
-              {STATUS_LABELS[form.status]}
-            </span>
+          </Button>
+          <div>
+            <h1 className="text-xl font-bold text-slate-800">
+              {isNew ? "新規見積書" : estNumber}
+            </h1>
           </div>
-          <div className="flex items-center gap-2">
-            {!isNew && (
-              <>
-                <Button variant="outline" size="sm" onClick={handleDuplicate} className="gap-1.5 text-xs">
-                  <Copy className="w-3.5 h-3.5" />複写
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 text-xs"
-                  onClick={() => window.open(`${BASE}/estimates/${id}/print`, "_blank")}
+          <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${STATUS_COLOR[form.status]}`}>
+            {STATUS_LABELS[form.status]}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {!isNew && (
+            <>
+              <Button variant="outline" size="sm" onClick={handleDuplicate} className="gap-1.5">
+                <Copy className="w-3.5 h-3.5" />複写
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => window.open(`${BASE}/estimates/${id}/print`, "_blank")}
+              >
+                <Printer className="w-3.5 h-3.5" />印刷
+              </Button>
+            </>
+          )}
+          <Button
+            onClick={handleSave}
+            disabled={saving}
+            className="gap-2"
+          >
+            <Save className="w-4 h-4" />
+            {saving ? "保存中…" : isNew ? "作成する" : "更新する"}
+          </Button>
+        </div>
+      </div>
+
+      <div className="space-y-6 print:hidden">
+        {/* ─── 基本情報 ──────────────────────────────────────────────────── */}
+        <section className="bg-white rounded-xl border p-6">
+          <h2 className="text-base font-semibold text-slate-700 border-b pb-2 mb-4">基本情報</h2>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>見積日</Label>
+              <Input
+                type="date"
+                value={form.estimateDate}
+                onChange={(e) => sf({ estimateDate: e.target.value })}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>作成日</Label>
+              <Input
+                type="date"
+                value={form.createdDate}
+                onChange={(e) => sf({ createdDate: e.target.value })}
+                className="mt-1"
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            <div>
+              <Label>得意先</Label>
+              {clients.length > 0 ? (
+                <Select
+                  value={clients.find((c) => c.name === form.clientName)?.clientCode ?? "__manual__"}
+                  onValueChange={(val) => {
+                    if (val === "__manual__") return;
+                    const found = clients.find((c) => c.clientCode === val);
+                    if (found) {
+                      sf({ clientName: found.name, clientAddress: found.address ?? form.clientAddress });
+                    }
+                  }}
                 >
-                  <Printer className="w-3.5 h-3.5" />印刷
-                </Button>
-              </>
-            )}
-            <Button
-              size="sm"
-              className="bg-orange-500 hover:bg-orange-600 text-white gap-1.5 text-xs"
-              onClick={handleSave}
-              disabled={saving}
-            >
-              <Save className="w-3.5 h-3.5" />
-              {saving ? "保存中…" : "保存する"}
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* 金額サマリー */}
-      <div className="max-w-5xl mx-auto w-full px-4 pt-4 print:hidden">
-        <div className="bg-white rounded-xl border shadow-sm px-6 py-3 flex gap-8 items-center flex-wrap">
-          <div className="text-center">
-            <div className="text-xs text-slate-500 mb-0.5">明細合計</div>
-            <div className="text-base font-bold text-slate-700">{fmt(itemsSubtotal)}</div>
-          </div>
-          {miscExpensesAmount > 0 && (
-            <div className="text-center">
-              <div className="text-xs text-slate-500 mb-0.5">諸経費（{form.miscExpensesRate}%）</div>
-              <div className="text-base font-bold text-slate-700">{fmt(miscExpensesAmount)}</div>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="得意先を選択..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__manual__">— 直接入力 —</SelectItem>
+                    {clients.map((c) => (
+                      <SelectItem key={c.id} value={c.clientCode}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  value={form.clientName}
+                  onChange={(e) => sf({ clientName: e.target.value })}
+                  placeholder="得意先名"
+                  className="mt-1"
+                />
+              )}
             </div>
-          )}
-          {form.discountAmount > 0 && (
-            <div className="text-center">
-              <div className="text-xs text-slate-500 mb-0.5">お値引き</div>
-              <div className="text-base font-bold text-red-600">▲{fmt(form.discountAmount)}</div>
+            <div>
+              <Label>得意先名（直接入力）</Label>
+              <Input
+                value={form.clientName}
+                onChange={(e) => sf({ clientName: e.target.value })}
+                placeholder="得意先名"
+                className="mt-1"
+              />
             </div>
-          )}
-          <div className="text-center">
-            <div className="text-xs text-slate-500 mb-0.5">税抜合計</div>
-            <div className="text-base font-bold text-slate-700">{fmt(finalSubtotal)}</div>
           </div>
-          <div className="text-center">
-            <div className="text-xs text-slate-500 mb-0.5">消費税（{form.taxRate}%）</div>
-            <div className="text-base font-bold text-slate-700">{fmt(taxAmount)}</div>
+
+          <div className="mt-4">
+            <Label>得意先住所</Label>
+            <Input
+              value={form.clientAddress}
+              onChange={(e) => sf({ clientAddress: e.target.value })}
+              placeholder="住所"
+              className="mt-1"
+            />
           </div>
-          <div className="text-center border-l pl-8">
-            <div className="text-xs text-slate-500 mb-0.5">御見積金額（税込）</div>
-            <div className="text-2xl font-extrabold text-orange-600">{fmt(taxIncluded)}</div>
-          </div>
-        </div>
-      </div>
 
-      {/* タブ */}
-      <div className="max-w-5xl mx-auto w-full px-4 py-4 print:hidden">
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList className="mb-4 bg-white border">
-            <TabsTrigger value="cover" className="text-sm">表紙</TabsTrigger>
-            <TabsTrigger value="items" className="text-sm">明細</TabsTrigger>
-          </TabsList>
-
-          {/* ──── 表紙タブ（大塚フォーマット） ─────────────────────────── */}
-          <TabsContent value="cover">
-            <div className="bg-white shadow-md border border-slate-300 rounded-lg overflow-hidden">
-
-              {/* ① ヘッダー行 */}
-              <div className="grid grid-cols-3 border-b border-slate-300 items-center px-4 py-3 gap-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-500 whitespace-nowrap">見積番号</span>
-                  <span className="font-mono text-sm font-semibold text-slate-700 border-b border-slate-400 px-1 min-w-[140px]">
-                    {estNumber}
-                  </span>
-                </div>
-                <div className="text-center">
-                  <h1 className="text-3xl font-bold tracking-widest text-slate-800">御見積書</h1>
-                </div>
-                <div className="flex items-center gap-2 justify-end">
-                  <span className="text-xs text-slate-500 whitespace-nowrap">見積日</span>
-                  <input
-                    type="date"
-                    value={form.estimateDate}
-                    onChange={(e) => sf({ estimateDate: e.target.value })}
-                    className="text-sm border-b border-slate-400 bg-transparent focus:outline-none focus:border-orange-400 px-1 py-0.5"
-                  />
-                </div>
-              </div>
-
-              {/* ② 得意先エリア（左）＋自社情報（右） */}
-              <div className="grid grid-cols-2 border-b border-slate-300">
-                {/* 左：得意先・御見積金額・工事情報 */}
-                <div className="border-r border-slate-300 p-4 space-y-3">
-                  {clients.length > 0 && (
-                    <Select
-                      value={clients.find((c) => c.name === form.clientName)?.clientCode ?? "__manual__"}
-                      onValueChange={(val) => {
-                        if (val === "__manual__") return;
-                        const found = clients.find((c) => c.clientCode === val);
-                        if (found) {
-                          sf({
-                            clientName: found.name,
-                            clientAddress: found.address ?? form.clientAddress,
-                          });
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="h-7 text-xs border-slate-300 mb-1">
-                        <SelectValue placeholder="得意先マスタから選択" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__manual__" className="text-xs text-slate-400">— 直接入力 —</SelectItem>
-                        {clients.map((c) => (
-                          <SelectItem key={c.id} value={c.clientCode} className="text-xs">
-                            <span className="font-mono text-slate-500 mr-1">{c.clientCode}</span>
-                            {c.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                  {/* 得意先名 */}
-                  <div className="flex items-baseline gap-2">
-                    <input
-                      value={form.clientName}
-                      onChange={(e) => sf({ clientName: e.target.value })}
-                      placeholder="得意先名"
-                      className="text-2xl font-bold text-slate-800 border-b-2 border-slate-400 bg-transparent focus:outline-none focus:border-orange-400 w-full placeholder:text-slate-300"
-                    />
-                    <span className="text-lg font-medium text-slate-700 whitespace-nowrap">御中</span>
-                  </div>
-
-                  {/* 下記の通り… */}
-                  <Textarea
-                    value={form.notes}
-                    onChange={(e) => sf({ notes: e.target.value })}
-                    placeholder="下記の通り御見積申し上げます。"
-                    rows={2}
-                    className="text-sm border-0 bg-transparent focus:ring-0 resize-none p-0 placeholder:text-slate-300"
-                  />
-
-                  {/* 御見積金額 */}
-                  <div className="border border-slate-300 rounded p-3 bg-slate-50">
-                    <div className="text-xs text-slate-500 mb-1">御見積金額（税込）</div>
-                    <div className="text-3xl font-extrabold text-orange-600 mb-2">{fmt(taxIncluded)}</div>
-                    <div className="flex gap-4 text-xs text-slate-600">
-                      <span>税抜: {fmt(finalSubtotal)}</span>
-                      <span>消費税（{form.taxRate}%）: {fmt(taxAmount)}</span>
-                    </div>
-                    {/* 消費税率選択 */}
-                    <div className="mt-2 flex items-center gap-2">
-                      <span className="text-xs text-slate-500">消費税率</span>
-                      <Select value={String(form.taxRate)} onValueChange={(v) => sf({ taxRate: parseFloat(v) })}>
-                        <SelectTrigger className="h-6 text-xs w-20">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="10">10%</SelectItem>
-                          <SelectItem value="8">8%</SelectItem>
-                          <SelectItem value="0">非課税</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 右：自社情報 */}
-                <div>
-                  <FieldRow label="会社名">
-                    <FormInput value={form.companyName} onChange={(v) => sf({ companyName: v })} placeholder="例：レッツ建設株式会社" />
-                  </FieldRow>
-                  <FieldRow label="代表取締役">
-                    <FormInput value={form.representativeName} onChange={(v) => sf({ representativeName: v })} placeholder="例：山田 太郎" />
-                  </FieldRow>
-                  <FieldRow label="住所">
-                    <FormInput value={form.companyAddress} onChange={(v) => sf({ companyAddress: v })} placeholder="例：宮城県仙台市本町一丁目3-5" />
-                  </FieldRow>
-                  <FieldRow label="TEL">
-                    <FormInput value={form.companyTel} onChange={(v) => sf({ companyTel: v })} placeholder="022-224-XXXX" />
-                  </FieldRow>
-                  <FieldRow label="FAX">
-                    <FormInput value={form.companyFax} onChange={(v) => sf({ companyFax: v })} placeholder="022-224-XXXX" />
-                  </FieldRow>
-                  <FieldRow label="建設業許可番号">
-                    <FormInput value={form.constructionLicense} onChange={(v) => sf({ constructionLicense: v })} placeholder="例：宮城県知事許可（般-XX）第XXXX号" />
-                  </FieldRow>
-                  <FieldRow label="担当者">
-                    <FormInput value={form.companyStaff} onChange={(v) => sf({ companyStaff: v })} placeholder="担当者名" />
-                  </FieldRow>
-                  <FieldRow label="携帯番号">
-                    <FormInput value={form.staffMobile} onChange={(v) => sf({ staffMobile: v })} placeholder="090-XXXX-XXXX" />
-                  </FieldRow>
-                  <FieldRow label="メールアドレス">
-                    <FormInput value={form.staffEmail} onChange={(v) => sf({ staffEmail: v })} placeholder="example@company.co.jp" />
-                  </FieldRow>
-                </div>
-              </div>
-
-              {/* ③ 工事情報グリッド */}
-              <div className="grid grid-cols-2 border-b border-slate-300">
-                {/* 左：工事詳細 */}
-                <div className="border-r border-slate-300 border-collapse">
-                  <FieldRow label="工事名">
-                    <FormInput value={form.subject} onChange={(v) => sf({ subject: v })} placeholder="例：〇〇邸 新築工事" />
-                  </FieldRow>
-                  <FieldRow label="工事場所">
-                    <FormInput value={form.location} onChange={(v) => sf({ location: v })} placeholder="例：宮城県仙台市青葉区1-2-1" />
-                  </FieldRow>
-                  <FieldRow label="工事期間">
-                    <div className="flex items-center gap-1 w-full">
-                      <input
-                        type="date"
-                        value={cpStart}
-                        onChange={(e) => {
-                          const s = e.target.value;
-                          setCpStart(s);
-                          sf({ constructionPeriod: s || cpEnd ? `${s}〜${cpEnd}` : "" });
-                        }}
-                        className="bg-transparent border-0 outline-none focus:bg-orange-50 focus:ring-1 focus:ring-orange-300 rounded px-1 py-0.5 text-sm flex-1 min-w-0"
-                      />
-                      <span className="text-slate-400 text-xs shrink-0">〜</span>
-                      <input
-                        type="date"
-                        value={cpEnd}
-                        onChange={(e) => {
-                          const e2 = e.target.value;
-                          setCpEnd(e2);
-                          sf({ constructionPeriod: cpStart || e2 ? `${cpStart}〜${e2}` : "" });
-                        }}
-                        className="bg-transparent border-0 outline-none focus:bg-orange-50 focus:ring-1 focus:ring-orange-300 rounded px-1 py-0.5 text-sm flex-1 min-w-0"
-                      />
-                    </div>
-                  </FieldRow>
-                  <FieldRow label="有効期限">
-                    <div className="flex items-center gap-1.5 w-full">
-                      <select
-                        value={vpMode}
-                        onChange={(e) => {
-                          const m = e.target.value as typeof vpMode;
-                          setVpMode(m);
-                          if (m !== "custom") {
-                            const months = m === "1m" ? 1 : m === "2m" ? 2 : 3;
-                            sf({ validityPeriod: addMonths(form.estimateDate, months) });
-                          }
-                        }}
-                        className="bg-transparent border-0 outline-none focus:bg-orange-50 focus:ring-1 focus:ring-orange-300 rounded px-1 py-0.5 text-xs text-slate-700 shrink-0 cursor-pointer"
-                      >
-                        <option value="1m">見積日より1ヶ月後</option>
-                        <option value="2m">見積日より2ヶ月後</option>
-                        <option value="3m">見積日より3ヶ月後</option>
-                        <option value="custom">直接入力</option>
-                      </select>
-                      <input
-                        type="date"
-                        value={form.validityPeriod}
-                        onChange={(e) => {
-                          setVpMode("custom");
-                          sf({ validityPeriod: e.target.value });
-                        }}
-                        className="bg-transparent border-0 outline-none focus:bg-orange-50 focus:ring-1 focus:ring-orange-300 rounded px-1 py-0.5 text-sm flex-1 min-w-0"
-                      />
-                    </div>
-                  </FieldRow>
-                </div>
-
-                {/* 右：諸経費・値引き・メモ */}
-                <div>
-                  <FieldRow label="諸経費率（%）">
-                    <div className="flex items-center gap-2 w-full">
-                      <input
-                        type="number"
-                        value={form.miscExpensesRate || ""}
-                        onChange={(e) => sf({ miscExpensesRate: parseFloat(e.target.value) || 0 })}
-                        placeholder="例：5"
-                        min="0"
-                        max="100"
-                        step="0.1"
-                        className="w-20 bg-transparent border-0 outline-none focus:bg-orange-50 focus:ring-1 focus:ring-orange-300 rounded px-1 py-0.5 text-sm text-right"
-                      />
-                      <span className="text-xs text-slate-500">%</span>
-                      {miscExpensesAmount > 0 && (
-                        <span className="text-xs text-slate-600">= {fmt(miscExpensesAmount)}</span>
-                      )}
-                    </div>
-                  </FieldRow>
-                  <FieldRow label="お値引き">
-                    <div className="flex items-center gap-2 w-full">
-                      <span className="text-xs text-slate-500">▲</span>
-                      <input
-                        type="number"
-                        value={form.discountAmount || ""}
-                        onChange={(e) => sf({ discountAmount: parseFloat(e.target.value) || 0 })}
-                        placeholder="0"
-                        min="0"
-                        className="flex-1 bg-transparent border-0 outline-none focus:bg-orange-50 focus:ring-1 focus:ring-orange-300 rounded px-1 py-0.5 text-sm text-right"
-                      />
-                      <span className="text-xs text-slate-500">円</span>
-                    </div>
-                  </FieldRow>
-                  <FieldRow label="支払条件">
-                    <FormInput value={form.paymentTerms} onChange={(v) => sf({ paymentTerms: v })} />
-                  </FieldRow>
-                  <FieldRow label="社内メモ" className="border-b-0">
-                    <FormInput value={form.memo} onChange={(v) => sf({ memo: v })} placeholder="（印刷されません）" />
-                  </FieldRow>
-                </div>
-              </div>
-
-              {/* ④ フッター行 */}
-              <div className="grid grid-cols-2 gap-0">
-                <div className="border-r border-slate-300">
-                  <FieldRow label="作成日">
-                    <input
-                      type="date"
-                      value={form.createdDate}
-                      onChange={(e) => sf({ createdDate: e.target.value })}
-                      className="text-sm bg-transparent border-0 focus:outline-none focus:bg-orange-50 focus:ring-1 focus:ring-orange-300 rounded px-1 py-0.5"
-                    />
-                  </FieldRow>
-                  <FieldRow label="建築士事務所" className="border-b-0">
-                    <FormInput value={form.architectFirm} onChange={(v) => sf({ architectFirm: v })} placeholder="例：一級建築士事務所" />
-                  </FieldRow>
-                </div>
-                <div>
-                  <FieldRow label="関連工事">
-                    <Select value={form.projectId || "none"} onValueChange={(v) => handleProjectChange(v === "none" ? "" : v)}>
-                      <SelectTrigger className="h-7 text-xs border-0 shadow-none focus:ring-0 w-full">
-                        <SelectValue placeholder="未設定" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">未設定</SelectItem>
-                        {projectsData?.items?.map((p) => (
-                          <SelectItem key={p.id} value={String(p.id)}>
-                            {p.projectCode} {p.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </FieldRow>
-                  <FieldRow label="ステータス" className="border-b-0">
-                    <Select value={form.status} onValueChange={(v) => sf({ status: v })}>
-                      <SelectTrigger className="h-7 text-xs border-0 shadow-none focus:ring-0 w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="draft">作成中</SelectItem>
-                        <SelectItem value="submitted">提出済</SelectItem>
-                        <SelectItem value="approved">承認済</SelectItem>
-                        <SelectItem value="lost">失注</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FieldRow>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 flex justify-end">
-              <Button
-                className="bg-orange-500 hover:bg-orange-600 text-white gap-2"
-                onClick={handleSave}
-                disabled={saving}
-              >
-                <Save className="w-4 h-4" />
-                {saving ? "保存中…" : "保存する"}
-              </Button>
-            </div>
-          </TabsContent>
-
-          {/* ──── 明細タブ ──────────────────────────────────────────────── */}
-          <TabsContent value="items">
-            <div className="bg-white shadow-md border border-slate-300 rounded-lg overflow-hidden">
-              <div className="bg-teal-700 text-white px-4 py-2.5 flex items-center justify-between">
-                <span className="text-sm font-semibold">明細入力</span>
-                <span className="text-xs text-teal-200">各セルをクリックして編集</span>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-300 text-slate-500">
-                      <th className="text-center px-2 py-2 w-8 border-r border-slate-200">No</th>
-                      <th className="text-left px-2 py-2 w-24 border-r border-slate-200">工種</th>
-                      <th className="text-left px-2 py-2 border-r border-slate-200">摘要</th>
-                      <th className="text-left px-2 py-2 w-32 border-r border-slate-200">備考（型番・仕様）</th>
-                      <th className="text-right px-2 py-2 w-20 border-r border-slate-200">数量</th>
-                      <th className="text-center px-2 py-2 w-14 border-r border-slate-200">単位</th>
-                      <th className="text-right px-2 py-2 w-24 border-r border-slate-200">見積単価</th>
-                      <th className="text-right px-2 py-2 w-28 border-r border-slate-200">見積額</th>
-                      <th className="text-center px-2 py-2 w-20 border-r border-slate-200">種別</th>
-                      <th className="px-2 py-2 w-20 text-center">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((item, idx) => {
-                      const isSpecial = item.rowType !== "normal";
-                      const isPagebreak = item.rowType === "pagebreak";
-                      const amt = !isSpecial && item.quantity != null && item.unitPrice != null
-                        ? Math.round(item.quantity * item.unitPrice)
-                        : item.amount;
-                      const indent = (item.level - 1) * 12;
-                      const rowBg = item.rowType === "total" ? "bg-teal-50" :
-                        item.rowType === "tax" ? "bg-amber-50" :
-                        item.rowType === "discount" ? "bg-red-50" :
-                        item.rowType === "pagebreak" ? "bg-slate-100" : "";
-
-                      if (isPagebreak) {
-                        return (
-                          <tr key={item._key} className="border-b border-dashed border-slate-300 bg-slate-50">
-                            <td className="px-2 py-1 text-center text-slate-400">{idx + 1}</td>
-                            <td colSpan={7} className="px-3 py-1 text-center text-slate-400 text-xs italic">
-                              ── 改ページ ──
-                            </td>
-                            <td className="px-2 py-1 text-center">
-                              <span className="text-xs text-slate-400">改ページ</span>
-                            </td>
-                            <td className="px-2 py-1">
-                              <div className="flex items-center gap-0.5 justify-center">
-                                <button onClick={() => addRow(idx)} className="p-1 rounded hover:bg-orange-100 text-orange-500">
-                                  <Plus className="w-3 h-3" />
-                                </button>
-                                <button onClick={() => removeRow(item._key)} className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500">
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      }
-
-                      return (
-                        <tr key={item._key} className={`border-b border-slate-200 hover:bg-orange-50 transition-colors ${rowBg}`}>
-                          <td className="px-2 py-1 text-center text-slate-400 border-r border-slate-100">{idx + 1}</td>
-                          <td className="px-1 py-1 border-r border-slate-100">
-                            {!isSpecial && (
-                              <>
-                                <input
-                                  value={item.workType}
-                                  onChange={(e) => updateRow(item._key, { workType: e.target.value })}
-                                  list={`wt-${item._key}`}
-                                  placeholder="工種"
-                                  className="w-full bg-transparent focus:bg-orange-50 border-0 text-xs px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-300 rounded"
-                                />
-                                <datalist id={`wt-${item._key}`}>
-                                  {workTypes?.map((wt) => <option key={wt.id} value={wt.name} />)}
-                                </datalist>
-                              </>
-                            )}
-                          </td>
-                          <td className="px-1 py-1 border-r border-slate-100">
-                            <div style={{ paddingLeft: `${indent}px` }}>
-                              <input
-                                value={item.itemName}
-                                onChange={(e) => updateRow(item._key, { itemName: e.target.value })}
-                                placeholder={isSpecial ? ROW_TYPE_LABELS[item.rowType] : "摘要"}
-                                className={`w-full bg-transparent focus:bg-orange-50 border-0 text-xs px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-300 rounded ${item.rowType === "total" ? "font-bold" : ""}`}
-                              />
-                            </div>
-                          </td>
-                          <td className="px-1 py-1 border-r border-slate-100">
-                            {!isSpecial && (
-                              <input
-                                value={item.notes}
-                                onChange={(e) => updateRow(item._key, { notes: e.target.value })}
-                                placeholder="型番・仕様など"
-                                className="w-full bg-transparent focus:bg-orange-50 border-0 text-xs px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-300 rounded"
-                              />
-                            )}
-                          </td>
-                          <td className="px-1 py-1 border-r border-slate-100">
-                            {!isSpecial && (
-                              <input
-                                type="number"
-                                value={item.quantity ?? ""}
-                                onChange={(e) => updateRow(item._key, { quantity: e.target.value === "" ? null : parseFloat(e.target.value) })}
-                                className="w-full bg-transparent focus:bg-orange-50 border-0 text-xs px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-300 rounded"
-                              />
-                            )}
-                          </td>
-                          <td className="px-1 py-1 border-r border-slate-100">
-                            {!isSpecial && (
-                              <input
-                                value={item.unit}
-                                onChange={(e) => updateRow(item._key, { unit: e.target.value })}
-                                list="unit-list"
-                                className="w-full bg-transparent focus:bg-orange-50 border-0 text-xs px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-orange-300 rounded"
-                              />
-                            )}
-                          </td>
-                          <td className="px-1 py-1 border-r border-slate-100">
-                            {!isSpecial && (
-                              <input
-                                type="number"
-                                value={item.unitPrice ?? ""}
-                                onChange={(e) => updateRow(item._key, { unitPrice: e.target.value === "" ? null : parseFloat(e.target.value) })}
-                                className="w-full bg-transparent focus:bg-orange-50 border-0 text-xs px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-300 rounded"
-                              />
-                            )}
-                          </td>
-                          <td className="px-1 py-1 border-r border-slate-100">
-                            {isSpecial && item.rowType !== "pagebreak" ? (
-                              <input
-                                type="number"
-                                value={item.amount}
-                                onChange={(e) => updateRow(item._key, { amount: parseFloat(e.target.value) || 0 })}
-                                className={`w-full bg-transparent focus:bg-orange-50 border-0 text-xs px-1 py-0.5 text-right focus:outline-none focus:ring-1 focus:ring-orange-300 rounded ${item.rowType === "total" ? "font-bold text-teal-700" : ""}`}
-                              />
-                            ) : (
-                              <div className={`text-right pr-1 text-xs ${item.rowType === "total" ? "font-bold text-teal-700" : "font-medium text-slate-700"}`}>
-                                {amt > 0 || (item.quantity != null && item.unitPrice != null) ? `¥${amt.toLocaleString()}` : "—"}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-1 py-1 border-r border-slate-100">
-                            <Select
-                              value={item.rowType}
-                              onValueChange={(v) => updateRow(item._key, { rowType: v as EstimateItem["rowType"] })}
-                            >
-                              <SelectTrigger className="h-6 text-xs w-18 px-1 border-slate-200">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {Object.entries(ROW_TYPE_LABELS).map(([k, v]) => (
-                                  <SelectItem key={k} value={k}>{v}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </td>
-                          <td className="px-1 py-1">
-                            <div className="flex items-center gap-0.5 justify-center">
-                              <button
-                                onClick={() => copyRowAbove(idx)}
-                                disabled={idx === 0}
-                                className="p-1 rounded hover:bg-slate-200 disabled:opacity-30 text-slate-500 text-xs"
-                                title="上の行を複写"
-                              >↑</button>
-                              <button
-                                onClick={() => addRow(idx)}
-                                className="p-1 rounded hover:bg-orange-100 text-orange-500"
-                                title="この行の下に追加"
-                              >
-                                <Plus className="w-3 h-3" />
-                              </button>
-                              <button
-                                onClick={() => removeRow(item._key)}
-                                className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                <datalist id="unit-list">
-                  {["式", "m", "m²", "m³", "本", "枚", "個", "箱", "kg", "t", "台", "ヶ所", "日"].map((u) => (
-                    <option key={u} value={u} />
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            <div>
+              <Label>関連工事</Label>
+              <Select value={form.projectId || "none"} onValueChange={(v) => handleProjectChange(v === "none" ? "" : v)}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="未設定" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">未設定</SelectItem>
+                  {projectsData?.items?.map((p) => (
+                    <SelectItem key={p.id} value={String(p.id)}>
+                      {p.projectCode} {p.name}
+                    </SelectItem>
                   ))}
-                </datalist>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>工事名</Label>
+              <Input
+                value={form.subject}
+                onChange={(e) => sf({ subject: e.target.value })}
+                placeholder="例：〇〇邸 新築工事"
+                className="mt-1"
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            <div>
+              <Label>工事場所</Label>
+              <Input
+                value={form.location}
+                onChange={(e) => sf({ location: e.target.value })}
+                placeholder="例：宮城県仙台市"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>工事期間</Label>
+              <div className="mt-1 flex items-center gap-2">
+                <Input
+                  type="date"
+                  value={cpStart}
+                  onChange={(e) => {
+                    const s = e.target.value;
+                    setCpStart(s);
+                    sf({ constructionPeriod: s || cpEnd ? `${s}〜${cpEnd}` : "" });
+                  }}
+                  className="flex-1"
+                />
+                <span className="text-slate-400 text-xs shrink-0">〜</span>
+                <Input
+                  type="date"
+                  value={cpEnd}
+                  onChange={(e) => {
+                    const e2 = e.target.value;
+                    setCpEnd(e2);
+                    sf({ constructionPeriod: cpStart || e2 ? `${cpStart}〜${e2}` : "" });
+                  }}
+                  className="flex-1"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            <div>
+              <Label>有効期限</Label>
+              <div className="mt-1 flex items-center gap-2">
+                <Select
+                  value={vpMode}
+                  onValueChange={(m) => {
+                    setVpMode(m as typeof vpMode);
+                    if (m !== "custom") {
+                      const months = m === "1m" ? 1 : m === "2m" ? 2 : 3;
+                      sf({ validityPeriod: addMonths(form.estimateDate, months) });
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1m">1ヶ月後</SelectItem>
+                    <SelectItem value="2m">2ヶ月後</SelectItem>
+                    <SelectItem value="3m">3ヶ月後</SelectItem>
+                    <SelectItem value="custom">直接入力</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="date"
+                  value={form.validityPeriod}
+                  onChange={(e) => { setVpMode("custom"); sf({ validityPeriod: e.target.value }); }}
+                  className="flex-1"
+                />
+              </div>
+            </div>
+            <div>
+              <Label>支払条件</Label>
+              <Input
+                value={form.paymentTerms}
+                onChange={(e) => sf({ paymentTerms: e.target.value })}
+                className="mt-1"
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            <div>
+              <Label>ステータス</Label>
+              <Select value={form.status} onValueChange={(v) => sf({ status: v })}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="draft">作成中</SelectItem>
+                  <SelectItem value="submitted">提出済</SelectItem>
+                  <SelectItem value="approved">承認済</SelectItem>
+                  <SelectItem value="lost">失注</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>建築士事務所</Label>
+              <Input
+                value={form.architectFirm}
+                onChange={(e) => sf({ architectFirm: e.target.value })}
+                placeholder="例：一級建築士事務所"
+                className="mt-1"
+              />
+            </div>
+          </div>
+        </section>
+
+        {/* ─── 自社情報 ──────────────────────────────────────────────────── */}
+        <section className="bg-white rounded-xl border p-6">
+          <h2 className="text-base font-semibold text-slate-700 border-b pb-2 mb-4">自社情報</h2>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>会社名</Label>
+              <Input
+                value={form.companyName}
+                onChange={(e) => sf({ companyName: e.target.value })}
+                placeholder="例：レッツ建設株式会社"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>代表者</Label>
+              <Input
+                value={form.representativeName}
+                onChange={(e) => sf({ representativeName: e.target.value })}
+                placeholder="例：山田 太郎"
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <div className="mt-4">
+            <Label>住所</Label>
+            <Input
+              value={form.companyAddress}
+              onChange={(e) => sf({ companyAddress: e.target.value })}
+              placeholder="例：宮城県仙台市本町一丁目3-5"
+              className="mt-1"
+            />
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            <div>
+              <Label>TEL</Label>
+              <Input
+                value={form.companyTel}
+                onChange={(e) => sf({ companyTel: e.target.value })}
+                placeholder="022-224-XXXX"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>FAX</Label>
+              <Input
+                value={form.companyFax}
+                onChange={(e) => sf({ companyFax: e.target.value })}
+                placeholder="022-224-XXXX"
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <div className="mt-4">
+            <Label>建設業許可番号</Label>
+            <Input
+              value={form.constructionLicense}
+              onChange={(e) => sf({ constructionLicense: e.target.value })}
+              placeholder="例：宮城県知事許可（般-XX）第XXXX号"
+              className="mt-1"
+            />
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            <div>
+              <Label>担当者</Label>
+              <Input
+                value={form.companyStaff}
+                onChange={(e) => sf({ companyStaff: e.target.value })}
+                placeholder="担当者名"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label>携帯</Label>
+              <Input
+                value={form.staffMobile}
+                onChange={(e) => sf({ staffMobile: e.target.value })}
+                placeholder="090-XXXX-XXXX"
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <div className="mt-4">
+            <Label>メール</Label>
+            <Input
+              value={form.staffEmail}
+              onChange={(e) => sf({ staffEmail: e.target.value })}
+              placeholder="example@company.co.jp"
+              className="mt-1"
+            />
+          </div>
+        </section>
+
+        {/* ─── 明細 ──────────────────────────────────────────────────────── */}
+        <section className="bg-white rounded-xl border p-6">
+          <h2 className="text-base font-semibold text-slate-700 border-b pb-2 mb-4">明細</h2>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-slate-50">
+                  <TableHead className="w-8 text-center">No</TableHead>
+                  <TableHead className="w-28">工種</TableHead>
+                  <TableHead className="min-w-[160px]">摘要</TableHead>
+                  <TableHead className="w-36">備考（型番・仕様）</TableHead>
+                  <TableHead className="w-20 text-right">数量</TableHead>
+                  <TableHead className="w-16 text-center">単位</TableHead>
+                  <TableHead className="w-28 text-right">単価</TableHead>
+                  <TableHead className="w-28 text-right">金額</TableHead>
+                  <TableHead className="w-20">種別</TableHead>
+                  <TableHead className="w-20 text-center">操作</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((item, idx) => {
+                  const isSpecial = item.rowType !== "normal";
+                  const isPagebreak = item.rowType === "pagebreak";
+                  const amt = !isSpecial && item.quantity != null && item.unitPrice != null
+                    ? Math.round(item.quantity * item.unitPrice)
+                    : item.amount;
+                  const rowBg = item.rowType === "total" ? "bg-teal-50" :
+                    item.rowType === "tax" ? "bg-amber-50" :
+                    item.rowType === "discount" ? "bg-red-50" :
+                    item.rowType === "pagebreak" ? "bg-slate-50" : "";
+
+                  if (isPagebreak) {
+                    return (
+                      <TableRow key={item._key} className={rowBg}>
+                        <TableCell className="text-center text-slate-400 text-xs">{idx + 1}</TableCell>
+                        <TableCell colSpan={7} className="text-center text-slate-400 text-xs italic">
+                          ── 改ページ ──
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span className="text-xs text-slate-400">改ページ</span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-0.5 justify-center">
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-orange-500" onClick={() => addRow(idx)}>
+                              <Plus className="w-3 h-3" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:text-red-500" onClick={() => removeRow(item._key)}>
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }
+
+                  return (
+                    <TableRow key={item._key} className={rowBg}>
+                      <TableCell className="text-center text-slate-400 text-xs">{idx + 1}</TableCell>
+                      <TableCell>
+                        {!isSpecial && (
+                          <>
+                            <input
+                              value={item.workType}
+                              onChange={(e) => updateRow(item._key, { workType: e.target.value })}
+                              list={`wt-${item._key}`}
+                              placeholder="工種"
+                              className="w-full h-8 border border-input bg-background rounded-md px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                            />
+                            <datalist id={`wt-${item._key}`}>
+                              {workTypes?.map((wt) => <option key={wt.id} value={wt.name} />)}
+                            </datalist>
+                          </>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <input
+                          value={item.itemName}
+                          onChange={(e) => updateRow(item._key, { itemName: e.target.value })}
+                          placeholder={isSpecial ? ROW_TYPE_LABELS[item.rowType] : "摘要"}
+                          className={`w-full h-8 border border-input bg-background rounded-md px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring ${item.rowType === "total" ? "font-bold" : ""}`}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {!isSpecial && (
+                          <input
+                            value={item.notes}
+                            onChange={(e) => updateRow(item._key, { notes: e.target.value })}
+                            placeholder="型番・仕様など"
+                            className="w-full h-8 border border-input bg-background rounded-md px-2 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {!isSpecial && (
+                          <input
+                            type="number"
+                            value={item.quantity ?? ""}
+                            onChange={(e) => updateRow(item._key, { quantity: e.target.value === "" ? null : parseFloat(e.target.value) })}
+                            className="w-full h-8 border border-input bg-background rounded-md px-2 text-xs text-right focus:outline-none focus:ring-1 focus:ring-ring"
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {!isSpecial && (
+                          <input
+                            value={item.unit}
+                            onChange={(e) => updateRow(item._key, { unit: e.target.value })}
+                            list="unit-list"
+                            className="w-full h-8 border border-input bg-background rounded-md px-2 text-xs text-center focus:outline-none focus:ring-1 focus:ring-ring"
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {!isSpecial && (
+                          <input
+                            type="number"
+                            value={item.unitPrice ?? ""}
+                            onChange={(e) => updateRow(item._key, { unitPrice: e.target.value === "" ? null : parseFloat(e.target.value) })}
+                            className="w-full h-8 border border-input bg-background rounded-md px-2 text-xs text-right focus:outline-none focus:ring-1 focus:ring-ring"
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {isSpecial && item.rowType !== "pagebreak" ? (
+                          <input
+                            type="number"
+                            value={item.amount}
+                            onChange={(e) => updateRow(item._key, { amount: parseFloat(e.target.value) || 0 })}
+                            className={`w-full h-8 border border-input bg-background rounded-md px-2 text-xs text-right focus:outline-none focus:ring-1 focus:ring-ring ${item.rowType === "total" ? "font-bold text-teal-700" : ""}`}
+                          />
+                        ) : (
+                          <span className={`text-xs font-medium ${item.rowType === "total" ? "text-teal-700 font-bold" : "text-slate-700"}`}>
+                            {amt > 0 || (item.quantity != null && item.unitPrice != null) ? fmtMoney(amt) : "—"}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Select
+                          value={item.rowType}
+                          onValueChange={(v) => updateRow(item._key, { rowType: v as EstimateItem["rowType"] })}
+                        >
+                          <SelectTrigger className="h-8 text-xs px-2">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(ROW_TYPE_LABELS).map(([k, v]) => (
+                              <SelectItem key={k} value={k} className="text-xs">{v}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-0.5 justify-center">
+                          <button
+                            onClick={() => copyRowAbove(idx)}
+                            disabled={idx === 0}
+                            className="p-1 rounded hover:bg-slate-200 disabled:opacity-30 text-slate-500 text-xs"
+                            title="上の行を複写"
+                          >↑</button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-orange-500 hover:text-orange-600"
+                            onClick={() => addRow(idx)}
+                            title="この行の下に追加"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-slate-400 hover:text-red-500"
+                            onClick={() => removeRow(item._key)}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+            <datalist id="unit-list">
+              {["式", "m", "m²", "m³", "本", "枚", "個", "箱", "kg", "t", "台", "ヶ所", "日"].map((u) => (
+                <option key={u} value={u} />
+              ))}
+            </datalist>
+          </div>
+          <Button variant="outline" size="sm" className="mt-3 gap-1.5" onClick={() => addRow()}>
+            <Plus className="w-3.5 h-3.5" />行を追加
+          </Button>
+
+          {/* 調整項目と合計サマリー */}
+          <div className="mt-6 border-t pt-4">
+            <div className="grid grid-cols-2 gap-6">
+              {/* 調整項目 */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium text-slate-700">調整項目</h3>
+                <div className="flex items-center gap-3">
+                  <Label className="w-28 text-sm shrink-0">諸経費率（%）</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      value={form.miscExpensesRate || ""}
+                      onChange={(e) => sf({ miscExpensesRate: parseFloat(e.target.value) || 0 })}
+                      placeholder="0"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      className="w-24 text-right h-8"
+                    />
+                    <span className="text-xs text-slate-500">%</span>
+                    {miscExpensesAmount > 0 && (
+                      <span className="text-xs text-slate-600">= {fmtMoney(miscExpensesAmount)}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Label className="w-28 text-sm shrink-0">お値引き（円）</Label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">▲</span>
+                    <Input
+                      type="number"
+                      value={form.discountAmount || ""}
+                      onChange={(e) => sf({ discountAmount: parseFloat(e.target.value) || 0 })}
+                      placeholder="0"
+                      min="0"
+                      className="w-32 text-right h-8"
+                    />
+                    <span className="text-xs text-slate-500">円</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Label className="w-28 text-sm shrink-0">消費税率</Label>
+                  <Select value={String(form.taxRate)} onValueChange={(v) => sf({ taxRate: parseFloat(v) })}>
+                    <SelectTrigger className="h-8 w-24">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10%</SelectItem>
+                      <SelectItem value="8">8%</SelectItem>
+                      <SelectItem value="0">非課税</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
-              {/* フッター */}
-              <div className="border-t border-slate-200 bg-slate-50 px-4 py-3 flex items-center justify-between">
-                <Button variant="outline" size="sm" onClick={() => addRow()} className="gap-1.5 text-xs">
-                  <Plus className="w-3.5 h-3.5" />行を追加
-                </Button>
-                <div className="flex items-center gap-6 text-sm flex-wrap justify-end">
-                  <div className="text-right">
-                    <span className="text-xs text-slate-500 mr-2">明細合計</span>
-                    <span className="font-semibold text-slate-800">{fmt(itemsSubtotal)}</span>
+              {/* 合計サマリー */}
+              <div className="space-y-2 max-w-sm ml-auto">
+                <div className="flex justify-between text-sm text-slate-600">
+                  <span>明細合計</span>
+                  <span>{fmtMoney(itemsSubtotal)}</span>
+                </div>
+                {miscExpensesAmount > 0 && (
+                  <div className="flex justify-between text-sm text-slate-600">
+                    <span>諸経費（{form.miscExpensesRate}%）</span>
+                    <span>{fmtMoney(miscExpensesAmount)}</span>
                   </div>
-                  {miscExpensesAmount > 0 && (
-                    <div className="text-right">
-                      <span className="text-xs text-slate-500 mr-2">諸経費</span>
-                      <span className="font-semibold text-slate-800">{fmt(miscExpensesAmount)}</span>
-                    </div>
-                  )}
-                  {form.discountAmount > 0 && (
-                    <div className="text-right">
-                      <span className="text-xs text-slate-500 mr-2">値引き</span>
-                      <span className="font-semibold text-red-600">▲{fmt(form.discountAmount)}</span>
-                    </div>
-                  )}
-                  <div className="text-right">
-                    <span className="text-xs text-slate-500 mr-2">税抜合計</span>
-                    <span className="font-semibold text-slate-800">{fmt(finalSubtotal)}</span>
+                )}
+                {form.discountAmount > 0 && (
+                  <div className="flex justify-between text-sm text-red-600">
+                    <span>お値引き</span>
+                    <span>▲{fmtMoney(form.discountAmount)}</span>
                   </div>
-                  <div className="text-right">
-                    <span className="text-xs text-slate-500 mr-2">消費税</span>
-                    <span className="font-semibold text-slate-800">{fmt(taxAmount)}</span>
-                  </div>
-                  <div className="text-right border-l pl-6">
-                    <span className="text-xs text-slate-500 mr-2">見積金額（税込）</span>
-                    <span className="text-lg font-extrabold text-orange-600">{fmt(taxIncluded)}</span>
-                  </div>
+                )}
+                <div className="flex justify-between text-sm text-slate-600 border-t pt-2">
+                  <span>税抜合計</span>
+                  <span>{fmtMoney(finalSubtotal)}</span>
+                </div>
+                <div className="flex justify-between text-sm text-slate-600">
+                  <span>消費税（{form.taxRate}%）</span>
+                  <span>{fmtMoney(taxAmount)}</span>
+                </div>
+                <div className="flex justify-between text-base font-bold text-slate-800 border-t pt-2">
+                  <span>御見積金額（税込）</span>
+                  <span className="text-orange-600">{fmtMoney(taxIncluded)}</span>
                 </div>
               </div>
             </div>
+          </div>
+        </section>
 
-            <div className="mt-4 flex justify-end">
-              <Button
-                className="bg-orange-500 hover:bg-orange-600 text-white gap-2"
-                onClick={handleSave}
-                disabled={saving}
-              >
-                <Save className="w-4 h-4" />
-                {saving ? "保存中…" : "保存する"}
-              </Button>
+        {/* ─── 備考・社内メモ ─────────────────────────────────────────────── */}
+        <section className="bg-white rounded-xl border p-6">
+          <h2 className="text-base font-semibold text-slate-700 border-b pb-2 mb-4">備考・メモ</h2>
+          <div className="space-y-4">
+            <div>
+              <Label>備考（印刷対象）</Label>
+              <Textarea
+                value={form.notes}
+                onChange={(e) => sf({ notes: e.target.value })}
+                rows={3}
+                placeholder="備考・特記事項など（見積書に印刷されます）"
+                className="mt-1"
+              />
             </div>
-          </TabsContent>
-        </Tabs>
+            <div>
+              <Label>社内メモ（非印刷）</Label>
+              <Textarea
+                value={form.memo}
+                onChange={(e) => sf({ memo: e.target.value })}
+                rows={2}
+                placeholder="社内用メモ（印刷されません）"
+                className="mt-1"
+              />
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   );
