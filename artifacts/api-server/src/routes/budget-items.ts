@@ -254,7 +254,7 @@ router.post("/bulk-create-purchase-orders", async (req, res) => {
     const orderNumbers = await generateOrderNumbers(typedGroups.length);
 
     const result = await db.transaction(async (tx) => {
-      // Re-fetch inside transaction with FOR UPDATE semantics to prevent concurrent modification
+      // Re-fetch inside transaction to catch concurrent modifications committed between pre-validation and now
       const budgetItems = await tx
         .select()
         .from(budgetItemsTable)

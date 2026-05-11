@@ -288,12 +288,21 @@ router.patch("/:id", async (req, res) => {
       updates.taxAmount = String(taxAmount);
       updates.totalAmount = String(totalAmount);
 
-      // Clear purchaseOrderItemId on budget_items linked to old items (ON DELETE SET NULL also handles this,
-      // but we do it explicitly for clarity and immediate consistency)
-      await db
-        .update(budgetItemsTable)
-        .set({ purchaseOrderItemId: null, updatedAt: new Date() })
-        .where(eq(budgetItemsTable.purchaseOrderId, id));
+      // Get the IDs of the existing purchase order items before they are deleted.
+      // Only clear purchaseOrderItemId on budget_items that reference these specific
+      // item IDs — not all rows linked to this PO (purchaseOrderId).
+      const oldItems = await db
+        .select({ id: purchaseOrderItemsTable.id })
+        .from(purchaseOrderItemsTable)
+        .where(eq(purchaseOrderItemsTable.purchaseOrderId, id));
+
+      if (oldItems.length > 0) {
+        const oldItemIds = oldItems.map((r) => r.id);
+        await db
+          .update(budgetItemsTable)
+          .set({ purchaseOrderItemId: null, updatedAt: new Date() })
+          .where(inArray(budgetItemsTable.purchaseOrderItemId, oldItemIds));
+      }
 
       await db.delete(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.purchaseOrderId, id));
       if (itemRows.length > 0) {
