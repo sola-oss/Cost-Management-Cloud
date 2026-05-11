@@ -544,6 +544,12 @@ export interface BudgetItem {
   isOriginalLocked: boolean;
   /** 当初予算額（ロック時の原本） */
   originalBudgetAmount: number;
+  /** 仕入先ID（仕入先マスタ連携） */
+  vendorId?: number | null;
+  /** 発注書ID（発注済みの場合に設定） */
+  purchaseOrderId?: number | null;
+  /** 発注書明細ID（発注済みの場合に設定） */
+  purchaseOrderItemId?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -560,6 +566,7 @@ export interface CreateBudgetItemRequest {
   workTypeName: string;
   supplierCode?: string;
   supplierName?: string;
+  vendorId?: number | null;
   contractAmount?: number;
   initialBudget?: number;
   revisedBudget?: number;
@@ -571,6 +578,7 @@ export interface UpdateBudgetItemRequest {
   workTypeName?: string;
   supplierCode?: string;
   supplierName?: string;
+  vendorId?: number | null;
   contractAmount?: number;
   initialBudget?: number;
   revisedBudget?: number;
@@ -786,6 +794,33 @@ export type BudgetVsActualResponseItemsItem = {
 
 export interface BudgetVsActualResponse {
   items: BudgetVsActualResponseItemsItem[];
+}
+
+export interface BulkCreatePurchaseOrderGroup {
+  /** 仕入先ID */
+  vendorId: number;
+  /** 対象の実行予算明細IDリスト */
+  budgetItemIds: number[];
+  /** 納期（任意） */
+  deliveryDate?: string | null;
+  /** 備考（任意） */
+  notes?: string | null;
+}
+
+export interface BulkCreatePurchaseOrdersRequest {
+  /** 発注日 */
+  orderDate: string;
+  groups: BulkCreatePurchaseOrderGroup[];
+}
+
+export type BulkCreatePurchaseOrdersResponseCreatedPurchaseOrdersItem = {
+  id: number;
+  orderNo: string;
+  vendorId: number;
+};
+
+export interface BulkCreatePurchaseOrdersResponse {
+  createdPurchaseOrders: BulkCreatePurchaseOrdersResponseCreatedPurchaseOrdersItem[];
 }
 
 export type ListProjectsParams = {

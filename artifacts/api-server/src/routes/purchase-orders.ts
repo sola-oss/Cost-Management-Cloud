@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, isNotNull } from "drizzle-orm";
 import {
   db,
   purchaseOrdersTable,
   purchaseOrderItemsTable,
   vendorsTable,
   projectsTable,
+  budgetItemsTable,
 } from "@workspace/db";
 import type { PurchaseOrderStatus } from "@workspace/db";
 
@@ -287,6 +288,13 @@ router.patch("/:id", async (req, res) => {
       updates.taxAmount = String(taxAmount);
       updates.totalAmount = String(totalAmount);
 
+      // Clear purchaseOrderItemId on budget_items linked to old items (ON DELETE SET NULL also handles this,
+      // but we do it explicitly for clarity and immediate consistency)
+      await db
+        .update(budgetItemsTable)
+        .set({ purchaseOrderItemId: null, updatedAt: new Date() })
+        .where(eq(budgetItemsTable.purchaseOrderId, id));
+
       await db.delete(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.purchaseOrderId, id));
       if (itemRows.length > 0) {
         await db.insert(purchaseOrderItemsTable).values(
@@ -338,6 +346,13 @@ router.delete("/:id", async (req, res) => {
       .from(purchaseOrdersTable)
       .where(eq(purchaseOrdersTable.id, id));
     if (!existing) return res.status(404).json({ message: "発注書が見つかりません" });
+
+    // Explicitly clear purchase order links on budget_items before deletion
+    // (ON DELETE SET NULL on the FK also handles this, but we do it explicitly for consistency)
+    await db
+      .update(budgetItemsTable)
+      .set({ purchaseOrderId: null, purchaseOrderItemId: null, updatedAt: new Date() })
+      .where(eq(budgetItemsTable.purchaseOrderId, id));
 
     await db.delete(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, id));
     return res.status(204).send();

@@ -11,6 +11,7 @@ export interface CreateBudgetItemRequest {
   workTypeName: string;
   supplierCode?: string;
   supplierName?: string;
+  vendorId?: number | null;
   contractAmount?: number;
   initialBudget?: number;
   revisedBudget?: number;

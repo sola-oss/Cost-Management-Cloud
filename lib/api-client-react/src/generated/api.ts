@@ -22,6 +22,8 @@ import type {
   BudgetItemListResponse,
   BudgetListResponse,
   BudgetVsActualResponse,
+  BulkCreatePurchaseOrdersRequest,
+  BulkCreatePurchaseOrdersResponse,
   Client,
   ClientListResponse,
   CostByCategoryResponse,
@@ -1459,6 +1461,97 @@ export const useCreateBudgetItem = <
   TContext
 > => {
   return useMutation(getCreateBudgetItemMutationOptions(options));
+};
+
+/**
+ * @summary 実行予算明細から発注書一括作成
+ */
+export const getBulkCreatePurchaseOrdersUrl = (id: number) => {
+  return `/api/projects/${id}/budget-items/bulk-create-purchase-orders`;
+};
+
+export const bulkCreatePurchaseOrders = async (
+  id: number,
+  bulkCreatePurchaseOrdersRequest: BulkCreatePurchaseOrdersRequest,
+  options?: RequestInit,
+): Promise<BulkCreatePurchaseOrdersResponse> => {
+  return customFetch<BulkCreatePurchaseOrdersResponse>(
+    getBulkCreatePurchaseOrdersUrl(id),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(bulkCreatePurchaseOrdersRequest),
+    },
+  );
+};
+
+export const getBulkCreatePurchaseOrdersMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkCreatePurchaseOrders>>,
+    TError,
+    { id: number; data: BodyType<BulkCreatePurchaseOrdersRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof bulkCreatePurchaseOrders>>,
+  TError,
+  { id: number; data: BodyType<BulkCreatePurchaseOrdersRequest> },
+  TContext
+> => {
+  const mutationKey = ["bulkCreatePurchaseOrders"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof bulkCreatePurchaseOrders>>,
+    { id: number; data: BodyType<BulkCreatePurchaseOrdersRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return bulkCreatePurchaseOrders(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type BulkCreatePurchaseOrdersMutationResult = NonNullable<
+  Awaited<ReturnType<typeof bulkCreatePurchaseOrders>>
+>;
+export type BulkCreatePurchaseOrdersMutationBody =
+  BodyType<BulkCreatePurchaseOrdersRequest>;
+export type BulkCreatePurchaseOrdersMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary 実行予算明細から発注書一括作成
+ */
+export const useBulkCreatePurchaseOrders = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof bulkCreatePurchaseOrders>>,
+    TError,
+    { id: number; data: BodyType<BulkCreatePurchaseOrdersRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof bulkCreatePurchaseOrders>>,
+  TError,
+  { id: number; data: BodyType<BulkCreatePurchaseOrdersRequest> },
+  TContext
+> => {
+  return useMutation(getBulkCreatePurchaseOrdersMutationOptions(options));
 };
 
 /**

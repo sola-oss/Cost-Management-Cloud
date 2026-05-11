@@ -1,6 +1,16 @@
 import { Router, type IRouter } from "express";
-import { eq, asc, and, desc } from "drizzle-orm";
-import { db, budgetItemsTable, estimatesTable, estimateItemsTable, projectsTable, invoicesTable } from "@workspace/db";
+import { eq, asc, and, desc, inArray, isNull } from "drizzle-orm";
+import {
+  db,
+  budgetItemsTable,
+  estimatesTable,
+  estimateItemsTable,
+  projectsTable,
+  invoicesTable,
+  purchaseOrdersTable,
+  purchaseOrderItemsTable,
+  vendorsTable,
+} from "@workspace/db";
 
 const router: IRouter = Router({ mergeParams: true });
 
@@ -12,12 +22,32 @@ function serializeItem(item: typeof budgetItemsTable.$inferSelect) {
   return {
     ...item,
     supplierCode: item.supplierCode ?? "",
+    vendorId: item.vendorId ?? null,
     contractAmount: parseNumeric(item.contractAmount),
     initialBudget: parseNumeric(item.initialBudget),
     revisedBudget: parseNumeric(item.revisedBudget),
     originalBudgetAmount: parseNumeric(item.originalBudgetAmount),
     isOriginalLocked: item.isOriginalLocked ?? false,
+    purchaseOrderId: item.purchaseOrderId ?? null,
+    purchaseOrderItemId: item.purchaseOrderItemId ?? null,
   };
+}
+
+async function generatePONumber(dbOrTx: typeof db): Promise<string> {
+  const today = new Date();
+  const ymd =
+    String(today.getFullYear()) +
+    String(today.getMonth() + 1).padStart(2, "0") +
+    String(today.getDate()).padStart(2, "0");
+  const prefix = `PO-${ymd}-`;
+  const all = await dbOrTx.select({ n: purchaseOrdersTable.orderNumber }).from(purchaseOrdersTable);
+  const todayNums = all
+    .map((r) => r.n)
+    .filter((n) => n.startsWith(prefix))
+    .map((n) => parseInt(n.replace(prefix, ""), 10))
+    .filter((n) => !isNaN(n));
+  const next = todayNums.length > 0 ? Math.max(...todayNums) + 1 : 1;
+  return `${prefix}${String(next).padStart(4, "0")}`;
 }
 
 router.get("/", async (req, res) => {
@@ -34,11 +64,6 @@ router.get("/", async (req, res) => {
     const totalInitialBudget = items.reduce((s, i) => s + parseNumeric(i.initialBudget), 0);
     const totalRevisedBudget = items.reduce((s, i) => s + parseNumeric(i.revisedBudget), 0);
 
-    // billedToDate here is the total of ALL invoices for this project.
-    // This is intentional: this endpoint is used in the invoice create flow (no current
-    // invoice ID exists yet), so all existing project invoices are "prior" billing.
-    // When editing an existing invoice, use GET /api/invoices/:id which applies
-    // proper date-based filtering (invoiceDate < current) to exclude later invoices.
     const invoices = await db
       .select({ totalAmount: invoicesTable.totalAmount })
       .from(invoicesTable)
@@ -152,11 +177,147 @@ router.post("/import-from-estimate", async (req, res) => {
   }
 });
 
+router.post("/bulk-create-purchase-orders", async (req, res) => {
+  try {
+    const p = req.params as Record<string, string>;
+    const projectId = parseInt(p.id);
+    const { orderDate, groups } = req.body;
+
+    if (!orderDate || !Array.isArray(groups) || groups.length === 0) {
+      return res.status(400).json({ message: "orderDate と groups は必須です" });
+    }
+
+    const allBudgetItemIds: number[] = groups.flatMap((g: { budgetItemIds?: number[] }) => g.budgetItemIds ?? []);
+    if (allBudgetItemIds.length === 0) {
+      return res.status(400).json({ message: "budgetItemIds が空です" });
+    }
+
+    const result = await db.transaction(async (tx) => {
+      const budgetItems = await tx
+        .select()
+        .from(budgetItemsTable)
+        .where(inArray(budgetItemsTable.id, allBudgetItemIds));
+
+      const invalidProject = budgetItems.find(bi => bi.projectId !== projectId);
+      if (invalidProject) {
+        throw Object.assign(new Error(`Budget item ${invalidProject.id} does not belong to project ${projectId}`), { statusCode: 400 });
+      }
+
+      const foundIds = new Set(budgetItems.map(bi => bi.id));
+      const missingIds = allBudgetItemIds.filter(id => !foundIds.has(id));
+      if (missingIds.length > 0) {
+        throw Object.assign(new Error(`実行予算明細が見つかりません: ${missingIds.join(",")}`), { statusCode: 404 });
+      }
+
+      const alreadyOrdered = budgetItems.filter(bi => bi.purchaseOrderId !== null);
+      if (alreadyOrdered.length > 0) {
+        const ids = alreadyOrdered.map(bi => bi.id).join(", ");
+        throw Object.assign(new Error(`以下の実行予算明細は既に発注済みです（ID: ${ids}）`), { statusCode: 409 });
+      }
+
+      const createdPurchaseOrders: Array<{ id: number; orderNo: string; vendorId: number }> = [];
+
+      for (const group of groups as Array<{ vendorId: number; budgetItemIds: number[]; deliveryDate?: string | null; notes?: string | null }>) {
+        const { vendorId, budgetItemIds, deliveryDate, notes } = group;
+
+        if (!vendorId || !Array.isArray(budgetItemIds) || budgetItemIds.length === 0) {
+          throw Object.assign(new Error("各グループに vendorId と budgetItemIds は必須です"), { statusCode: 400 });
+        }
+
+        const [vendor] = await tx.select().from(vendorsTable).where(eq(vendorsTable.id, vendorId));
+        if (!vendor) {
+          throw Object.assign(new Error(`仕入先 ID ${vendorId} が見つかりません`), { statusCode: 404 });
+        }
+
+        const groupItems = budgetItems.filter(bi => budgetItemIds.includes(bi.id));
+
+        const subtotal = groupItems.reduce((s, bi) => s + parseNumeric(bi.revisedBudget), 0);
+        const taxAmount = Math.floor(subtotal * 10 / 100);
+        const totalAmount = subtotal + taxAmount;
+
+        const orderNumber = await generatePONumber(tx as unknown as typeof db);
+
+        const [order] = await tx
+          .insert(purchaseOrdersTable)
+          .values({
+            orderNumber,
+            projectId,
+            vendorId,
+            orderDate,
+            expectedDeliveryDate: deliveryDate ?? null,
+            status: "draft",
+            subtotal: String(subtotal),
+            taxAmount: String(taxAmount),
+            totalAmount: String(totalAmount),
+            notes: notes ?? null,
+          })
+          .returning();
+
+        const insertedItems = await tx
+          .insert(purchaseOrderItemsTable)
+          .values(
+            groupItems.map((bi, idx) => ({
+              purchaseOrderId: order.id,
+              lineNumber: idx + 1,
+              category: "subcontract" as const,
+              description: bi.workTypeName,
+              specification: null,
+              quantity: "1",
+              unit: "式",
+              unitPrice: String(parseNumeric(bi.revisedBudget)),
+              amount: String(parseNumeric(bi.revisedBudget)),
+              taxRate: "10",
+              workTypeId: null,
+            }))
+          )
+          .returning();
+
+        for (let i = 0; i < groupItems.length; i++) {
+          const bi = groupItems[i];
+          const poi = insertedItems[i];
+          await tx
+            .update(budgetItemsTable)
+            .set({
+              purchaseOrderId: order.id,
+              purchaseOrderItemId: poi.id,
+              vendorId,
+              updatedAt: new Date(),
+            })
+            .where(eq(budgetItemsTable.id, bi.id));
+        }
+
+        createdPurchaseOrders.push({
+          id: order.id,
+          orderNo: order.orderNumber,
+          vendorId: order.vendorId,
+        });
+      }
+
+      return { createdPurchaseOrders };
+    });
+
+    return res.status(201).json(result);
+  } catch (err: unknown) {
+    const e = err as { statusCode?: number; message?: string };
+    if (e.statusCode === 409) {
+      return res.status(409).json({ message: e.message });
+    }
+    if (e.statusCode === 400) {
+      return res.status(400).json({ message: e.message });
+    }
+    if (e.statusCode === 404) {
+      return res.status(404).json({ message: e.message });
+    }
+    req.log.error({ err }, "Failed to bulk create purchase orders");
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 router.post("/", async (req, res) => {
   try {
     const p = req.params as Record<string, string>;
     const projectId = parseInt(p.id);
-    const { workTypeCode, workTypeName, supplierCode, supplierName, contractAmount, initialBudget, revisedBudget, sortOrder } = req.body;
+    const { workTypeCode, workTypeName, supplierCode, supplierName, vendorId, contractAmount, initialBudget, revisedBudget, sortOrder } = req.body;
 
     const [item] = await db
       .insert(budgetItemsTable)
@@ -166,6 +327,7 @@ router.post("/", async (req, res) => {
         workTypeName,
         supplierCode: supplierCode ?? "",
         supplierName: supplierName ?? "",
+        vendorId: vendorId ? parseInt(vendorId) : null,
         contractAmount: String(contractAmount ?? 0),
         initialBudget: String(initialBudget ?? 0),
         revisedBudget: String(revisedBudget ?? 0),
@@ -185,7 +347,7 @@ router.put("/:itemId", async (req, res) => {
     const p = req.params as Record<string, string>;
     const projectId = parseInt(p.id);
     const itemId = parseInt(p.itemId);
-    const { workTypeCode, workTypeName, supplierCode, supplierName, contractAmount, initialBudget, revisedBudget, sortOrder } = req.body;
+    const { workTypeCode, workTypeName, supplierCode, supplierName, vendorId, contractAmount, initialBudget, revisedBudget, sortOrder } = req.body;
 
     const [existing] = await db
       .select()
@@ -205,6 +367,7 @@ router.put("/:itemId", async (req, res) => {
     if (workTypeName !== undefined) updateData.workTypeName = workTypeName;
     if (supplierCode !== undefined) updateData.supplierCode = supplierCode;
     if (supplierName !== undefined) updateData.supplierName = supplierName;
+    if ("vendorId" in req.body) updateData.vendorId = vendorId != null ? parseInt(vendorId) : null;
     if (contractAmount !== undefined) updateData.contractAmount = String(contractAmount);
     if (initialBudget !== undefined) updateData.initialBudget = String(initialBudget);
     if (revisedBudget !== undefined) updateData.revisedBudget = String(revisedBudget);

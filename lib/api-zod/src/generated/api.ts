@@ -604,6 +604,15 @@ export const ListBudgetItemsResponse = zod.object({
         .number()
         .default(listBudgetItemsResponseItemsItemOriginalBudgetAmountDefault)
         .describe("当初予算額（ロック時の原本）"),
+      vendorId: zod.number().nullish().describe("仕入先ID（仕入先マスタ連携）"),
+      purchaseOrderId: zod
+        .number()
+        .nullish()
+        .describe("発注書ID（発注済みの場合に設定）"),
+      purchaseOrderItemId: zod
+        .number()
+        .nullish()
+        .describe("発注書明細ID（発注済みの場合に設定）"),
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
     }),
@@ -625,10 +634,32 @@ export const CreateBudgetItemBody = zod.object({
   workTypeName: zod.string(),
   supplierCode: zod.string().optional(),
   supplierName: zod.string().optional(),
+  vendorId: zod.number().nullish(),
   contractAmount: zod.number().optional(),
   initialBudget: zod.number().optional(),
   revisedBudget: zod.number().optional(),
   sortOrder: zod.number().optional(),
+});
+
+/**
+ * @summary 実行予算明細から発注書一括作成
+ */
+export const BulkCreatePurchaseOrdersParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const BulkCreatePurchaseOrdersBody = zod.object({
+  orderDate: zod.coerce.date().describe("発注日"),
+  groups: zod.array(
+    zod.object({
+      vendorId: zod.number().describe("仕入先ID"),
+      budgetItemIds: zod
+        .array(zod.number())
+        .describe("対象の実行予算明細IDリスト"),
+      deliveryDate: zod.coerce.date().nullish().describe("納期（任意）"),
+      notes: zod.string().nullish().describe("備考（任意）"),
+    }),
+  ),
 });
 
 /**
@@ -644,6 +675,7 @@ export const UpdateBudgetItemBody = zod.object({
   workTypeName: zod.string().optional(),
   supplierCode: zod.string().optional(),
   supplierName: zod.string().optional(),
+  vendorId: zod.number().nullish(),
   contractAmount: zod.number().optional(),
   initialBudget: zod.number().optional(),
   revisedBudget: zod.number().optional(),
@@ -672,6 +704,15 @@ export const UpdateBudgetItemResponse = zod.object({
     .number()
     .default(updateBudgetItemResponseOriginalBudgetAmountDefault)
     .describe("当初予算額（ロック時の原本）"),
+  vendorId: zod.number().nullish().describe("仕入先ID（仕入先マスタ連携）"),
+  purchaseOrderId: zod
+    .number()
+    .nullish()
+    .describe("発注書ID（発注済みの場合に設定）"),
+  purchaseOrderItemId: zod
+    .number()
+    .nullish()
+    .describe("発注書明細ID（発注済みの場合に設定）"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });

@@ -353,6 +353,43 @@ paths:
               schema:
                 $ref: "#/components/schemas/BudgetItem"
 
+  /projects/{id}/budget-items/bulk-create-purchase-orders:
+    post:
+      operationId: bulkCreatePurchaseOrders
+      tags: [budget-items]
+      summary: 実行予算明細から発注書一括作成
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BulkCreatePurchaseOrdersRequest"
+      responses:
+        "201":
+          description: 一括作成成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BulkCreatePurchaseOrdersResponse"
+        "400":
+          description: バリデーションエラー
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: 既に発注済みの明細が含まれる
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /projects/{id}/budget-items/{itemId}:
     put:
       operationId: updateBudgetItem
@@ -1693,6 +1730,18 @@ components:
           type: number
           description: 当初予算額（ロック時の原本）
           default: 0
+        vendorId:
+          type: integer
+          nullable: true
+          description: 仕入先ID（仕入先マスタ連携）
+        purchaseOrderId:
+          type: integer
+          nullable: true
+          description: 発注書ID（発注済みの場合に設定）
+        purchaseOrderItemId:
+          type: integer
+          nullable: true
+          description: 発注書明細ID（発注済みの場合に設定）
         createdAt:
           type: string
           format: date-time
@@ -1745,6 +1794,9 @@ components:
           type: string
         supplierName:
           type: string
+        vendorId:
+          type: integer
+          nullable: true
         contractAmount:
           type: number
         initialBudget:
@@ -1768,6 +1820,9 @@ components:
           type: string
         supplierName:
           type: string
+        vendorId:
+          type: integer
+          nullable: true
         contractAmount:
           type: number
         initialBudget:
@@ -2220,3 +2275,63 @@ components:
               - usageRate
       required:
         - items
+
+    BulkCreatePurchaseOrdersRequest:
+      type: object
+      properties:
+        orderDate:
+          type: string
+          format: date
+          description: 発注日
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/BulkCreatePurchaseOrderGroup"
+      required:
+        - orderDate
+        - groups
+
+    BulkCreatePurchaseOrderGroup:
+      type: object
+      properties:
+        vendorId:
+          type: integer
+          description: 仕入先ID
+        budgetItemIds:
+          type: array
+          items:
+            type: integer
+          description: 対象の実行予算明細IDリスト
+        deliveryDate:
+          type: string
+          format: date
+          nullable: true
+          description: 納期（任意）
+        notes:
+          type: string
+          nullable: true
+          description: 備考（任意）
+      required:
+        - vendorId
+        - budgetItemIds
+
+    BulkCreatePurchaseOrdersResponse:
+      type: object
+      properties:
+        createdPurchaseOrders:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              orderNo:
+                type: string
+              vendorId:
+                type: integer
+            required:
+              - id
+              - orderNo
+              - vendorId
+      required:
+        - createdPurchaseOrders
