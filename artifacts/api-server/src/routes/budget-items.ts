@@ -33,7 +33,10 @@ function serializeItem(item: typeof budgetItemsTable.$inferSelect) {
   };
 }
 
-async function generateOrderNumber(): Promise<string> {
+/** Generate `count` sequential order numbers (PO-YYYYMMDD-XXXX) in one DB read.
+ *  All numbers are derived from the same base value so they are guaranteed unique
+ *  within a single request even when multiple groups are processed. */
+async function generateOrderNumbers(count: number): Promise<string[]> {
   const today = new Date();
   const ymd =
     String(today.getFullYear()) +
@@ -46,8 +49,8 @@ async function generateOrderNumber(): Promise<string> {
     .filter((n) => n.startsWith(prefix))
     .map((n) => parseInt(n.replace(prefix, ""), 10))
     .filter((n) => !isNaN(n));
-  const next = todayNums.length > 0 ? Math.max(...todayNums) + 1 : 1;
-  return `${prefix}${String(next).padStart(4, "0")}`;
+  const base = todayNums.length > 0 ? Math.max(...todayNums) : 0;
+  return Array.from({ length: count }, (_, i) => `${prefix}${String(base + i + 1).padStart(4, "0")}`);
 }
 
 router.get("/", async (req, res) => {
@@ -247,11 +250,8 @@ router.post("/bulk-create-purchase-orders", async (req, res) => {
       }
     }
 
-    // Pre-generate order numbers outside the transaction (same pattern as purchase-orders route)
-    const orderNumbers: string[] = [];
-    for (let i = 0; i < typedGroups.length; i++) {
-      orderNumbers.push(await generateOrderNumber());
-    }
+    // Pre-generate all order numbers in one DB read to guarantee uniqueness within this request
+    const orderNumbers = await generateOrderNumbers(typedGroups.length);
 
     const result = await db.transaction(async (tx) => {
       // Re-fetch inside transaction with FOR UPDATE semantics to prevent concurrent modification

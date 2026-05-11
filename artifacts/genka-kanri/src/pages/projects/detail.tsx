@@ -165,7 +165,9 @@ function useVendors() {
     queryFn: async () => {
       const res = await fetch("/api/vendors");
       if (!res.ok) return [];
-      return res.json();
+      const json = await res.json();
+      // API returns { items: VendorItem[], total: number }
+      return Array.isArray(json) ? json : (json.items ?? []);
     },
     staleTime: 60_000,
   });
@@ -492,18 +494,18 @@ function BudgetTab({ projectId }: { projectId: number }) {
             <CardDescription className="text-xs mt-0.5">工種コード・仕入先・金額を入力してください</CardDescription>
           </div>
           <div className="flex items-center gap-2">
-            {selectedIds.size > 0 && (
-              <Button
-                size="sm"
-                variant="default"
-                className="gap-1.5 h-8 bg-emerald-600 hover:bg-emerald-700"
-                onClick={openBulkOrderModal}
-                disabled={computedVendorGroups.length === 0}
-              >
-                <ShoppingCart className="w-3.5 h-3.5" />
-                発注書を作成（{selectedIds.size}行選択中 / {computedVendorGroups.length}社）
-              </Button>
-            )}
+            <Button
+              size="sm"
+              variant="default"
+              className="gap-1.5 h-8 bg-emerald-600 hover:bg-emerald-700"
+              onClick={openBulkOrderModal}
+              disabled={selectedIds.size === 0 || computedVendorGroups.length === 0}
+            >
+              <ShoppingCart className="w-3.5 h-3.5" />
+              {selectedIds.size > 0
+                ? `発注書を作成（${selectedIds.size}行選択中 / ${computedVendorGroups.length}社）`
+                : "発注書を作成"}
+            </Button>
             <Button
               size="sm"
               variant="outline"
