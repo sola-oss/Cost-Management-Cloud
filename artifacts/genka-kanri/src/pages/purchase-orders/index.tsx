@@ -239,6 +239,20 @@ export default function PurchaseOrders() {
     }
   };
 
+  const handleStatusChange = async (id: number, status: string) => {
+    try {
+      await fetch(`${BASE}/api/purchase-orders/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      toast({ title: "ステータスを更新しました" });
+    } catch {
+      toast({ title: "更新失敗", variant: "destructive" });
+    }
+  };
+
   const handleDelete = async (e: React.MouseEvent, id: number, num: string) => {
     e.stopPropagation();
     if (!window.confirm(`発注書 ${num} を削除しますか？`)) return;
@@ -357,6 +371,24 @@ export default function PurchaseOrders() {
                     </TableCell>
                     <TableCell className="text-center">
                       <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {(order.status === "ordered" || order.status === "partial") && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleStatusChange(order.id, "completed"); }}
+                            className="px-2 py-1 rounded text-xs text-teal-700 border border-teal-300 hover:bg-teal-50"
+                            title="完納にする"
+                          >
+                            完納
+                          </button>
+                        )}
+                        {order.status === "draft" && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleStatusChange(order.id, "ordered"); }}
+                            className="px-2 py-1 rounded text-xs text-blue-700 border border-blue-300 hover:bg-blue-50"
+                            title="発注済にする"
+                          >
+                            発注
+                          </button>
+                        )}
                         <button
                           onClick={(e) => handleDelete(e, order.id, order.orderNumber)}
                           className="p-1.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-500"

@@ -69,7 +69,7 @@ function fmtMoney(n: number): string {
 function fmtDate(d: string | null): string {
   if (!d) return "";
   const [y, m, day] = d.split("-");
-  return `${y}/${m.padStart(2, "0")}/${day.padStart(2, "0")}`;
+  return `${y}年${parseInt(m)}月${parseInt(day)}日`;
 }
 
 export default function PurchaseOrderPrint({ id }: { id: number }) {
@@ -94,7 +94,10 @@ export default function PurchaseOrderPrint({ id }: { id: number }) {
   useEffect(() => {
     if (!loadingOrder && !loadingCompany && order) {
       document.title = `発注書_${order.orderNumber}`;
+      const timer = setTimeout(() => window.print(), 400);
+      return () => clearTimeout(timer);
     }
+    return undefined;
   }, [loadingOrder, loadingCompany, order]);
 
   if (loadingOrder || loadingCompany) {
