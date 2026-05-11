@@ -1,0 +1,186 @@
+# タスク：発注書・仕入伝票の API・UI 実装と既存 /purchases の伝票テーブル切替
+
+## 背景
+
+前回タスクで以下の DB テーブルが作成済み：
+- `purchase_orders` + `purchase_order_items`（発注ヘッダ + 明細）
+- `purchase_invoices` + `purchase_invoice_items`（仕入伝票ヘッダ + 明細）
+- `cost_items` に `source_type`, `source_id`, `vendor_id`, `work_type_id` カラム追加済み
+
+このタスクでは上記テーブルを使う API と UI を実装し、既存 `/purchases` 仕入入力画面を仕入伝票テーブル経由の保存に切り替える。さらに発注書 → 仕入伝票のリレー機能（発注書から取込ボタン）も実装する。
+
+## 完成後の動作
+
+1. **新規メニュー追加**: サイドバーに「発注書」を追加（仕入入力の上）
+2. **発注書一覧・新規・編集・削除**ができる
+3. **既存 /purchases**（仕入入力）が `purchase_invoices` + `purchase_invoice_items` に保存される
+4. **仕入入力画面で「発注書から取込」ボタン**を押すと、未完納の発注書一覧が出て、選んだ発注書の明細が仕入伝票の明細に自動コピーされる
+5. **仕入伝票登録時、`cost_items` への自動同期はまだ実装しない**（プロンプトCで実装）。当面 `cost_items` への直書きは廃止し、`purchase_invoices` のみに保存する
+6. **既存の22件の `cost_items` データ（`source_type='manual'`）はそのまま残す**
+
+## 制約
+
+- DB スキーマは変更しない（前回確定済み）
+- 既存 `cost_items` テーブル自体は壊さない（過去の手動入力データの参照画面として残す）
+- 既存の支払査定（`/payment-assessment`）は当面 `cost_items` を見続ける（プロンプトCで切替）
+- typecheck はエラーゼロを維持する
+
+## 実装手順
+
+### ステップ1：OpenAPI spec の更新
+
+`lib/api-spec/openapi.yaml`（または相当ファイル）に以下のエンドポイントを追加：
+
+**発注書系**:
+- `GET /api/purchase-orders` — 発注書一覧（projectIdフィルタ可）
+- `POST /api/purchase-orders` — 発注書作成（明細含む）
+- `GET /api/purchase-orders/:id` — 発注書詳細（明細含む）
+- `PATCH /api/purchase-orders/:id` — 発注書更新
+- `DELETE /api/purchase-orders/:id` — 発注書削除
+- `GET /api/purchase-orders/available-for-invoice` — 仕入伝票化できる発注書一覧（status='ordered' or 'partial'）
+
+**仕入伝票系**:
+- `GET /api/purchase-invoices` — 仕入伝票一覧（projectId, vendorId, dateRangeフィルタ可）
+- `POST /api/purchase-invoices` — 仕入伝票作成（明細含む。purchaseOrderId指定で発注からのリレーも可）
+- `GET /api/purchase-invoices/:id` — 仕入伝票詳細
+- `PATCH /api/purchase-invoices/:id` — 仕入伝票更新
+- `DELETE /api/purchase-invoices/:id` — 仕入伝票削除
+- `POST /api/purchase-invoices/from-order/:orderId` — 発注書から仕入伝票を生成（明細を自動コピー、未納品分のみ）
+
+スキーマ定義は Drizzle の `insertPurchaseOrderSchema` 等から導出する形で書く。伝票番号（voucherNumber）と発注番号（orderNumber）はサーバー側で自動採番するため、Insert スキーマからは omit する。
+
+### ステップ2：Orval codegen 再生成
+
+```bash
+pnpm --filter @workspace/api-spec run codegen
+```
+
+これで `lib/api-client-react/` の React Query フックと `lib/api-zod/` の Zod スキーマが再生成される。
+
+### ステップ3：API サーバー実装
+
+`artifacts/api-server/src/routes/` 配下に以下のファイルを新規作成：
+
+- `purchase-orders.ts` — 発注書 CRUD と available-for-invoice エンドポイント
+- `purchase-invoices.ts` — 仕入伝票 CRUD と from-order エンドポイント
+
+実装ポイント：
+- 伝票番号採番: `voucherNumber` は `ST-YYYYMMDD-NNNN` 形式。同日の最大連番+1で生成
+- 発注番号採番: `orderNumber` は `PO-YYYYMMDD-NNNN` 形式
+- 明細の保存: ヘッダ作成 → 明細を `Promise.all` で並列INSERT、または `db.transaction` で原子性保証（既存の請求書実装パターンに合わせる）
+- `from-order/:orderId` エンドポイント:
+  - 発注明細の `quantity - deliveredQuantity` を仕入伝票明細のデフォルト数量にする
+  - 仕入伝票確定後、対応する `purchase_order_items.deliveredQuantity` を増やす
+  - 全行で完納されたら、`purchase_orders.status` を `'completed'` に更新
+- 既存の請求書ルート（`invoices.ts`）の実装パターンを参考にする
+
+ルート登録: `artifacts/api-server/src/index.ts`（または `app.ts`）に新しいルーターを mount。
+
+### ステップ4：フロントエンド実装
+
+#### 4-1. サイドバーに「発注書」リンク追加
+
+`artifacts/genka-kanri/src/` 配下のサイドバーコンポーネント（既存メニュー定義箇所）に「発注書」を追加。配置は「日次業務」セクションの「仕入入力」の**上**。アイコンは適当なものを選択（`ClipboardList` など）。
+
+#### 4-2. 発注書ページ（新規）
+
+ルート: `/purchase-orders`
+
+実装：
+- 一覧画面: 発注番号、発注日、工事、仕入先、合計金額、ステータスを表示。フィルタ（工事・ステータス）。新規作成ボタン
+- 新規/編集モーダル または 詳細ページ: 既存 `/purchases` のレイアウトを参考に。基本情報（発注先、発注日、納期、工事）+ 明細グリッド（工種、品名、数量、単位、単価、金額、消費税率）+ 合計金額
+- 削除確認ダイアログ
+
+#### 4-3. /purchases 画面の改修
+
+既存の仕入入力画面を以下の方針で改修：
+- 保存先を `cost_items` から `purchase_invoices` + `purchase_invoice_items` に変更（`POST /api/purchase-invoices` を呼ぶ）
+- 明細行に「工種」プルダウン（既に画面上にあるが、現状保存されていない可能性大）を `purchase_invoice_items.workTypeId` に保存
+- 「**発注書から取込**」ボタンを基本情報セクションに追加
+  - クリックで「発注書選択モーダル」表示（`GET /api/purchase-orders/available-for-invoice` の結果）
+  - 工事プルダウンで絞り込みあり
+  - 選択すると `POST /api/purchase-invoices/from-order/:orderId` で生成 → 取得した明細をフォームに反映
+- 「仮伝票として保存する」チェックは `isProvisional` に保存
+- 「支払予定も作成する」チェックは現状の挙動を維持（payments テーブルへの直接書込）
+
+#### 4-4. 仕入伝票一覧画面（新規）
+
+ルート: `/purchase-invoices`
+
+サイドバー「仕入入力」の下に「仕入伝票一覧」を追加。
+実装：伝票番号、仕入日、工事、仕入先、合計金額、ステータス、仮伝票バッジを一覧表示。クリックで `/purchases?id={id}` のような既存仕入入力画面を編集モードで開く（または別途編集モーダル）。
+
+### ステップ5：原価明細タブの一時対応
+
+`/projects/:id` の原価明細タブは以下の仕様にする：
+- 当面は **`cost_items`（`source_type='manual'`）と `purchase_invoice_items`（cost_itemId が NULL のもの）の両方を UNION して表示**
+- 列に「ソース」を追加（`手動` or `仕入伝票`）
+- ソースが `仕入伝票` の行はクリックで該当伝票の編集画面に飛ばす（簡易ズーム機能）
+- カテゴリ別フィルタ（材料費・労務費・外注費・経費）は両ソースを通して動く
+
+これは API 側で UNION クエリのエンドポイント `GET /api/projects/:id/cost-detail-unified` を追加して対応する。
+
+### ステップ6：typecheck と動作確認
+
+```bash
+pnpm run typecheck
+pnpm --filter @workspace/db run push  # 不要なはずだが念のため
+```
+
+実行後、以下の動作確認を Replit プレビューで実施：
+1. サイドバーに「発注書」「仕入伝票一覧」が出る
+2. 発注書を1件作成できる
+3. 仕入入力画面で発注書から取込ができる
+4. 仕入伝票として保存できる
+5. 工事詳細の原価明細タブで両ソースが表示される
+
+### ステップ7：完了報告
+
+```
+## プロンプトB 完了報告
+
+### 追加・変更ファイル
+- [新規] artifacts/api-server/src/routes/purchase-orders.ts
+- [新規] artifacts/api-server/src/routes/purchase-invoices.ts
+- [新規] artifacts/genka-kanri/src/pages/purchase-orders.tsx
+- [新規] artifacts/genka-kanri/src/pages/purchase-invoices.tsx
+- [変更] artifacts/genka-kanri/src/pages/purchases.tsx
+- [変更] lib/api-spec/openapi.yaml
+- [変更] サイドバー（パスを記載）
+- [変更] 原価明細タブ（パスを記載）
+- [自動再生成] lib/api-client-react/、lib/api-zod/
+
+### codegen 結果
+（pnpm codegen の出力）
+
+### typecheck 結果
+（エラーゼロ確認）
+
+### 動作確認
+- 発注書 CRUD: ✅/❌
+- 仕入入力（仕入伝票への保存）: ✅/❌
+- 発注書から取込（リレー機能）: ✅/❌
+- 仕入伝票一覧: ✅/❌
+- 原価明細タブ（UNION表示）: ✅/❌
+
+### 既知の制限事項
+- 仕入伝票確定時の cost_items 自動同期はプロンプトCで実装予定
+- 支払査定の参照元変更はプロンプトCで実装予定
+```
+
+## 絶対にやってはいけないこと
+
+- DB スキーマファイル（`lib/db/src/schema/`）の変更
+- 既存 `cost_items` テーブルからのデータ削除
+- 既存 `/payment-assessment` の参照元変更（プロンプトCの担当）
+- 既存の支払管理（`/payments`）の改修
+- 既存の請求書機能の改修
+- 既存の22件の `cost_items` データの変更
+- `push-force` の使用
+
+## 注意点
+
+- Orval codegen は必ず実行する。OpenAPI spec を編集した直後にフロント実装を始めると型エラーになる
+- 既存の請求書実装（`invoices.ts` と `/invoices` ページ）は良いリファレンス。明細グリッド + ヘッダの構成が類似
+- トランザクション処理: ヘッダ作成失敗時に明細を作らないよう注意
+- 削除時の挙動: 仕入伝票を削除しても発注書の `deliveredQuantity` を戻す処理を忘れずに

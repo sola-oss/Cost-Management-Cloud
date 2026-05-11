@@ -21,6 +21,10 @@ tags:
     description: ダッシュボード・集計
   - name: invoices
     description: 請求管理
+  - name: purchase-orders
+    description: 発注書管理
+  - name: purchase-invoices
+    description: 仕入伝票管理
 
 paths:
   /healthz:

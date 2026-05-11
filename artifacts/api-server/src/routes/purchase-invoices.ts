@@ -1,0 +1,530 @@
+import { Router, type IRouter } from "express";
+import { eq, and, desc } from "drizzle-orm";
+import {
+  db,
+  purchaseInvoicesTable,
+  purchaseInvoiceItemsTable,
+  purchaseOrdersTable,
+  purchaseOrderItemsTable,
+  vendorsTable,
+  projectsTable,
+  paymentsTable,
+} from "@workspace/db";
+import type { PurchaseInvoiceStatus } from "@workspace/db";
+
+const router: IRouter = Router();
+
+function parseN(v: unknown): number {
+  return typeof v === "string" ? parseFloat(v) || 0 : ((v as number) ?? 0);
+}
+
+function formatInvoice(inv: typeof purchaseInvoicesTable.$inferSelect) {
+  return {
+    ...inv,
+    subtotal: parseN(inv.subtotal),
+    taxAmount: parseN(inv.taxAmount),
+    totalAmount: parseN(inv.totalAmount),
+  };
+}
+
+function formatItem(i: typeof purchaseInvoiceItemsTable.$inferSelect) {
+  return {
+    ...i,
+    quantity: parseN(i.quantity),
+    unitPrice: parseN(i.unitPrice),
+    amount: parseN(i.amount),
+    taxRate: parseN(i.taxRate),
+    purchaseOrderItemId: i.purchaseOrderItemId ?? null,
+    costItemId: i.costItemId ?? null,
+  };
+}
+
+async function generateVoucherNumber(): Promise<string> {
+  const today = new Date();
+  const ymd =
+    String(today.getFullYear()) +
+    String(today.getMonth() + 1).padStart(2, "0") +
+    String(today.getDate()).padStart(2, "0");
+  const prefix = `ST-${ymd}-`;
+  const all = await db
+    .select({ n: purchaseInvoicesTable.voucherNumber })
+    .from(purchaseInvoicesTable);
+  const todayNums = all
+    .map((r) => r.n)
+    .filter((n) => n.startsWith(prefix))
+    .map((n) => parseInt(n.replace(prefix, ""), 10))
+    .filter((n) => !isNaN(n));
+  const next = todayNums.length > 0 ? Math.max(...todayNums) + 1 : 1;
+  return `${prefix}${String(next).padStart(4, "0")}`;
+}
+
+interface InvoiceItemInput {
+  category: string;
+  description: string;
+  specification?: string;
+  quantity?: number;
+  unit?: string;
+  unitPrice?: number;
+  amount?: number;
+  taxRate?: number;
+  workTypeId?: number | null;
+  purchaseOrderItemId?: number | null;
+  lineNumber?: number;
+}
+
+// GET /api/purchase-invoices
+router.get("/", async (req, res) => {
+  try {
+    const { projectId, vendorId, status } = req.query as Record<string, string>;
+    const conditions: ReturnType<typeof eq>[] = [];
+    if (projectId) conditions.push(eq(purchaseInvoicesTable.projectId, parseInt(projectId)));
+    if (vendorId) conditions.push(eq(purchaseInvoicesTable.vendorId, parseInt(vendorId)));
+    if (status) conditions.push(eq(purchaseInvoicesTable.status, status as PurchaseInvoiceStatus));
+
+    const base = db
+      .select({
+        inv: purchaseInvoicesTable,
+        vendorName: vendorsTable.name,
+        projectCode: projectsTable.projectCode,
+        projectName: projectsTable.name,
+      })
+      .from(purchaseInvoicesTable)
+      .leftJoin(vendorsTable, eq(purchaseInvoicesTable.vendorId, vendorsTable.id))
+      .leftJoin(projectsTable, eq(purchaseInvoicesTable.projectId, projectsTable.id));
+
+    const rows = await (conditions.length > 0 ? base.where(and(...conditions)) : base).orderBy(
+      desc(purchaseInvoicesTable.purchaseDate)
+    );
+
+    res.json({
+      items: rows.map((r) => ({
+        ...formatInvoice(r.inv),
+        vendorName: r.vendorName ?? "",
+        projectCode: r.projectCode ?? "",
+        projectName: r.projectName ?? "",
+      })),
+      total: rows.length,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Failed to list purchase invoices");
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// GET /api/purchase-invoices/:id
+router.get("/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [row] = await db
+      .select({
+        inv: purchaseInvoicesTable,
+        vendorName: vendorsTable.name,
+        projectCode: projectsTable.projectCode,
+        projectName: projectsTable.name,
+      })
+      .from(purchaseInvoicesTable)
+      .leftJoin(vendorsTable, eq(purchaseInvoicesTable.vendorId, vendorsTable.id))
+      .leftJoin(projectsTable, eq(purchaseInvoicesTable.projectId, projectsTable.id))
+      .where(eq(purchaseInvoicesTable.id, id));
+
+    if (!row) return res.status(404).json({ message: "仕入伝票が見つかりません" });
+
+    const items = await db
+      .select()
+      .from(purchaseInvoiceItemsTable)
+      .where(eq(purchaseInvoiceItemsTable.purchaseInvoiceId, id))
+      .orderBy(purchaseInvoiceItemsTable.lineNumber);
+
+    return res.json({
+      ...formatInvoice(row.inv),
+      vendorName: row.vendorName ?? "",
+      projectCode: row.projectCode ?? "",
+      projectName: row.projectName ?? "",
+      items: items.map(formatItem),
+    });
+  } catch (err) {
+    req.log.error({ err }, "Failed to get purchase invoice");
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// POST /api/purchase-invoices
+router.post("/", async (req, res) => {
+  try {
+    const {
+      projectId, vendorId, purchaseDate, purchaseOrderId,
+      paymentDueDate, status, taxCalculationMethod, isProvisional,
+      invoiceRegistrationNumber, isTaxableInvoice,
+      subtotal, taxAmount, totalAmount, notes, items,
+      createPayment, paymentDescription,
+    } = req.body;
+
+    if (!projectId || !vendorId || !purchaseDate) {
+      return res.status(400).json({ message: "projectId, vendorId, purchaseDate は必須です" });
+    }
+
+    const voucherNumber = await generateVoucherNumber();
+    const itemRows: InvoiceItemInput[] = items ?? [];
+
+    const [inv] = await db
+      .insert(purchaseInvoicesTable)
+      .values({
+        voucherNumber,
+        projectId: parseInt(projectId),
+        vendorId: parseInt(vendorId),
+        purchaseOrderId: purchaseOrderId ? parseInt(purchaseOrderId) : null,
+        purchaseDate,
+        paymentDueDate: paymentDueDate ?? null,
+        status: (status ?? "confirmed") as PurchaseInvoiceStatus,
+        taxCalculationMethod: taxCalculationMethod ?? "detail_exclusive",
+        isProvisional: isProvisional ?? false,
+        invoiceRegistrationNumber: invoiceRegistrationNumber ?? null,
+        isTaxableInvoice: isTaxableInvoice ?? true,
+        subtotal: String(subtotal ?? 0),
+        taxAmount: String(taxAmount ?? 0),
+        totalAmount: String(totalAmount ?? 0),
+        notes: notes ?? null,
+      })
+      .returning();
+
+    let insertedItems: typeof purchaseInvoiceItemsTable.$inferSelect[] = [];
+    if (itemRows.length > 0) {
+      insertedItems = await db
+        .insert(purchaseInvoiceItemsTable)
+        .values(
+          itemRows.map((item, idx) => ({
+            purchaseInvoiceId: inv.id,
+            purchaseOrderItemId: item.purchaseOrderItemId ?? null,
+            lineNumber: item.lineNumber ?? idx + 1,
+            category: item.category as "material" | "labor" | "subcontract" | "expense",
+            description: item.description,
+            specification: item.specification ?? null,
+            quantity: String(item.quantity ?? 1),
+            unit: item.unit ?? "",
+            unitPrice: String(item.unitPrice ?? 0),
+            amount: String(item.amount ?? 0),
+            taxRate: String(item.taxRate ?? 10),
+            workTypeId: item.workTypeId ?? null,
+          }))
+        )
+        .returning();
+    }
+
+    // If linked to a purchase order, update deliveredQuantity
+    if (purchaseOrderId) {
+      await syncDeliveredQuantity(parseInt(purchaseOrderId));
+    }
+
+    // Optionally create a payment record
+    if (createPayment) {
+      const [vendor] = await db
+        .select({ name: vendorsTable.name })
+        .from(vendorsTable)
+        .where(eq(vendorsTable.id, parseInt(vendorId)));
+      await db.insert(paymentsTable).values({
+        projectId: parseInt(projectId),
+        vendor: vendor?.name ?? "（仕入先）",
+        description: paymentDescription ?? `仕入伝票 ${voucherNumber}`,
+        amount: String(totalAmount ?? 0),
+        dueDate: paymentDueDate ?? null,
+        invoiceNumber: voucherNumber,
+        source: "manual",
+      });
+    }
+
+    return res.status(201).json({
+      ...formatInvoice(inv),
+      voucherNumber,
+      items: insertedItems.map(formatItem),
+    });
+  } catch (err) {
+    req.log.error({ err }, "Failed to create purchase invoice");
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// POST /api/purchase-invoices/from-order/:orderId
+router.post("/from-order/:orderId", async (req, res) => {
+  try {
+    const orderId = parseInt(req.params.orderId);
+    const { paymentDueDate, isProvisional, notes, createPayment } = req.body;
+
+    const [order] = await db
+      .select()
+      .from(purchaseOrdersTable)
+      .where(eq(purchaseOrdersTable.id, orderId));
+    if (!order) return res.status(404).json({ message: "発注書が見つかりません" });
+
+    const orderItems = await db
+      .select()
+      .from(purchaseOrderItemsTable)
+      .where(eq(purchaseOrderItemsTable.purchaseOrderId, orderId))
+      .orderBy(purchaseOrderItemsTable.lineNumber);
+
+    const voucherNumber = await generateVoucherNumber();
+
+    // Calculate remaining quantities
+    const itemRows = orderItems
+      .map((oi) => {
+        const remaining = parseN(oi.quantity) - parseN(oi.deliveredQuantity);
+        if (remaining <= 0) return null;
+        const amount = Math.floor(remaining * parseN(oi.unitPrice));
+        return {
+          purchaseOrderItemId: oi.id,
+          lineNumber: oi.lineNumber,
+          category: oi.category as "material" | "labor" | "subcontract" | "expense",
+          description: oi.description,
+          specification: oi.specification ?? null,
+          quantity: String(remaining),
+          unit: oi.unit,
+          unitPrice: oi.unitPrice,
+          amount: String(amount),
+          taxRate: oi.taxRate,
+          workTypeId: oi.workTypeId ?? null,
+        };
+      })
+      .filter(Boolean) as NonNullable<(typeof orderItems[0] & { purchaseOrderItemId: number; quantity: string; amount: string })>[];
+
+    if (itemRows.length === 0) {
+      return res.status(400).json({ message: "未納品の明細がありません" });
+    }
+
+    const subtotal = itemRows.reduce((s, i) => s + parseN(i.amount), 0);
+    const taxAmt = itemRows.reduce(
+      (s, i) => s + Math.floor(parseN(i.amount) * parseN(i.taxRate) / 100),
+      0
+    );
+    const totalAmt = subtotal + taxAmt;
+
+    const [inv] = await db
+      .insert(purchaseInvoicesTable)
+      .values({
+        voucherNumber,
+        projectId: order.projectId,
+        vendorId: order.vendorId,
+        purchaseOrderId: orderId,
+        purchaseDate: new Date().toISOString().split("T")[0],
+        paymentDueDate: paymentDueDate ?? null,
+        status: "confirmed" as PurchaseInvoiceStatus,
+        taxCalculationMethod: "detail_exclusive",
+        isProvisional: isProvisional ?? false,
+        isTaxableInvoice: true,
+        subtotal: String(subtotal),
+        taxAmount: String(taxAmt),
+        totalAmount: String(totalAmt),
+        notes: notes ?? null,
+      })
+      .returning();
+
+    const insertedItems = await db
+      .insert(purchaseInvoiceItemsTable)
+      .values(
+        itemRows.map((item) => ({
+          purchaseInvoiceId: inv.id,
+          purchaseOrderItemId: item.purchaseOrderItemId,
+          lineNumber: item.lineNumber,
+          category: item.category,
+          description: item.description,
+          specification: item.specification,
+          quantity: item.quantity,
+          unit: item.unit,
+          unitPrice: item.unitPrice,
+          amount: item.amount,
+          taxRate: item.taxRate,
+          workTypeId: item.workTypeId,
+        }))
+      )
+      .returning();
+
+    // Update deliveredQuantity on order items
+    await syncDeliveredQuantity(orderId);
+
+    // Optionally create a payment record
+    if (createPayment) {
+      const [vendor] = await db
+        .select({ name: vendorsTable.name })
+        .from(vendorsTable)
+        .where(eq(vendorsTable.id, order.vendorId));
+      await db.insert(paymentsTable).values({
+        projectId: order.projectId,
+        vendor: vendor?.name ?? "（仕入先）",
+        description: `仕入伝票 ${voucherNumber}`,
+        amount: String(totalAmt),
+        dueDate: paymentDueDate ?? null,
+        invoiceNumber: voucherNumber,
+        source: "manual",
+      });
+    }
+
+    return res.status(201).json({
+      ...formatInvoice(inv),
+      items: insertedItems.map(formatItem),
+    });
+  } catch (err) {
+    req.log.error({ err }, "Failed to create purchase invoice from order");
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// PATCH /api/purchase-invoices/:id
+router.patch("/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const {
+      purchaseDate, paymentDueDate, status, isProvisional, notes,
+      subtotal, taxAmount, totalAmount, items,
+    } = req.body;
+
+    const [existing] = await db
+      .select()
+      .from(purchaseInvoicesTable)
+      .where(eq(purchaseInvoicesTable.id, id));
+    if (!existing) return res.status(404).json({ message: "仕入伝票が見つかりません" });
+
+    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    if (purchaseDate !== undefined) updates.purchaseDate = purchaseDate;
+    if (paymentDueDate !== undefined) updates.paymentDueDate = paymentDueDate ?? null;
+    if (status !== undefined) updates.status = status;
+    if (isProvisional !== undefined) updates.isProvisional = isProvisional;
+    if (notes !== undefined) updates.notes = notes ?? null;
+    if (subtotal !== undefined) updates.subtotal = String(subtotal);
+    if (taxAmount !== undefined) updates.taxAmount = String(taxAmount);
+    if (totalAmount !== undefined) updates.totalAmount = String(totalAmount);
+
+    if (items !== undefined) {
+      const itemRows: InvoiceItemInput[] = items;
+      await db
+        .delete(purchaseInvoiceItemsTable)
+        .where(eq(purchaseInvoiceItemsTable.purchaseInvoiceId, id));
+      if (itemRows.length > 0) {
+        await db.insert(purchaseInvoiceItemsTable).values(
+          itemRows.map((item, idx) => ({
+            purchaseInvoiceId: id,
+            purchaseOrderItemId: item.purchaseOrderItemId ?? null,
+            lineNumber: item.lineNumber ?? idx + 1,
+            category: item.category as "material" | "labor" | "subcontract" | "expense",
+            description: item.description,
+            specification: item.specification ?? null,
+            quantity: String(item.quantity ?? 1),
+            unit: item.unit ?? "",
+            unitPrice: String(item.unitPrice ?? 0),
+            amount: String(item.amount ?? 0),
+            taxRate: String(item.taxRate ?? 10),
+            workTypeId: item.workTypeId ?? null,
+          }))
+        );
+      }
+      if (existing.purchaseOrderId) {
+        await syncDeliveredQuantity(existing.purchaseOrderId);
+      }
+    }
+
+    const [updated] = await db
+      .update(purchaseInvoicesTable)
+      .set(updates)
+      .where(eq(purchaseInvoicesTable.id, id))
+      .returning();
+
+    const newItems = await db
+      .select()
+      .from(purchaseInvoiceItemsTable)
+      .where(eq(purchaseInvoiceItemsTable.purchaseInvoiceId, id))
+      .orderBy(purchaseInvoiceItemsTable.lineNumber);
+
+    return res.json({
+      ...formatInvoice(updated),
+      items: newItems.map(formatItem),
+    });
+  } catch (err) {
+    req.log.error({ err }, "Failed to update purchase invoice");
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// DELETE /api/purchase-invoices/:id
+router.delete("/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [existing] = await db
+      .select()
+      .from(purchaseInvoicesTable)
+      .where(eq(purchaseInvoicesTable.id, id));
+    if (!existing) return res.status(404).json({ message: "仕入伝票が見つかりません" });
+
+    const orderId = existing.purchaseOrderId;
+    await db.delete(purchaseInvoicesTable).where(eq(purchaseInvoicesTable.id, id));
+
+    // Recalculate delivered quantities on the linked PO
+    if (orderId) {
+      await syncDeliveredQuantity(orderId);
+    }
+
+    return res.status(204).send();
+  } catch (err) {
+    req.log.error({ err }, "Failed to delete purchase invoice");
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ─── Helper: sync deliveredQuantity on PO items ───────────────────────────────
+async function syncDeliveredQuantity(purchaseOrderId: number) {
+  const orderItems = await db
+    .select()
+    .from(purchaseOrderItemsTable)
+    .where(eq(purchaseOrderItemsTable.purchaseOrderId, purchaseOrderId));
+
+  for (const oi of orderItems) {
+    // Sum all invoice quantities linked to this order item
+    const invoiceItems = await db
+      .select({ quantity: purchaseInvoiceItemsTable.quantity })
+      .from(purchaseInvoiceItemsTable)
+      .innerJoin(
+        purchaseInvoicesTable,
+        eq(purchaseInvoiceItemsTable.purchaseInvoiceId, purchaseInvoicesTable.id)
+      )
+      .where(
+        and(
+          eq(purchaseInvoiceItemsTable.purchaseOrderItemId, oi.id),
+          eq(purchaseInvoicesTable.purchaseOrderId, purchaseOrderId)
+        )
+      );
+
+    const delivered = invoiceItems.reduce((s, i) => s + parseN(i.quantity), 0);
+    await db
+      .update(purchaseOrderItemsTable)
+      .set({ deliveredQuantity: String(delivered), updatedAt: new Date() })
+      .where(eq(purchaseOrderItemsTable.id, oi.id));
+  }
+
+  // Update order status
+  const updatedItems = await db
+    .select()
+    .from(purchaseOrderItemsTable)
+    .where(eq(purchaseOrderItemsTable.purchaseOrderId, purchaseOrderId));
+
+  const allDelivered = updatedItems.every(
+    (i) => parseN(i.deliveredQuantity) >= parseN(i.quantity)
+  );
+  const anyDelivered = updatedItems.some((i) => parseN(i.deliveredQuantity) > 0);
+
+  const [order] = await db
+    .select({ status: purchaseOrdersTable.status })
+    .from(purchaseOrdersTable)
+    .where(eq(purchaseOrdersTable.id, purchaseOrderId));
+
+  if (order && order.status !== "cancelled" && order.status !== "draft") {
+    const newStatus: PurchaseInvoiceStatus = allDelivered
+      ? "confirmed"
+      : anyDelivered
+      ? "provisional"
+      : "confirmed";
+    // Map to PurchaseOrderStatus
+    const orderStatus = allDelivered ? "completed" : anyDelivered ? "partial" : "ordered";
+    await db
+      .update(purchaseOrdersTable)
+      .set({ status: orderStatus, updatedAt: new Date() })
+      .where(eq(purchaseOrdersTable.id, purchaseOrderId));
+  }
+}
+
+export default router;

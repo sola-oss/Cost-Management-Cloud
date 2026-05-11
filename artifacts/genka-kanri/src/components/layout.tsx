@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, CreditCard, Calculator, Users, Layers, FileText, Wrench, Settings, Receipt } from "lucide-react";
+import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, CreditCard, Calculator, Users, Layers, FileText, Wrench, Settings, Receipt, ClipboardList } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarProvider, SidebarRail, SidebarTrigger, SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from "./ui/sidebar";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
@@ -12,7 +12,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   const operationNav = [
     { title: "見積書", icon: FileText, url: "/estimates" },
+    { title: "発注書", icon: ClipboardList, url: "/purchase-orders" },
     { title: "仕入入力", icon: ShoppingCart, url: "/purchases" },
+    { title: "仕入伝票", icon: FileText, url: "/purchase-invoices" },
     { title: "支払査定", icon: Calculator, url: "/payment-assessment" },
     { title: "支払管理", icon: CreditCard, url: "/payments" },
     { title: "請求管理", icon: Receipt, url: "/invoices" },

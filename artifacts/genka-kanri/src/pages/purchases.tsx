@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { Link } from "wouter";
-import { useListProjects, useCreateCostItem, getListProjectsQueryKey } from "@workspace/api-client-react";
+import { useListProjects, getListProjectsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,8 +9,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, Save, FileText, ExternalLink } from "lucide-react";
+import { Plus, Trash2, Save, FileText, ExternalLink, ClipboardList } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface WorkTypeItem {
@@ -34,14 +36,30 @@ function useWorkTypes() {
 // ── 定数 ─────────────────────────────────────────────────────────────────────
 const TODAY = new Date().toISOString().split("T")[0];
 
-function generateSlipNumber(): string {
-  const d = new Date();
-  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
-  const key = `slip_seq_${ymd}`;
-  const current = parseInt(localStorage.getItem(key) ?? "0", 10);
-  const next = current + 1;
-  localStorage.setItem(key, String(next));
-  return `ST-${ymd}-${String(next).padStart(4, "0")}`;
+interface AvailablePurchaseOrder {
+  id: number;
+  orderNumber: string;
+  projectId: number;
+  vendorId: number;
+  orderDate: string;
+  status: string;
+  totalAmount: number;
+  vendorName: string;
+  projectCode: string;
+  projectName: string;
+  items: Array<{
+    id: number;
+    lineNumber: number;
+    category: string;
+    description: string;
+    specification: string | null;
+    quantity: number;
+    unit: string;
+    unitPrice: number;
+    amount: number;
+    taxRate: number;
+    deliveredQuantity: number;
+  }>;
 }
 
 const CATEGORY_OPTIONS = [
@@ -125,11 +143,22 @@ export default function Purchases() {
   const vendors = vendorsData?.items ?? [];
   const { data: workTypesData } = useWorkTypes();
   const workTypes = workTypesData ?? [];
-  const createCostItem = useCreateCostItem();
   const [saving, setSaving] = useState(false);
 
+  // ── 発注書取込モーダル状態 ──────────────────────────────────────────────
+  const [importPOOpen, setImportPOOpen] = useState(false);
+  const [importingPO, setImportingPO] = useState(false);
+  const { data: availablePOs } = useQuery({
+    queryKey: ["/api/purchase-orders/available-for-invoice", importPOOpen],
+    queryFn: async () => {
+      const res = await fetch("/api/purchase-orders/available-for-invoice");
+      if (!res.ok) throw new Error("Failed");
+      return res.json() as Promise<{ items: AvailablePurchaseOrder[] }>;
+    },
+    enabled: importPOOpen,
+  });
+
   // ── ヘッダー状態 ─────────────────────────────────────────────────────────
-  const [slipNumber]      = useState(() => generateSlipNumber());
   const [purchaseDate,    setPurchaseDate]    = useState(TODAY);
   const [vendorId,        setVendorId]        = useState<string>("");
   const [paymentDueDate,  setPaymentDueDate]  = useState("");
@@ -206,67 +235,93 @@ export default function Purchases() {
     const categoryMap: Record<string, "material" | "labor" | "subcontract" | "expense"> = {
       "610": "material", "620": "subcontract", "630": "labor", "640": "expense",
     };
+    const taxCalcMethodMap: Record<string, string> = {
+      "外税明細単位": "detail_exclusive",
+      "外税伝票単位": "total_exclusive",
+      "内税": "detail_inclusive",
+      "非課税": "detail_exclusive",
+    };
 
-    const selectedVendor = vendorId && vendorId !== "none" ? vendors.find(v => String(v.id) === vendorId) : undefined;
-    const vendorName = selectedVendor?.name ?? "";
+    const parsedVendorId = vendorId && vendorId !== "none" ? parseInt(vendorId) : undefined;
 
     setSaving(true);
     try {
-      await Promise.all(
-        validRows.map(row =>
-          createCostItem.mutateAsync({
-            data: {
-              projectId: parseInt(selectedProject),
-              category: categoryMap[row.categoryCode] ?? "expense",
-              incurredDate: purchaseDate,
-              description: [row.productName, row.spec].filter(Boolean).join(" ") || "（摘要なし）",
-              vendor: vendorName || undefined,
-              quantity: row.quantity ? parseFloat(row.quantity) : undefined,
-              unit: row.unit || undefined,
-              unitPrice: row.unitPrice ? parseFloat(row.unitPrice) : undefined,
-              amount: row.amount,
-              invoiceNumber: slipNumber || undefined,
-            },
-          })
-        )
-      );
+      const res = await fetch("/api/purchase-invoices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: parseInt(selectedProject),
+          vendorId: parsedVendorId,
+          purchaseDate,
+          paymentDueDate: paymentDueDate || null,
+          isProvisional: isDraft,
+          taxCalculationMethod: taxCalcMethodMap[taxCalcType] ?? "detail_exclusive",
+          subtotal: totalAmount,
+          taxAmount: totalTax,
+          totalAmount: totalGross,
+          notes: memo || null,
+          createPayment,
+          items: validRows.map((row, idx) => ({
+            lineNumber: idx + 1,
+            category: categoryMap[row.categoryCode] ?? "expense",
+            description: [row.productName, row.spec].filter(Boolean).join(" ") || "（摘要なし）",
+            quantity: parseFloat(row.quantity) || 1,
+            unit: row.unit || "式",
+            unitPrice: parseFloat(row.unitPrice) || 0,
+            amount: row.amount,
+            taxRate: row.taxRate,
+            workTypeId: row.workTypeCode && row.workTypeCode !== "__none__"
+              ? (workTypes.find(wt => wt.code === row.workTypeCode)?.id ?? null)
+              : null,
+          })),
+        }),
+      });
 
-      let paymentCreated = false;
+      if (!res.ok) throw new Error("Failed to create purchase invoice");
+      const invoice = await res.json() as { voucherNumber: string };
+
       if (createPayment) {
-        const res = await fetch("/api/payments", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            projectId: parseInt(selectedProject),
-            vendor: vendorName || "（仕入先未入力）",
-            description: `仕入伝票 ${slipNumber}`,
-            amount: totalGross,
-            dueDate: paymentDueDate || undefined,
-            invoiceNumber: slipNumber,
-          }),
-        });
-        if (res.ok) {
-          paymentCreated = true;
-          queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
-        } else {
-          toast({
-            title: "支払予定の登録に失敗しました",
-            description: "仕入明細は登録済みです。支払管理画面から手動で追加してください。",
-            variant: "destructive",
-          });
-        }
+        queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
       }
 
-      const desc = paymentCreated
-        ? `${validRows.length}件の仕入明細を登録しました。支払予定も登録しました。`
-        : `${validRows.length}件の仕入明細を登録しました。`;
-      toast({ title: "登録完了", description: desc });
+      toast({
+        title: "登録完了",
+        description: `仕入伝票 ${invoice.voucherNumber} を登録しました。${createPayment ? "支払予定も作成しました。" : ""}`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/cost-items"] });
       newSlip();
     } catch {
       toast({ title: "登録エラー", description: "登録に失敗しました。内容を確認してください。", variant: "destructive" });
     } finally {
       setSaving(false);
+    }
+  };
+
+  // ── 発注書取込 ──────────────────────────────────────────────────────────
+  const handleImportFromPO = async (po: AvailablePurchaseOrder) => {
+    if (!window.confirm(`発注書 ${po.orderNumber} から仕入伝票を作成しますか？`)) return;
+    setImportingPO(true);
+    try {
+      const res = await fetch(`/api/purchase-invoices/from-order/${po.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          paymentDueDate: paymentDueDate || null,
+          createPayment,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      const invoice = await res.json() as { voucherNumber: string };
+      toast({ title: "取込完了", description: `仕入伝票 ${invoice.voucherNumber} を作成しました。` });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      if (createPayment) queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
+      setImportPOOpen(false);
+    } catch {
+      toast({ title: "取込エラー", description: "取込に失敗しました。", variant: "destructive" });
+    } finally {
+      setImportingPO(false);
     }
   };
 
@@ -290,6 +345,15 @@ export default function Purchases() {
           )}
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setImportPOOpen(true)}
+            className="text-teal-700 border-teal-300 hover:bg-teal-50"
+          >
+            <ClipboardList className="w-3.5 h-3.5 mr-1" />
+            発注書から取込
+          </Button>
           <Button variant="outline" size="sm" onClick={newSlip}>
             新規
           </Button>
@@ -323,11 +387,11 @@ export default function Purchases() {
                 <Label className="text-xs text-slate-600">伝票番号</Label>
                 <div className="flex items-center gap-2">
                   <Input
-                    value={slipNumber}
+                    value="（自動採番）"
                     readOnly
-                    className="text-sm font-mono bg-slate-50 text-slate-600 cursor-default"
+                    className="text-sm font-mono bg-slate-50 text-slate-400 cursor-default"
                   />
-                  <span className="text-[10px] text-slate-400 whitespace-nowrap">自動採番</span>
+                  <span className="text-[10px] text-slate-400 whitespace-nowrap">登録時に採番</span>
                 </div>
               </div>
 
@@ -705,6 +769,67 @@ export default function Purchases() {
           )}
         </Button>
       </div>
+
+      {/* ── 発注書取込モーダル ── */}
+      <Dialog open={importPOOpen} onOpenChange={setImportPOOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ClipboardList className="w-4 h-4" />
+              発注書から仕入伝票を作成
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-500 mb-3">
+            発注済・一部納品の発注書から仕入伝票を作成します。未納品数量が自動的に取り込まれます。
+          </p>
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-slate-50 text-xs">
+                <TableHead className="font-medium">発注番号</TableHead>
+                <TableHead className="font-medium">工事</TableHead>
+                <TableHead className="font-medium">仕入先</TableHead>
+                <TableHead className="font-medium">発注日</TableHead>
+                <TableHead className="font-medium text-right">合計</TableHead>
+                <TableHead className="font-medium text-center w-20">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {!availablePOs || availablePOs.items.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-6 text-slate-400 text-sm">
+                    取込可能な発注書がありません（発注済または一部納品のものが対象です）
+                  </TableCell>
+                </TableRow>
+              ) : (
+                availablePOs.items.map((po) => (
+                  <TableRow key={po.id} className="hover:bg-slate-50/60">
+                    <TableCell className="font-mono text-sm text-teal-700 font-medium">{po.orderNumber}</TableCell>
+                    <TableCell className="text-sm">
+                      <div>{po.projectCode}</div>
+                      <div className="text-xs text-slate-500">{po.projectName}</div>
+                    </TableCell>
+                    <TableCell className="text-sm">{po.vendorName}</TableCell>
+                    <TableCell className="text-sm text-slate-600">{po.orderDate}</TableCell>
+                    <TableCell className="text-right font-medium text-sm">
+                      ¥{po.totalAmount.toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Button
+                        size="sm"
+                        className="h-7 px-3 text-xs bg-teal-600 hover:bg-teal-700 text-white"
+                        onClick={() => handleImportFromPO(po)}
+                        disabled={importingPO}
+                      >
+                        取込
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

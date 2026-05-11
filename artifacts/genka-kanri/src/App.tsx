@@ -31,6 +31,8 @@ import InvoiceDetail from "@/pages/invoices/detail";
 import InvoicePrint from "@/pages/invoices/print";
 import ConstructionHistory from "@/pages/projects/history";
 import ProjectLedger from "@/pages/projects/ledger";
+import PurchaseOrders from "@/pages/purchase-orders";
+import PurchaseInvoices from "@/pages/purchase-invoices";
 
 const queryClient = new QueryClient();
 
@@ -86,6 +88,8 @@ function Router() {
         <Route path="/invoices" component={InvoiceList} />
         <Route path="/invoices/new" component={NewInvoice} />
         <Route path="/invoices/:id" component={InvoiceDetail} />
+        <Route path="/purchase-orders" component={PurchaseOrders} />
+        <Route path="/purchase-invoices" component={PurchaseInvoices} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>
