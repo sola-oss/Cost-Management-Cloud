@@ -31,7 +31,9 @@ import InvoiceDetail from "@/pages/invoices/detail";
 import InvoicePrint from "@/pages/invoices/print";
 import ConstructionHistory from "@/pages/projects/history";
 import ProjectLedger from "@/pages/projects/ledger";
-import PurchaseOrders from "@/pages/purchase-orders";
+import PurchaseOrders from "@/pages/purchase-orders/index";
+import PurchaseOrderDetail from "@/pages/purchase-orders/detail";
+import PurchaseOrderPrint from "@/pages/purchase-orders/print";
 import PurchaseInvoices from "@/pages/purchase-invoices";
 
 const queryClient = new QueryClient();
@@ -39,6 +41,7 @@ const queryClient = new QueryClient();
 function Router() {
   const [isEstimatePrint] = useRoute("/estimates/:id/print");
   const [isInvoicePrint] = useRoute("/invoices/:id/print");
+  const [isPurchaseOrderPrint] = useRoute("/purchase-orders/:id/print");
 
   if (isEstimatePrint) {
     return (
@@ -55,6 +58,16 @@ function Router() {
       <Switch>
         <Route path="/invoices/:id/print">
           {(params) => <InvoicePrint id={parseInt(params.id)} />}
+        </Route>
+      </Switch>
+    );
+  }
+
+  if (isPurchaseOrderPrint) {
+    return (
+      <Switch>
+        <Route path="/purchase-orders/:id/print">
+          {(params) => <PurchaseOrderPrint id={parseInt(params.id)} />}
         </Route>
       </Switch>
     );
@@ -89,6 +102,9 @@ function Router() {
         <Route path="/invoices/new" component={NewInvoice} />
         <Route path="/invoices/:id" component={InvoiceDetail} />
         <Route path="/purchase-orders" component={PurchaseOrders} />
+        <Route path="/purchase-orders/:id">
+          {(params) => <PurchaseOrderDetail id={parseInt(params.id)} />}
+        </Route>
         <Route path="/purchase-invoices" component={PurchaseInvoices} />
         <Route component={NotFound} />
       </Switch>

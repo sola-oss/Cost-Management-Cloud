@@ -1,19 +1,20 @@
 import { useState, useCallback } from "react";
+import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useListProjects, getListProjectsQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { ClipboardList, Plus, Trash2, Save, FileText } from "lucide-react";
+import { ClipboardList, Plus, Trash2, Save, FileText, ChevronRight } from "lucide-react";
 
-// ── 型定義 ──────────────────────────────────────────────────────────────────
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
 interface PurchaseOrderItem {
   id: number;
   lineNumber: number;
@@ -52,7 +53,6 @@ interface VendorItem {
   name: string;
 }
 
-// ── 定数 ────────────────────────────────────────────────────────────────────
 const STATUS_LABELS: Record<string, string> = {
   draft: "下書き",
   ordered: "発注済",
@@ -76,15 +76,10 @@ const CATEGORY_OPTIONS = [
   { code: "640", name: "経費",   value: "expense" },
 ];
 
-const CATEGORY_MAP: Record<string, string> = {
-  material: "材料費", labor: "労務費", subcontract: "外注費", expense: "経費",
-};
-
 function fmt(n: number): string {
   return n.toLocaleString("ja-JP", { style: "currency", currency: "JPY" });
 }
 
-// ── hooks ───────────────────────────────────────────────────────────────────
 function usePurchaseOrders(projectId: string, status: string) {
   const params = new URLSearchParams();
   const pId = projectId !== "__all__" ? projectId : "";
@@ -94,7 +89,7 @@ function usePurchaseOrders(projectId: string, status: string) {
   return useQuery({
     queryKey: ["/api/purchase-orders", projectId, status],
     queryFn: async () => {
-      const res = await fetch(`/api/purchase-orders?${params.toString()}`);
+      const res = await fetch(`${BASE}/api/purchase-orders?${params.toString()}`);
       if (!res.ok) throw new Error("Failed");
       return res.json() as Promise<{ items: PurchaseOrder[]; total: number }>;
     },
@@ -105,14 +100,13 @@ function useVendors() {
   return useQuery({
     queryKey: ["/api/vendors"],
     queryFn: async () => {
-      const res = await fetch("/api/vendors");
+      const res = await fetch(`${BASE}/api/vendors`);
       if (!res.ok) throw new Error("Failed");
       return res.json() as Promise<{ items: VendorItem[] }>;
     },
   });
 }
 
-// ── 明細行型 ────────────────────────────────────────────────────────────────
 interface ItemRow {
   id: string;
   categoryValue: string;
@@ -145,7 +139,6 @@ function recalcItem(row: ItemRow): ItemRow {
   return { ...row, amount: Math.floor(q * u) };
 }
 
-// ── メインコンポーネント ──────────────────────────────────────────────────────
 export default function PurchaseOrders() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -164,7 +157,6 @@ export default function PurchaseOrders() {
   const { data: ordersData, isLoading } = usePurchaseOrders(filterProject, filterStatus);
   const orders = ordersData?.items ?? [];
 
-  // ── 新規発注書フォーム状態 ─────────────────────────────────────────────
   const [formProjectId, setFormProjectId] = useState("");
   const [formVendorId, setFormVendorId] = useState("");
   const [formOrderDate, setFormOrderDate] = useState(new Date().toISOString().split("T")[0]);
@@ -211,7 +203,7 @@ export default function PurchaseOrders() {
     }
     setSaving(true);
     try {
-      const res = await fetch("/api/purchase-orders", {
+      const res = await fetch(`${BASE}/api/purchase-orders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -247,24 +239,11 @@ export default function PurchaseOrders() {
     }
   };
 
-  const handleStatusChange = async (id: number, status: string) => {
-    try {
-      await fetch(`/api/purchase-orders/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
-      toast({ title: "ステータス更新しました" });
-    } catch {
-      toast({ title: "更新失敗", variant: "destructive" });
-    }
-  };
-
-  const handleDelete = async (id: number, num: string) => {
+  const handleDelete = async (e: React.MouseEvent, id: number, num: string) => {
+    e.stopPropagation();
     if (!window.confirm(`発注書 ${num} を削除しますか？`)) return;
     try {
-      await fetch(`/api/purchase-orders/${id}`, { method: "DELETE" });
+      await fetch(`${BASE}/api/purchase-orders/${id}`, { method: "DELETE" });
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
       toast({ title: "削除しました" });
     } catch {
@@ -274,7 +253,6 @@ export default function PurchaseOrders() {
 
   return (
     <div className="p-4 max-w-7xl mx-auto space-y-4">
-      {/* ヘッダー */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <ClipboardList className="w-5 h-5 text-teal-700" />
@@ -293,7 +271,6 @@ export default function PurchaseOrders() {
         </Button>
       </div>
 
-      {/* フィルター */}
       <Card>
         <CardContent className="pt-4 pb-3">
           <div className="flex flex-wrap gap-3">
@@ -331,7 +308,6 @@ export default function PurchaseOrders() {
         </CardContent>
       </Card>
 
-      {/* 一覧テーブル */}
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -343,7 +319,7 @@ export default function PurchaseOrders() {
                 <TableHead className="font-medium">発注日</TableHead>
                 <TableHead className="font-medium">状態</TableHead>
                 <TableHead className="font-medium text-right">合計金額</TableHead>
-                <TableHead className="font-medium text-center w-28">操作</TableHead>
+                <TableHead className="font-medium text-center w-16"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -357,7 +333,11 @@ export default function PurchaseOrders() {
                 </TableRow>
               ) : (
                 orders.map((order) => (
-                  <TableRow key={order.id} className="hover:bg-slate-50/60">
+                  <TableRow
+                    key={order.id}
+                    className="hover:bg-slate-50/60 cursor-pointer group"
+                    onClick={() => { window.location.href = `${BASE}/purchase-orders/${order.id}`; }}
+                  >
                     <TableCell className="font-mono text-sm text-teal-700 font-medium">
                       {order.orderNumber}
                     </TableCell>
@@ -376,37 +356,19 @@ export default function PurchaseOrders() {
                       {fmt(order.totalAmount)}
                     </TableCell>
                     <TableCell className="text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        {(order.status === "ordered" || order.status === "partial") && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 px-2 text-xs text-teal-700 border-teal-300 hover:bg-teal-50"
-                            onClick={() => handleStatusChange(order.id, "completed")}
-                            title="完納にする"
-                          >
-                            完納
-                          </Button>
-                        )}
-                        {order.status === "draft" && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 px-2 text-xs text-blue-700 border-blue-300 hover:bg-blue-50"
-                            onClick={() => handleStatusChange(order.id, "ordered")}
-                            title="発注済にする"
-                          >
-                            発注
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 px-2 text-xs text-red-500 hover:bg-red-50"
-                          onClick={() => handleDelete(order.id, order.orderNumber)}
+                      <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => handleDelete(e, order.id, order.orderNumber)}
+                          className="p-1.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-500"
+                          title="削除"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
+                        </button>
+                        <Link href={`/purchase-orders/${order.id}`} onClick={(e) => e.stopPropagation()}>
+                          <button className="p-1.5 rounded hover:bg-teal-50 text-slate-400 hover:text-teal-600">
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        </Link>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -417,7 +379,6 @@ export default function PurchaseOrders() {
         </CardContent>
       </Card>
 
-      {/* 新規発注書モーダル */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -428,7 +389,6 @@ export default function PurchaseOrders() {
           </DialogHeader>
 
           <div className="space-y-4">
-            {/* 基本情報 */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
                 <Label className="text-xs text-slate-600">工事 <span className="text-red-500">*</span></Label>
@@ -484,7 +444,6 @@ export default function PurchaseOrders() {
               </div>
             </div>
 
-            {/* 明細 */}
             <div className="border rounded-lg overflow-hidden">
               <div className="bg-teal-700 px-4 py-2 flex items-center justify-between">
                 <span className="text-xs font-semibold text-white">明細</span>
