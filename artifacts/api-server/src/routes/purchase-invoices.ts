@@ -73,6 +73,15 @@ interface InvoiceItemInput {
   lineNumber?: number;
 }
 
+function calcInvoiceTotals(items: InvoiceItemInput[]): { subtotal: number; taxAmount: number; totalAmount: number } {
+  const subtotal = items.reduce((s, i) => s + (i.amount || 0), 0);
+  const taxAmount = items.reduce(
+    (s, i) => s + Math.floor((i.amount || 0) * (i.taxRate ?? 10) / 100),
+    0
+  );
+  return { subtotal, taxAmount, totalAmount: subtotal + taxAmount };
+}
+
 // ── cost_items 同期ヘルパー ──────────────────────────────────────────────────
 
 /** 仕入伝票の各明細行に対応する cost_items を作成し costItemId を更新する */
@@ -229,6 +238,7 @@ router.post("/", async (req, res) => {
 
     const voucherNumber = await generateVoucherNumber();
     const itemRows: InvoiceItemInput[] = items ?? [];
+    const { subtotal: calcedSubtotal, taxAmount: calcedTaxAmount, totalAmount: calcedTotalAmount } = calcInvoiceTotals(itemRows);
 
     const [inv] = await db
       .insert(purchaseInvoicesTable)
@@ -244,9 +254,9 @@ router.post("/", async (req, res) => {
         isProvisional: isProvisional ?? false,
         invoiceRegistrationNumber: invoiceRegistrationNumber ?? null,
         isTaxableInvoice: isTaxableInvoice ?? true,
-        subtotal: String(subtotal ?? 0),
-        taxAmount: String(taxAmount ?? 0),
-        totalAmount: String(totalAmount ?? 0),
+        subtotal: String(calcedSubtotal),
+        taxAmount: String(calcedTaxAmount),
+        totalAmount: String(calcedTotalAmount),
         notes: notes ?? null,
       })
       .returning();
@@ -465,12 +475,15 @@ router.patch("/:id", async (req, res) => {
     if (status !== undefined) updates.status = status;
     if (isProvisional !== undefined) updates.isProvisional = isProvisional;
     if (notes !== undefined) updates.notes = notes ?? null;
-    if (subtotal !== undefined) updates.subtotal = String(subtotal);
-    if (taxAmount !== undefined) updates.taxAmount = String(taxAmount);
-    if (totalAmount !== undefined) updates.totalAmount = String(totalAmount);
 
     if (items !== undefined) {
       const itemRows: InvoiceItemInput[] = items;
+
+      // 明細から合計を再計算（クライアント送信値は信用しない）
+      const { subtotal: calcedSubtotal, taxAmount: calcedTaxAmount, totalAmount: calcedTotalAmount } = calcInvoiceTotals(itemRows);
+      updates.subtotal = String(calcedSubtotal);
+      updates.taxAmount = String(calcedTaxAmount);
+      updates.totalAmount = String(calcedTotalAmount);
 
       // 1. 旧 cost_items を先に削除（costItemId 参照が必要なため items 削除より前に行う）
       await deleteCostItemsByInvoiceId(id);

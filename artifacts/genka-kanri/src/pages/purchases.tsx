@@ -1,5 +1,5 @@
-import { useState, useCallback } from "react";
-import { Link } from "wouter";
+import { useState, useCallback, useEffect } from "react";
+import { Link, useSearch, useLocation } from "wouter";
 import { useListProjects, getListProjectsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -130,10 +130,39 @@ function useVendors() {
   });
 }
 
+// ── 編集対象の仕入伝票型 ──────────────────────────────────────────────────────
+interface PurchaseInvoiceDetail {
+  id: number;
+  voucherNumber: string;
+  projectId: number;
+  vendorId: number;
+  purchaseDate: string;
+  paymentDueDate: string | null;
+  isProvisional: boolean;
+  notes: string | null;
+  items: Array<{
+    category: string;
+    description: string;
+    specification: string | null;
+    quantity: number;
+    unit: string;
+    unitPrice: number;
+    amount: number;
+    taxRate: number;
+    workTypeId: number | null;
+  }>;
+}
+
 // ── メインコンポーネント ──────────────────────────────────────────────────────
 export default function Purchases() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
+
+  // 編集モード：URLパラメータ ?id= を読み取る
+  const searchStr = useSearch();
+  const editInvoiceId = new URLSearchParams(searchStr).get("id");
+  const editInvoiceIdNum = editInvoiceId ? parseInt(editInvoiceId) : null;
 
   const { data: projectsData } = useListProjects(undefined, {
     query: { queryKey: getListProjectsQueryKey() },
@@ -144,6 +173,25 @@ export default function Purchases() {
   const { data: workTypesData } = useWorkTypes();
   const workTypes = workTypesData ?? [];
   const [saving, setSaving] = useState(false);
+
+  // 編集モード用：既存伝票データを取得
+  const { data: editInvoiceData } = useQuery<PurchaseInvoiceDetail>({
+    queryKey: ["/api/purchase-invoices/detail", editInvoiceIdNum],
+    queryFn: async () => {
+      const res = await fetch(`/api/purchase-invoices/${editInvoiceIdNum}`);
+      if (!res.ok) throw new Error("Failed to fetch invoice");
+      return res.json();
+    },
+    enabled: !!editInvoiceIdNum,
+  });
+
+  // 編集フォーム初期化済みフラグ
+  const [editInitialized, setEditInitialized] = useState(false);
+
+  // editInvoiceId が変わったらフラグをリセット
+  useEffect(() => {
+    setEditInitialized(false);
+  }, [editInvoiceIdNum]);
 
   // ── 発注書取込モーダル状態 ──────────────────────────────────────────────
   const [importPOOpen, setImportPOOpen] = useState(false);
@@ -170,6 +218,49 @@ export default function Purchases() {
 
   // ── 支払予定生成フラグ ────────────────────────────────────────────────────
   const [createPayment, setCreatePayment] = useState(false);
+
+  // ── 編集データをフォームに反映（初回のみ）──────────────────────────────────
+  useEffect(() => {
+    if (!editInvoiceData || editInitialized) return;
+    // workTypes が必要な場合は読み込み完了を待つ
+    if (editInvoiceData.items.some(i => i.workTypeId) && workTypes.length === 0) return;
+
+    const catReverseMap: Record<string, string> = {
+      material: "610", subcontract: "620", labor: "630", expense: "640",
+    };
+
+    setPurchaseDate(editInvoiceData.purchaseDate);
+    setVendorId(editInvoiceData.vendorId ? String(editInvoiceData.vendorId) : "");
+    setPaymentDueDate(editInvoiceData.paymentDueDate ?? "");
+    setSelectedProject(String(editInvoiceData.projectId));
+    setIsDraft(editInvoiceData.isProvisional);
+    setMemo(editInvoiceData.notes ?? "");
+    setCreatePayment(false);
+
+    setRows(
+      editInvoiceData.items.length > 0
+        ? editInvoiceData.items.map((item) => {
+            const wt = workTypes.find(w => w.id === item.workTypeId);
+            const amt = Number(item.amount) || 0;
+            const tax = Math.floor(amt * (Number(item.taxRate) || 10) / 100);
+            return {
+              id: crypto.randomUUID(),
+              categoryCode: catReverseMap[item.category] ?? "620",
+              productName: item.description,
+              spec: item.specification ?? "",
+              unit: item.unit,
+              quantity: String(item.quantity),
+              unitPrice: String(item.unitPrice),
+              taxRate: Number(item.taxRate) || 10,
+              amount: amt,
+              tax,
+              workTypeCode: wt?.code ?? "",
+            };
+          })
+        : [createRow()]
+    );
+    setEditInitialized(true);
+  }, [editInvoiceData, editInitialized, workTypes]);
 
   // ── 明細行状態 ───────────────────────────────────────────────────────────
   const [rows, setRows] = useState<DetailRow[]>([createRow()]);
@@ -220,7 +311,7 @@ export default function Purchases() {
     setRows([createRow()]);
   };
 
-  // ── 登録 ─────────────────────────────────────────────────────────────────
+  // ── 登録 / 更新 ──────────────────────────────────────────────────────────
   const handleRegister = async () => {
     if (!selectedProject) {
       toast({ title: "入力エラー", description: "工事を選択してください。", variant: "destructive" });
@@ -243,56 +334,76 @@ export default function Purchases() {
     };
 
     const parsedVendorId = vendorId && vendorId !== "none" ? parseInt(vendorId) : undefined;
+    const itemsPayload = validRows.map((row, idx) => ({
+      lineNumber: idx + 1,
+      category: categoryMap[row.categoryCode] ?? "expense",
+      description: [row.productName, row.spec].filter(Boolean).join(" ") || "（摘要なし）",
+      quantity: parseFloat(row.quantity) || 1,
+      unit: row.unit || "式",
+      unitPrice: parseFloat(row.unitPrice) || 0,
+      amount: row.amount,
+      taxRate: row.taxRate,
+      workTypeId: row.workTypeCode && row.workTypeCode !== "__none__"
+        ? (workTypes.find(wt => wt.code === row.workTypeCode)?.id ?? null)
+        : null,
+    }));
 
     setSaving(true);
     try {
-      const res = await fetch("/api/purchase-invoices", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId: parseInt(selectedProject),
-          vendorId: parsedVendorId,
-          purchaseDate,
-          paymentDueDate: paymentDueDate || null,
-          isProvisional: isDraft,
-          taxCalculationMethod: taxCalcMethodMap[taxCalcType] ?? "detail_exclusive",
-          subtotal: totalAmount,
-          taxAmount: totalTax,
-          totalAmount: totalGross,
-          notes: memo || null,
-          createPayment,
-          items: validRows.map((row, idx) => ({
-            lineNumber: idx + 1,
-            category: categoryMap[row.categoryCode] ?? "expense",
-            description: [row.productName, row.spec].filter(Boolean).join(" ") || "（摘要なし）",
-            quantity: parseFloat(row.quantity) || 1,
-            unit: row.unit || "式",
-            unitPrice: parseFloat(row.unitPrice) || 0,
-            amount: row.amount,
-            taxRate: row.taxRate,
-            workTypeId: row.workTypeCode && row.workTypeCode !== "__none__"
-              ? (workTypes.find(wt => wt.code === row.workTypeCode)?.id ?? null)
-              : null,
-          })),
-        }),
-      });
+      let res: Response;
 
-      if (!res.ok) throw new Error("Failed to create purchase invoice");
-      const invoice = await res.json() as { voucherNumber: string };
-
-      if (createPayment) {
-        queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
+      if (editInvoiceIdNum) {
+        // ── 編集モード：PATCH ───────────────────────────────────────────
+        res = await fetch(`/api/purchase-invoices/${editInvoiceIdNum}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            purchaseDate,
+            paymentDueDate: paymentDueDate || null,
+            isProvisional: isDraft,
+            notes: memo || null,
+            items: itemsPayload,
+          }),
+        });
+        if (!res.ok) throw new Error("Failed to update purchase invoice");
+        const invoice = await res.json() as { voucherNumber: string };
+        toast({
+          title: "更新完了",
+          description: `仕入伝票 ${invoice.voucherNumber} を更新しました。`,
+        });
+      } else {
+        // ── 新規作成：POST ──────────────────────────────────────────────
+        res = await fetch("/api/purchase-invoices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId: parseInt(selectedProject),
+            vendorId: parsedVendorId,
+            purchaseDate,
+            paymentDueDate: paymentDueDate || null,
+            isProvisional: isDraft,
+            taxCalculationMethod: taxCalcMethodMap[taxCalcType] ?? "detail_exclusive",
+            notes: memo || null,
+            createPayment,
+            items: itemsPayload,
+          }),
+        });
+        if (!res.ok) throw new Error("Failed to create purchase invoice");
+        const invoice = await res.json() as { voucherNumber: string };
+        if (createPayment) {
+          queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
+        }
+        toast({
+          title: "登録完了",
+          description: `仕入伝票 ${invoice.voucherNumber} を登録しました。${createPayment ? "支払予定も作成しました。" : ""}`,
+        });
+        newSlip();
       }
 
-      toast({
-        title: "登録完了",
-        description: `仕入伝票 ${invoice.voucherNumber} を登録しました。${createPayment ? "支払予定も作成しました。" : ""}`,
-      });
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/cost-items"] });
-      newSlip();
     } catch {
-      toast({ title: "登録エラー", description: "登録に失敗しました。内容を確認してください。", variant: "destructive" });
+      toast({ title: editInvoiceIdNum ? "更新エラー" : "登録エラー", description: "処理に失敗しました。内容を確認してください。", variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -337,7 +448,11 @@ export default function Purchases() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <FileText className="w-5 h-5 text-teal-700" />
-          <h1 className="text-xl font-bold text-slate-900">仕入入力</h1>
+          <h1 className="text-xl font-bold text-slate-900">
+            {editInvoiceIdNum
+              ? `仕入伝票 編集${editInvoiceData ? ` — ${editInvoiceData.voucherNumber}` : ""}`
+              : "仕入入力"}
+          </h1>
           {isDraft && (
             <Badge variant="outline" className="text-amber-600 border-amber-400 bg-amber-50">
               仮伝票
@@ -345,17 +460,23 @@ export default function Purchases() {
           )}
         </div>
         <div className="flex items-center gap-2">
+          {!editInvoiceIdNum && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setImportPOOpen(true)}
+              className="text-teal-700 border-teal-300 hover:bg-teal-50"
+            >
+              <ClipboardList className="w-3.5 h-3.5 mr-1" />
+              発注書から取込
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setImportPOOpen(true)}
-            className="text-teal-700 border-teal-300 hover:bg-teal-50"
+            onClick={() => editInvoiceIdNum ? navigate("/purchases") : newSlip()}
           >
-            <ClipboardList className="w-3.5 h-3.5 mr-1" />
-            発注書から取込
-          </Button>
-          <Button variant="outline" size="sm" onClick={newSlip}>
-            新規
+            {editInvoiceIdNum ? "一覧に戻る" : "新規"}
           </Button>
           <Button
             size="sm"
@@ -364,9 +485,9 @@ export default function Purchases() {
             disabled={saving}
           >
             {saving ? (
-              <span className="flex items-center gap-1.5"><span className="animate-spin">⏳</span>登録中...</span>
+              <span className="flex items-center gap-1.5"><span className="animate-spin">⏳</span>{editInvoiceIdNum ? "更新中..." : "登録中..."}</span>
             ) : (
-              <span className="flex items-center gap-1.5"><Save className="w-3.5 h-3.5" />登録</span>
+              <span className="flex items-center gap-1.5"><Save className="w-3.5 h-3.5" />{editInvoiceIdNum ? "更新する" : "登録"}</span>
             )}
           </Button>
         </div>
@@ -387,11 +508,13 @@ export default function Purchases() {
                 <Label className="text-xs text-slate-600">伝票番号</Label>
                 <div className="flex items-center gap-2">
                   <Input
-                    value="（自動採番）"
+                    value={editInvoiceData?.voucherNumber ?? "（自動採番）"}
                     readOnly
-                    className="text-sm font-mono bg-slate-50 text-slate-400 cursor-default"
+                    className="text-sm font-mono bg-slate-50 text-slate-500 cursor-default"
                   />
-                  <span className="text-[10px] text-slate-400 whitespace-nowrap">登録時に採番</span>
+                  {!editInvoiceIdNum && (
+                    <span className="text-[10px] text-slate-400 whitespace-nowrap">登録時に採番</span>
+                  )}
                 </div>
               </div>
 
@@ -749,8 +872,13 @@ export default function Purchases() {
 
       {/* ── アクションボタン ── */}
       <div className="flex items-center justify-end gap-3 pb-6">
-        <Button variant="outline" size="default" onClick={newSlip} className="px-6">
-          キャンセル
+        <Button
+          variant="outline"
+          size="default"
+          onClick={() => editInvoiceIdNum ? navigate("/purchases") : newSlip()}
+          className="px-6"
+        >
+          {editInvoiceIdNum ? "一覧に戻る" : "キャンセル"}
         </Button>
         <Button
           size="default"
@@ -760,11 +888,11 @@ export default function Purchases() {
         >
           {saving ? (
             <span className="flex items-center gap-1.5">
-              <span className="animate-spin inline-block">⏳</span>登録中...
+              <span className="animate-spin inline-block">⏳</span>{editInvoiceIdNum ? "更新中..." : "登録中..."}
             </span>
           ) : (
             <span className="flex items-center gap-1.5">
-              <Save className="w-4 h-4" />登録する
+              <Save className="w-4 h-4" />{editInvoiceIdNum ? "更新する" : "登録する"}
             </span>
           )}
         </Button>

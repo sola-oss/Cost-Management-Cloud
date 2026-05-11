@@ -993,7 +993,7 @@ function CostItemsTab({ projectId }: { projectId: number }) {
                       onClick={isFromInvoice ? () => {
                         const invoiceId = (item as any).purchaseInvoiceId;
                         if (invoiceId) {
-                          window.location.href = `/purchase-invoices?id=${invoiceId}`;
+                          window.location.href = `/purchases?id=${invoiceId}`;
                         }
                       } : undefined}
                     >

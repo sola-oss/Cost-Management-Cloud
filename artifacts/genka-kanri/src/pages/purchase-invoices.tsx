@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { FileText, Plus } from "lucide-react";
+import { FileText, Plus, Pencil } from "lucide-react";
 
 // ── 型定義 ──────────────────────────────────────────────────────────────────
 interface PurchaseInvoice {
@@ -181,10 +181,16 @@ export default function PurchaseInvoices() {
               ) : (
                 invoices.map((inv) => (
                   <TableRow key={inv.id} className="hover:bg-slate-50/60">
-                    <TableCell className="font-mono text-sm text-teal-700 font-medium">
-                      {inv.voucherNumber}
+                    <TableCell className="font-mono text-sm font-medium">
+                      <Link
+                        href={`/purchases?id=${inv.id}`}
+                        className="text-teal-700 hover:text-teal-900 hover:underline flex items-center gap-1"
+                      >
+                        {inv.voucherNumber}
+                        <Pencil className="w-3 h-3 opacity-50" />
+                      </Link>
                       {inv.isProvisional && (
-                        <Badge variant="outline" className="ml-2 text-[10px] text-amber-600 border-amber-400 bg-amber-50">仮</Badge>
+                        <Badge variant="outline" className="mt-1 text-[10px] text-amber-600 border-amber-400 bg-amber-50">仮</Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-sm">
