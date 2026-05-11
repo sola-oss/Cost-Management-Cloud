@@ -184,13 +184,6 @@ type EditingRow = {
   revisedBudget: string;
 };
 
-type BulkOrderGroup = {
-  vendorId: number;
-  vendorName: string;
-  budgetItemIds: number[];
-  deliveryDate: string;
-  notes: string;
-};
 
 function BudgetTab({ projectId }: { projectId: number }) {
   const { toast } = useToast();
@@ -231,8 +224,8 @@ function BudgetTab({ projectId }: { projectId: number }) {
   // 発注書一括作成モーダル
   const [bulkOrderOpen, setBulkOrderOpen] = useState(false);
   const [orderDate, setOrderDate] = useState(() => new Date().toISOString().split("T")[0]);
-  // グループ別のvendorId / deliveryDate / notesをモーダル内で設定
-  const [groupSettings, setGroupSettings] = useState<Map<number, { vendorId: string; deliveryDate: string; notes: string }>>(new Map());
+  // 仕入先グループ別の deliveryDate / notes（キー: vendorId）
+  const [vendorGroupSettings, setVendorGroupSettings] = useState<Map<number, { deliveryDate: string; notes: string }>>(new Map());
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
 
   const items = budgetItemsData?.items ?? [];
@@ -243,7 +236,8 @@ function BudgetTab({ projectId }: { projectId: number }) {
   const totalExpectedProfit = totalContractAmount - totalRevisedBudget;
   const totalExpectedProfitRate = totalContractAmount > 0 ? (totalExpectedProfit / totalContractAmount) * 100 : 0;
 
-  const selectableItems = items.filter(i => !i.purchaseOrderId);
+  // 発注未済み かつ vendorId が設定済みの行のみ選択可
+  const selectableItems = items.filter(i => !i.purchaseOrderId && !!i.vendorId);
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: getListBudgetItemsQueryKey(projectId) });
@@ -267,48 +261,41 @@ function BudgetTab({ projectId }: { projectId: number }) {
     }
   }
 
+  // 選択済み明細を仕入先でグループ化（vendorId 必須のため vendorId が設定済み行のみ）
+  const computedVendorGroups = (() => {
+    const map = new Map<number, { vendorId: number; vendorName: string; budgetItems: typeof items }>();
+    for (const item of items.filter(i => selectedIds.has(i.id) && !!i.vendorId)) {
+      const vid = item.vendorId!;
+      if (!map.has(vid)) {
+        map.set(vid, {
+          vendorId: vid,
+          vendorName: vendors.find(v => v.id === vid)?.name ?? `仕入先ID:${vid}`,
+          budgetItems: [],
+        });
+      }
+      map.get(vid)!.budgetItems.push(item);
+    }
+    return Array.from(map.values());
+  })();
+
   function openBulkOrderModal() {
-    // 選択明細をvendorIdでグルーピング（vendorIdがない場合はnullグループ）
-    const initMap = new Map<number, { vendorId: string; deliveryDate: string; notes: string }>();
-    const selectedItems = items.filter(i => selectedIds.has(i.id));
-    // グループキーとして budgetItemId を使う（vendorId未設定のものはアイテム単位で設定してもらう）
-    selectedItems.forEach(item => {
-      initMap.set(item.id, {
-        vendorId: item.vendorId ? String(item.vendorId) : "",
-        deliveryDate: "",
-        notes: "",
-      });
+    // vendorGroupSettings を現在の選択に合わせて初期化（既存設定を保持）
+    setVendorGroupSettings(prev => {
+      const next = new Map<number, { deliveryDate: string; notes: string }>();
+      for (const grp of computedVendorGroups) {
+        next.set(grp.vendorId, prev.get(grp.vendorId) ?? { deliveryDate: "", notes: "" });
+      }
+      return next;
     });
-    setGroupSettings(initMap);
     setOrderDate(new Date().toISOString().split("T")[0]);
     setBulkOrderOpen(true);
   }
 
   async function handleBulkCreate() {
-    const selectedItems = items.filter(i => selectedIds.has(i.id));
-
-    // 仕入先でグループ化
-    const vendorGroups = new Map<number, { budgetItemIds: number[]; deliveryDate: string; notes: string }>();
-    for (const item of selectedItems) {
-      const settings = groupSettings.get(item.id);
-      const vid = settings?.vendorId ? parseInt(settings.vendorId) : (item.vendorId ?? null);
-      if (!vid) {
-        toast({ title: "仕入先未設定", description: `「${item.workTypeName}」の仕入先を選択してください。`, variant: "destructive" });
-        return;
-      }
-      if (!vendorGroups.has(vid)) {
-        vendorGroups.set(vid, { budgetItemIds: [], deliveryDate: settings?.deliveryDate ?? "", notes: settings?.notes ?? "" });
-      }
-      vendorGroups.get(vid)!.budgetItemIds.push(item.id);
+    if (computedVendorGroups.length === 0) {
+      toast({ title: "対象なし", description: "発注可能な明細を選択してください。", variant: "destructive" });
+      return;
     }
-
-    const groups: BulkOrderGroup[] = Array.from(vendorGroups.entries()).map(([vid, g]) => ({
-      vendorId: vid,
-      vendorName: vendors.find(v => v.id === vid)?.name ?? String(vid),
-      budgetItemIds: g.budgetItemIds,
-      deliveryDate: g.deliveryDate,
-      notes: g.notes,
-    }));
 
     setBulkSubmitting(true);
     try {
@@ -316,17 +303,21 @@ function BudgetTab({ projectId }: { projectId: number }) {
         id: projectId,
         data: {
           orderDate,
-          groups: groups.map(g => ({
-            vendorId: g.vendorId,
-            budgetItemIds: g.budgetItemIds,
-            deliveryDate: g.deliveryDate || null,
-            notes: g.notes || null,
-          })),
+          groups: computedVendorGroups.map(grp => {
+            const s = vendorGroupSettings.get(grp.vendorId);
+            return {
+              vendorId: grp.vendorId,
+              budgetItemIds: grp.budgetItems.map(bi => bi.id),
+              deliveryDate: s?.deliveryDate || null,
+              notes: s?.notes || null,
+            };
+          }),
         },
       });
       const count = result.createdPurchaseOrders?.length ?? 0;
       toast({ title: "発注書を作成しました", description: `${count}件の発注書を作成しました。` });
       setSelectedIds(new Set());
+      setVendorGroupSettings(new Map());
       setBulkOrderOpen(false);
       invalidate();
     } catch (e: unknown) {
@@ -504,9 +495,10 @@ function BudgetTab({ projectId }: { projectId: number }) {
                 variant="default"
                 className="gap-1.5 h-8 bg-emerald-600 hover:bg-emerald-700"
                 onClick={openBulkOrderModal}
+                disabled={computedVendorGroups.length === 0}
               >
                 <ShoppingCart className="w-3.5 h-3.5" />
-                発注書作成（{selectedIds.size}件）
+                発注書を作成（{selectedIds.size}行選択中 / {computedVendorGroups.length}社）
               </Button>
             )}
             <Button
@@ -699,12 +691,12 @@ function BudgetTab({ projectId }: { projectId: number }) {
                               {isOrdered ? (
                                 <div className="flex items-center gap-1.5">
                                   <span className="text-slate-700">{vendorName}</span>
-                                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-emerald-100 text-emerald-700 border-emerald-200 gap-1 shrink-0">
-                                    <PackageCheck className="w-2.5 h-2.5" />
-                                    発注済
-                                  </Badge>
-                                  <Link href={`/purchase-orders/${item.purchaseOrderId}`} className="text-emerald-600 hover:text-emerald-800">
-                                    <ExternalLink className="w-3 h-3" />
+                                  <Link href={`/purchase-orders/${item.purchaseOrderId}`}>
+                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-emerald-100 text-emerald-700 border-emerald-200 gap-1 shrink-0 cursor-pointer hover:bg-emerald-200">
+                                      <PackageCheck className="w-2.5 h-2.5" />
+                                      発注済
+                                      <ExternalLink className="w-2.5 h-2.5 ml-0.5" />
+                                    </Badge>
                                   </Link>
                                 </div>
                               ) : (
@@ -877,6 +869,7 @@ function BudgetTab({ projectId }: { projectId: number }) {
           </DialogHeader>
 
           <div className="space-y-4 py-2">
+            {/* 発注日 */}
             <div className="flex items-center gap-3">
               <label className="text-sm font-medium text-slate-700 whitespace-nowrap">発注日</label>
               <Input
@@ -887,85 +880,81 @@ function BudgetTab({ projectId }: { projectId: number }) {
               />
             </div>
 
-            <div className="text-xs text-slate-500 bg-slate-50 rounded p-3 border">
-              仕入先が同じ明細は1枚の発注書にまとめられます。仕入先が未設定の明細はここで設定してください。
-            </div>
-
-            <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-              {items.filter(i => selectedIds.has(i.id)).map(item => {
-                const settings = groupSettings.get(item.id);
-                const currentVendorId = settings?.vendorId ?? (item.vendorId ? String(item.vendorId) : "");
+            {/* 仕入先グループ別設定 */}
+            <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+              {computedVendorGroups.map(grp => {
+                const settings = vendorGroupSettings.get(grp.vendorId) ?? { deliveryDate: "", notes: "" };
+                const groupTotal = grp.budgetItems.reduce((s, bi) => s + (bi.revisedBudget ?? 0), 0);
                 return (
-                  <div key={item.id} className="border rounded-lg p-3 bg-white space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <span className="font-mono text-xs text-slate-500 mr-1.5">{item.workTypeCode}</span>
-                        <span className="text-sm font-medium text-slate-800">{item.workTypeName}</span>
+                  <div key={grp.vendorId} className="border rounded-lg overflow-hidden">
+                    {/* グループヘッダー */}
+                    <div className="bg-emerald-50 border-b px-3 py-2 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-emerald-600" />
+                        <span className="text-sm font-semibold text-emerald-800">{grp.vendorName}</span>
+                        <Badge variant="secondary" className="text-[10px] bg-emerald-100 text-emerald-700">
+                          {grp.budgetItems.length}明細
+                        </Badge>
                       </div>
-                      <span className="text-sm font-bold text-indigo-700">{formatCurrency(item.revisedBudget)}</span>
+                      <span className="text-sm font-bold text-indigo-700">{formatCurrency(groupTotal)}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs text-slate-600 whitespace-nowrap w-14">仕入先</label>
-                      <Select
-                        value={currentVendorId || "__none__"}
-                        onValueChange={(val) => {
-                          setGroupSettings(prev => {
-                            const next = new Map(prev);
-                            const existing = next.get(item.id) ?? { vendorId: "", deliveryDate: "", notes: "" };
-                            next.set(item.id, { ...existing, vendorId: val === "__none__" ? "" : val });
-                            return next;
-                          });
-                        }}
-                      >
-                        <SelectTrigger className="h-7 text-xs flex-1">
-                          <SelectValue placeholder="仕入先を選択（必須）" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__" className="text-xs text-slate-400">— 選択してください —</SelectItem>
-                          {vendors.map((v) => (
-                            <SelectItem key={v.id} value={String(v.id)} className="text-xs">{v.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+
+                    {/* 明細リスト */}
+                    <div className="bg-slate-50/50 px-3 py-1.5 space-y-0.5">
+                      {grp.budgetItems.map(bi => (
+                        <div key={bi.id} className="flex items-center justify-between text-xs py-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-slate-400">{bi.workTypeCode}</span>
+                            <span className="text-slate-700">{bi.workTypeName}</span>
+                          </div>
+                          <span className="text-slate-600 font-medium">{formatCurrency(bi.revisedBudget)}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* グループ別オプション（納期・備考） */}
+                    <div className="px-3 py-2.5 space-y-2 bg-white border-t">
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-slate-500 w-12 shrink-0">納期</label>
+                        <Input
+                          type="date"
+                          value={settings.deliveryDate}
+                          onChange={(e) => {
+                            setVendorGroupSettings(prev => {
+                              const next = new Map(prev);
+                              next.set(grp.vendorId, { ...settings, deliveryDate: e.target.value });
+                              return next;
+                            });
+                          }}
+                          className="h-7 text-xs w-40"
+                        />
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <label className="text-xs text-slate-500 w-12 shrink-0 pt-1">備考</label>
+                        <Input
+                          value={settings.notes}
+                          onChange={(e) => {
+                            setVendorGroupSettings(prev => {
+                              const next = new Map(prev);
+                              next.set(grp.vendorId, { ...settings, notes: e.target.value });
+                              return next;
+                            });
+                          }}
+                          className="h-7 text-xs"
+                          placeholder="発注書に記載する備考（任意）"
+                        />
+                      </div>
                     </div>
                   </div>
                 );
               })}
             </div>
 
-            {/* 仕入先ごとのグループサマリー */}
-            {(() => {
-              const selectedItems = items.filter(i => selectedIds.has(i.id));
-              const groups = new Map<string, { name: string; count: number; total: number }>();
-              selectedItems.forEach(item => {
-                const s = groupSettings.get(item.id);
-                const vid = s?.vendorId || (item.vendorId ? String(item.vendorId) : "");
-                const vName = vid ? (vendors.find(v => String(v.id) === vid)?.name ?? `仕入先ID:${vid}`) : "（仕入先未設定）";
-                const key = vid || "__none__";
-                if (!groups.has(key)) groups.set(key, { name: vName, count: 0, total: 0 });
-                const g = groups.get(key)!;
-                g.count++;
-                g.total += item.revisedBudget ?? 0;
-              });
-              if (groups.size === 0) return null;
-              return (
-                <div className="border rounded-lg overflow-hidden">
-                  <div className="bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">作成される発注書</div>
-                  <div className="divide-y">
-                    {Array.from(groups.values()).map((g, idx) => (
-                      <div key={idx} className="flex items-center justify-between px-3 py-2 text-sm">
-                        <div className="flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-slate-400" />
-                          <span className={g.name === "（仕入先未設定）" ? "text-destructive" : ""}>{g.name}</span>
-                          <Badge variant="secondary" className="text-[10px]">{g.count}明細</Badge>
-                        </div>
-                        <span className="font-semibold text-slate-700">{formatCurrency(g.total)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })()}
+            {/* 作成サマリー */}
+            <div className="bg-slate-50 border rounded p-3 text-sm text-slate-600">
+              <span className="font-semibold text-slate-800">{computedVendorGroups.length}社</span> の仕入先向けに
+              <span className="font-semibold text-slate-800"> {selectedIds.size}件</span> の明細をまとめて発注書を作成します。
+            </div>
           </div>
 
           <DialogFooter>

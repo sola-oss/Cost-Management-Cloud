@@ -192,6 +192,15 @@ router.post("/bulk-create-purchase-orders", async (req, res) => {
       return res.status(400).json({ message: "budgetItemIds が空です" });
     }
 
+    // グループ間で重複する budgetItemId を検出
+    const seen = new Set<number>();
+    for (const id of allBudgetItemIds) {
+      if (seen.has(id)) {
+        return res.status(400).json({ message: `budgetItemId ${id} が複数のグループに含まれています` });
+      }
+      seen.add(id);
+    }
+
     const result = await db.transaction(async (tx) => {
       const budgetItems = await tx
         .select()
