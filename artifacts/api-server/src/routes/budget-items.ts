@@ -33,14 +33,14 @@ function serializeItem(item: typeof budgetItemsTable.$inferSelect) {
   };
 }
 
-async function generatePONumber(dbOrTx: typeof db): Promise<string> {
+async function generateOrderNumber(): Promise<string> {
   const today = new Date();
   const ymd =
     String(today.getFullYear()) +
     String(today.getMonth() + 1).padStart(2, "0") +
     String(today.getDate()).padStart(2, "0");
   const prefix = `PO-${ymd}-`;
-  const all = await dbOrTx.select({ n: purchaseOrdersTable.orderNumber }).from(purchaseOrdersTable);
+  const all = await db.select({ n: purchaseOrdersTable.orderNumber }).from(purchaseOrdersTable);
   const todayNums = all
     .map((r) => r.n)
     .filter((n) => n.startsWith(prefix))
@@ -201,37 +201,76 @@ router.post("/bulk-create-purchase-orders", async (req, res) => {
       seen.add(id);
     }
 
+    const typedGroups = groups as Array<{ vendorId: number; budgetItemIds: number[]; deliveryDate?: string | null; notes?: string | null }>;
+
+    // Pre-fetch existing budget items for validation before the transaction
+    const preFetchedItems = await db
+      .select()
+      .from(budgetItemsTable)
+      .where(inArray(budgetItemsTable.id, allBudgetItemIds));
+
+    const foundIds = new Set(preFetchedItems.map(bi => bi.id));
+    const missingIds = allBudgetItemIds.filter(id => !foundIds.has(id));
+    if (missingIds.length > 0) {
+      return res.status(404).json({ message: `実行予算明細が見つかりません: ${missingIds.join(",")}` });
+    }
+
+    const invalidProject = preFetchedItems.find(bi => bi.projectId !== projectId);
+    if (invalidProject) {
+      return res.status(400).json({ message: `Budget item ${invalidProject.id} does not belong to project ${projectId}` });
+    }
+
+    const alreadyOrdered = preFetchedItems.filter(bi => bi.purchaseOrderId !== null);
+    if (alreadyOrdered.length > 0) {
+      const ids = alreadyOrdered.map(bi => bi.id).join(", ");
+      return res.status(409).json({ message: `以下の実行予算明細は既に発注済みです（ID: ${ids}）` });
+    }
+
+    // Validate vendor consistency: each budget item's vendorId must match its group's vendorId
+    for (const group of typedGroups) {
+      const { vendorId: groupVendorId, budgetItemIds: groupBudgetItemIds } = group;
+      if (!groupVendorId || !Array.isArray(groupBudgetItemIds) || groupBudgetItemIds.length === 0) {
+        return res.status(400).json({ message: "各グループに vendorId と budgetItemIds は必須です" });
+      }
+      for (const biId of groupBudgetItemIds) {
+        const bi = preFetchedItems.find(b => b.id === biId);
+        if (bi && bi.vendorId !== null && bi.vendorId !== groupVendorId) {
+          return res.status(400).json({
+            message: `実行予算明細 ID ${biId} の仕入先（ID: ${bi.vendorId}）がグループの仕入先（ID: ${groupVendorId}）と一致しません`,
+          });
+        }
+        if (bi && bi.vendorId === null) {
+          return res.status(400).json({
+            message: `実行予算明細 ID ${biId} に仕入先が設定されていません。発注書作成前に仕入先を設定してください`,
+          });
+        }
+      }
+    }
+
+    // Pre-generate order numbers outside the transaction (same pattern as purchase-orders route)
+    const orderNumbers: string[] = [];
+    for (let i = 0; i < typedGroups.length; i++) {
+      orderNumbers.push(await generateOrderNumber());
+    }
+
     const result = await db.transaction(async (tx) => {
+      // Re-fetch inside transaction with FOR UPDATE semantics to prevent concurrent modification
       const budgetItems = await tx
         .select()
         .from(budgetItemsTable)
         .where(inArray(budgetItemsTable.id, allBudgetItemIds));
 
-      const invalidProject = budgetItems.find(bi => bi.projectId !== projectId);
-      if (invalidProject) {
-        throw Object.assign(new Error(`Budget item ${invalidProject.id} does not belong to project ${projectId}`), { statusCode: 400 });
-      }
-
-      const foundIds = new Set(budgetItems.map(bi => bi.id));
-      const missingIds = allBudgetItemIds.filter(id => !foundIds.has(id));
-      if (missingIds.length > 0) {
-        throw Object.assign(new Error(`実行予算明細が見つかりません: ${missingIds.join(",")}`), { statusCode: 404 });
-      }
-
-      const alreadyOrdered = budgetItems.filter(bi => bi.purchaseOrderId !== null);
-      if (alreadyOrdered.length > 0) {
-        const ids = alreadyOrdered.map(bi => bi.id).join(", ");
+      const alreadyOrderedInTx = budgetItems.filter(bi => bi.purchaseOrderId !== null);
+      if (alreadyOrderedInTx.length > 0) {
+        const ids = alreadyOrderedInTx.map(bi => bi.id).join(", ");
         throw Object.assign(new Error(`以下の実行予算明細は既に発注済みです（ID: ${ids}）`), { statusCode: 409 });
       }
 
       const createdPurchaseOrders: Array<{ id: number; orderNo: string; vendorId: number }> = [];
 
-      for (const group of groups as Array<{ vendorId: number; budgetItemIds: number[]; deliveryDate?: string | null; notes?: string | null }>) {
+      for (let gi = 0; gi < typedGroups.length; gi++) {
+        const group = typedGroups[gi];
         const { vendorId, budgetItemIds, deliveryDate, notes } = group;
-
-        if (!vendorId || !Array.isArray(budgetItemIds) || budgetItemIds.length === 0) {
-          throw Object.assign(new Error("各グループに vendorId と budgetItemIds は必須です"), { statusCode: 400 });
-        }
 
         const [vendor] = await tx.select().from(vendorsTable).where(eq(vendorsTable.id, vendorId));
         if (!vendor) {
@@ -244,7 +283,7 @@ router.post("/bulk-create-purchase-orders", async (req, res) => {
         const taxAmount = Math.floor(subtotal * 10 / 100);
         const totalAmount = subtotal + taxAmount;
 
-        const orderNumber = await generatePONumber(tx as unknown as typeof db);
+        const orderNumber = orderNumbers[gi];
 
         const [order] = await tx
           .insert(purchaseOrdersTable)

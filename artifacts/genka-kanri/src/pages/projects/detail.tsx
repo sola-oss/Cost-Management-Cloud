@@ -245,6 +245,9 @@ function BudgetTab({ projectId }: { projectId: number }) {
   }
 
   function toggleSelect(id: number) {
+    // Guard: only allow toggling items that are selectable (vendorId set and not ordered)
+    const item = items.find(i => i.id === id);
+    if (!item || !item.vendorId || item.purchaseOrderId) return;
     setSelectedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -681,6 +684,8 @@ function BudgetTab({ projectId }: { projectId: number }) {
                               ) : (
                                 <Checkbox
                                   checked={isSelected}
+                                  disabled={!item.vendorId}
+                                  title={!item.vendorId ? "仕入先を設定すると発注書を作成できます" : undefined}
                                   onCheckedChange={() => toggleSelect(item.id)}
                                 />
                               )}
