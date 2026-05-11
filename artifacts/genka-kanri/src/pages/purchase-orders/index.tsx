@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useListProjects, getListProjectsQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -142,6 +142,7 @@ function recalcItem(row: ItemRow): ItemRow {
 export default function PurchaseOrders() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
 
   const [filterProject, setFilterProject] = useState("__all__");
   const [filterStatus, setFilterStatus] = useState("__all__");
@@ -350,7 +351,7 @@ export default function PurchaseOrders() {
                   <TableRow
                     key={order.id}
                     className="hover:bg-slate-50/60 cursor-pointer group"
-                    onClick={() => { window.location.href = `${BASE}/purchase-orders/${order.id}`; }}
+                    onClick={() => navigate(`/purchase-orders/${order.id}`)}
                   >
                     <TableCell className="font-mono text-sm text-teal-700 font-medium">
                       {order.orderNumber}
