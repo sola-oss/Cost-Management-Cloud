@@ -303,7 +303,7 @@ router.post("/", async (req, res) => {
         projectId: parseInt(projectId),
         vendor: vendorName,
         description: paymentDescription ?? `仕入伝票 ${voucherNumber}`,
-        amount: String(totalAmount ?? 0),
+        amount: String(calcedTotalAmount),
         dueDate: paymentDueDate ?? null,
         invoiceNumber: voucherNumber,
         source: "manual",
