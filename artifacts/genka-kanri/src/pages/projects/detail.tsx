@@ -699,7 +699,7 @@ function BudgetTab({ projectId }: { projectId: number }) {
                                 <div className="flex items-center gap-1.5">
                                   <span className="text-slate-700">{vendorName}</span>
                                   <Link href={`/purchase-orders/${item.purchaseOrderId}`}>
-                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 bg-emerald-100 text-emerald-700 border-emerald-200 gap-1 shrink-0 cursor-pointer hover:bg-emerald-200">
+                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 gap-1 shrink-0 cursor-pointer hover:bg-secondary/80">
                                       <PackageCheck className="w-2.5 h-2.5" />
                                       発注済
                                       <ExternalLink className="w-2.5 h-2.5 ml-0.5" />
