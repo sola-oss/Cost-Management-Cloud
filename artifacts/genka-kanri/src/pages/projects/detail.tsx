@@ -984,17 +984,40 @@ function CostItemsTab({ projectId }: { projectId: number }) {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredItems.map((item) => (
-                    <TableRow key={item.id} className="hover:bg-slate-50/50">
+                  filteredItems.map((item) => {
+                    const isFromInvoice = item.sourceType === "purchase_invoice";
+                    return (
+                    <TableRow
+                      key={item.id}
+                      className={`hover:bg-slate-50/50 ${isFromInvoice ? "cursor-pointer" : ""}`}
+                      onClick={isFromInvoice ? () => {
+                        const invoiceId = (item as any).purchaseInvoiceId;
+                        if (invoiceId) {
+                          window.location.href = `/purchase-invoices?id=${invoiceId}`;
+                        }
+                      } : undefined}
+                    >
                       <TableCell className="text-slate-600 text-sm">
                         {new Date(item.incurredDate).toLocaleDateString("ja-JP")}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={`${CATEGORY_COLORS[item.category as Category] ?? ""} text-xs`}>
-                          {CATEGORY_LABELS[item.category as Category] ?? item.category}
-                        </Badge>
+                        <div className="flex flex-col gap-1">
+                          <Badge variant="outline" className={`${CATEGORY_COLORS[item.category as Category] ?? ""} text-xs`}>
+                            {CATEGORY_LABELS[item.category as Category] ?? item.category}
+                          </Badge>
+                          {isFromInvoice && (
+                            <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-blue-50 text-blue-700 border-blue-200">
+                              仕入伝票
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
-                      <TableCell className="font-medium text-sm">{item.description}</TableCell>
+                      <TableCell className="font-medium text-sm">
+                        <div className="flex items-center gap-1">
+                          {item.description}
+                          {isFromInvoice && <ExternalLink className="w-3 h-3 text-blue-400 flex-shrink-0" />}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-slate-600 text-sm">{item.vendor || "-"}</TableCell>
                       <TableCell className="text-right text-sm">
                         {item.quantity ?? "-"}
@@ -1006,13 +1029,14 @@ function CostItemsTab({ projectId }: { projectId: number }) {
                       <TableCell className="text-right font-bold text-slate-900">
                         {formatCurrency(item.amount)}
                       </TableCell>
-                      <TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
                         <Button
                           size="icon"
                           variant="ghost"
                           className="h-7 w-7 text-slate-400 hover:text-destructive"
                           onClick={() => handleDelete(item.id)}
-                          disabled={deletingId === item.id}
+                          disabled={deletingId === item.id || isFromInvoice}
+                          title={isFromInvoice ? "仕入伝票から登録された明細は伝票側で管理してください" : undefined}
                         >
                           {deletingId === item.id ? (
                             <Loader2 className="w-3 h-3 animate-spin" />
@@ -1022,7 +1046,8 @@ function CostItemsTab({ projectId }: { projectId: number }) {
                         </Button>
                       </TableCell>
                     </TableRow>
-                  ))
+                    );
+                  })
                 )}
               </TableBody>
             </Table>

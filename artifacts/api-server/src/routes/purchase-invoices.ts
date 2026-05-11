@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import {
   db,
   purchaseInvoicesTable,
@@ -9,6 +9,7 @@ import {
   vendorsTable,
   projectsTable,
   paymentsTable,
+  costItemsTable,
 } from "@workspace/db";
 import type { PurchaseInvoiceStatus } from "@workspace/db";
 
@@ -70,6 +71,63 @@ interface InvoiceItemInput {
   workTypeId?: number | null;
   purchaseOrderItemId?: number | null;
   lineNumber?: number;
+}
+
+// ── cost_items 同期ヘルパー ──────────────────────────────────────────────────
+
+/** 仕入伝票の各明細行に対応する cost_items を作成し costItemId を更新する */
+async function syncCostItemsAfterInvoice(
+  projectId: number,
+  purchaseDate: string,
+  voucherNumber: string,
+  isProvisional: boolean,
+  vendorName: string,
+  vendorId: number,
+  insertedItems: typeof purchaseInvoiceItemsTable.$inferSelect[]
+) {
+  for (const item of insertedItems) {
+    const [ci] = await db
+      .insert(costItemsTable)
+      .values({
+        projectId,
+        category: item.category as "material" | "labor" | "subcontract" | "expense",
+        description: item.description,
+        vendor: vendorName,
+        vendorId,
+        quantity: item.quantity ?? null,
+        unit: item.unit ?? null,
+        unitPrice: item.unitPrice ?? null,
+        amount: item.amount,
+        incurredDate: purchaseDate,
+        invoiceNumber: voucherNumber,
+        notes: isProvisional ? "仮伝票" : null,
+        sourceType: "purchase_invoice",
+        sourceId: item.id,
+        workTypeId: item.workTypeId ?? null,
+      })
+      .returning();
+
+    await db
+      .update(purchaseInvoiceItemsTable)
+      .set({ costItemId: ci.id })
+      .where(eq(purchaseInvoiceItemsTable.id, item.id));
+  }
+}
+
+/** 仕入伝票に紐づく cost_items を全削除する */
+async function deleteCostItemsByInvoiceId(invoiceId: number) {
+  const items = await db
+    .select({ costItemId: purchaseInvoiceItemsTable.costItemId })
+    .from(purchaseInvoiceItemsTable)
+    .where(eq(purchaseInvoiceItemsTable.purchaseInvoiceId, invoiceId));
+
+  const costItemIds = items
+    .map((i) => i.costItemId)
+    .filter((id): id is number => id != null);
+
+  if (costItemIds.length > 0) {
+    await db.delete(costItemsTable).where(inArray(costItemsTable.id, costItemIds));
+  }
 }
 
 // GET /api/purchase-invoices
@@ -163,6 +221,12 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ message: "projectId, vendorId, purchaseDate は必須です" });
     }
 
+    const [vendorRow] = await db
+      .select({ name: vendorsTable.name })
+      .from(vendorsTable)
+      .where(eq(vendorsTable.id, parseInt(vendorId)));
+    const vendorName = vendorRow?.name ?? "（仕入先）";
+
     const voucherNumber = await generateVoucherNumber();
     const itemRows: InvoiceItemInput[] = items ?? [];
 
@@ -208,22 +272,26 @@ router.post("/", async (req, res) => {
           }))
         )
         .returning();
+
+      await syncCostItemsAfterInvoice(
+        parseInt(projectId),
+        purchaseDate,
+        voucherNumber,
+        isProvisional ?? false,
+        vendorName,
+        parseInt(vendorId),
+        insertedItems
+      );
     }
 
-    // If linked to a purchase order, update deliveredQuantity
     if (purchaseOrderId) {
       await syncDeliveredQuantity(parseInt(purchaseOrderId));
     }
 
-    // Optionally create a payment record
     if (createPayment) {
-      const [vendor] = await db
-        .select({ name: vendorsTable.name })
-        .from(vendorsTable)
-        .where(eq(vendorsTable.id, parseInt(vendorId)));
       await db.insert(paymentsTable).values({
         projectId: parseInt(projectId),
-        vendor: vendor?.name ?? "（仕入先）",
+        vendor: vendorName,
         description: paymentDescription ?? `仕入伝票 ${voucherNumber}`,
         amount: String(totalAmount ?? 0),
         dueDate: paymentDueDate ?? null,
@@ -255,6 +323,12 @@ router.post("/from-order/:orderId", async (req, res) => {
       .where(eq(purchaseOrdersTable.id, orderId));
     if (!order) return res.status(404).json({ message: "発注書が見つかりません" });
 
+    const [vendorRow] = await db
+      .select({ name: vendorsTable.name })
+      .from(vendorsTable)
+      .where(eq(vendorsTable.id, order.vendorId));
+    const vendorName = vendorRow?.name ?? "（仕入先）";
+
     const orderItems = await db
       .select()
       .from(purchaseOrderItemsTable)
@@ -262,8 +336,8 @@ router.post("/from-order/:orderId", async (req, res) => {
       .orderBy(purchaseOrderItemsTable.lineNumber);
 
     const voucherNumber = await generateVoucherNumber();
+    const purchaseDate = new Date().toISOString().split("T")[0];
 
-    // Calculate remaining quantities
     const itemRows = orderItems
       .map((oi) => {
         const remaining = parseN(oi.quantity) - parseN(oi.deliveredQuantity);
@@ -303,7 +377,7 @@ router.post("/from-order/:orderId", async (req, res) => {
         projectId: order.projectId,
         vendorId: order.vendorId,
         purchaseOrderId: orderId,
-        purchaseDate: new Date().toISOString().split("T")[0],
+        purchaseDate,
         paymentDueDate: paymentDueDate ?? null,
         status: "confirmed" as PurchaseInvoiceStatus,
         taxCalculationMethod: "detail_exclusive",
@@ -336,18 +410,22 @@ router.post("/from-order/:orderId", async (req, res) => {
       )
       .returning();
 
-    // Update deliveredQuantity on order items
+    await syncCostItemsAfterInvoice(
+      order.projectId,
+      purchaseDate,
+      voucherNumber,
+      isProvisional ?? false,
+      vendorName,
+      order.vendorId,
+      insertedItems
+    );
+
     await syncDeliveredQuantity(orderId);
 
-    // Optionally create a payment record
     if (createPayment) {
-      const [vendor] = await db
-        .select({ name: vendorsTable.name })
-        .from(vendorsTable)
-        .where(eq(vendorsTable.id, order.vendorId));
       await db.insert(paymentsTable).values({
         projectId: order.projectId,
-        vendor: vendor?.name ?? "（仕入先）",
+        vendor: vendorName,
         description: `仕入伝票 ${voucherNumber}`,
         amount: String(totalAmt),
         dueDate: paymentDueDate ?? null,
@@ -393,11 +471,19 @@ router.patch("/:id", async (req, res) => {
 
     if (items !== undefined) {
       const itemRows: InvoiceItemInput[] = items;
+
+      // 1. 旧 cost_items を先に削除（costItemId 参照が必要なため items 削除より前に行う）
+      await deleteCostItemsByInvoiceId(id);
+
+      // 2. 旧明細を削除
       await db
         .delete(purchaseInvoiceItemsTable)
         .where(eq(purchaseInvoiceItemsTable.purchaseInvoiceId, id));
+
+      // 3. 新明細を INSERT
+      let newInsertedItems: typeof purchaseInvoiceItemsTable.$inferSelect[] = [];
       if (itemRows.length > 0) {
-        await db.insert(purchaseInvoiceItemsTable).values(
+        newInsertedItems = await db.insert(purchaseInvoiceItemsTable).values(
           itemRows.map((item, idx) => ({
             purchaseInvoiceId: id,
             purchaseOrderItemId: item.purchaseOrderItemId ?? null,
@@ -412,8 +498,26 @@ router.patch("/:id", async (req, res) => {
             taxRate: String(item.taxRate ?? 10),
             workTypeId: item.workTypeId ?? null,
           }))
+        ).returning();
+
+        // 4. 新 cost_items を生成
+        const [vendorRow] = await db
+          .select({ name: vendorsTable.name })
+          .from(vendorsTable)
+          .where(eq(vendorsTable.id, existing.vendorId));
+        const vendorName = vendorRow?.name ?? "（仕入先）";
+
+        await syncCostItemsAfterInvoice(
+          existing.projectId,
+          (purchaseDate ?? existing.purchaseDate) as string,
+          existing.voucherNumber,
+          isProvisional !== undefined ? (isProvisional as boolean) : existing.isProvisional,
+          vendorName,
+          existing.vendorId,
+          newInsertedItems
         );
       }
+
       if (existing.purchaseOrderId) {
         await syncDeliveredQuantity(existing.purchaseOrderId);
       }
@@ -452,9 +556,14 @@ router.delete("/:id", async (req, res) => {
     if (!existing) return res.status(404).json({ message: "仕入伝票が見つかりません" });
 
     const orderId = existing.purchaseOrderId;
+
+    // 1. 対応 cost_items を先に削除
+    await deleteCostItemsByInvoiceId(id);
+
+    // 2. 仕入伝票削除（CASCADE で明細も削除）
     await db.delete(purchaseInvoicesTable).where(eq(purchaseInvoicesTable.id, id));
 
-    // Recalculate delivered quantities on the linked PO
+    // 3. 発注書の納品数量を再計算
     if (orderId) {
       await syncDeliveredQuantity(orderId);
     }
@@ -474,7 +583,6 @@ async function syncDeliveredQuantity(purchaseOrderId: number) {
     .where(eq(purchaseOrderItemsTable.purchaseOrderId, purchaseOrderId));
 
   for (const oi of orderItems) {
-    // Sum all invoice quantities linked to this order item
     const invoiceItems = await db
       .select({ quantity: purchaseInvoiceItemsTable.quantity })
       .from(purchaseInvoiceItemsTable)
@@ -496,7 +604,6 @@ async function syncDeliveredQuantity(purchaseOrderId: number) {
       .where(eq(purchaseOrderItemsTable.id, oi.id));
   }
 
-  // Update order status
   const updatedItems = await db
     .select()
     .from(purchaseOrderItemsTable)
@@ -513,12 +620,6 @@ async function syncDeliveredQuantity(purchaseOrderId: number) {
     .where(eq(purchaseOrdersTable.id, purchaseOrderId));
 
   if (order && order.status !== "cancelled" && order.status !== "draft") {
-    const newStatus: PurchaseInvoiceStatus = allDelivered
-      ? "confirmed"
-      : anyDelivered
-      ? "provisional"
-      : "confirmed";
-    // Map to PurchaseOrderStatus
     const orderStatus = allDelivered ? "completed" : anyDelivered ? "partial" : "ordered";
     await db
       .update(purchaseOrdersTable)

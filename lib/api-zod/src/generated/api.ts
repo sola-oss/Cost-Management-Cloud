@@ -194,6 +194,19 @@ export const GetProjectResponse = zod
           incurredDate: zod.coerce.date().describe("発生日"),
           invoiceNumber: zod.string().nullish().describe("伝票番号"),
           notes: zod.string().nullish().describe("備考"),
+          sourceType: zod
+            .enum(["manual", "purchase_invoice"])
+            .describe("原価の登録元区分（手動入力 or 仕入伝票自動同期）"),
+          sourceId: zod
+            .number()
+            .nullish()
+            .describe("登録元 ID（purchase_invoice_items.id）"),
+          purchaseInvoiceId: zod
+            .number()
+            .nullish()
+            .describe("仕入伝票由来の場合の親伝票 ID"),
+          vendorId: zod.number().nullish().describe("仕入先 ID"),
+          workTypeId: zod.number().nullish().describe("工種 ID"),
           createdAt: zod.coerce.date(),
           updatedAt: zod.coerce.date(),
         }),
@@ -392,6 +405,19 @@ export const ListCostItemsResponse = zod.object({
       incurredDate: zod.coerce.date().describe("発生日"),
       invoiceNumber: zod.string().nullish().describe("伝票番号"),
       notes: zod.string().nullish().describe("備考"),
+      sourceType: zod
+        .enum(["manual", "purchase_invoice"])
+        .describe("原価の登録元区分（手動入力 or 仕入伝票自動同期）"),
+      sourceId: zod
+        .number()
+        .nullish()
+        .describe("登録元 ID（purchase_invoice_items.id）"),
+      purchaseInvoiceId: zod
+        .number()
+        .nullish()
+        .describe("仕入伝票由来の場合の親伝票 ID"),
+      vendorId: zod.number().nullish().describe("仕入先 ID"),
+      workTypeId: zod.number().nullish().describe("工種 ID"),
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
     }),
@@ -454,6 +480,19 @@ export const UpdateCostItemResponse = zod.object({
   incurredDate: zod.coerce.date().describe("発生日"),
   invoiceNumber: zod.string().nullish().describe("伝票番号"),
   notes: zod.string().nullish().describe("備考"),
+  sourceType: zod
+    .enum(["manual", "purchase_invoice"])
+    .describe("原価の登録元区分（手動入力 or 仕入伝票自動同期）"),
+  sourceId: zod
+    .number()
+    .nullish()
+    .describe("登録元 ID（purchase_invoice_items.id）"),
+  purchaseInvoiceId: zod
+    .number()
+    .nullish()
+    .describe("仕入伝票由来の場合の親伝票 ID"),
+  vendorId: zod.number().nullish().describe("仕入先 ID"),
+  workTypeId: zod.number().nullish().describe("工種 ID"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });

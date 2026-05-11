@@ -21,6 +21,7 @@ export * from "./costByCategoryResponseCategoriesItem";
 export * from "./costItem";
 export * from "./costItemCategory";
 export * from "./costItemListResponse";
+export * from "./costItemSourceType";
 export * from "./createBudgetItemRequest";
 export * from "./createBudgetRequest";
 export * from "./createBudgetRequestCategory";

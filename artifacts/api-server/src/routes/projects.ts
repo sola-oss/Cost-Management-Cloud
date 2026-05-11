@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, sql, and, inArray } from "drizzle-orm";
-import { db, projectsTable, costItemsTable, budgetsTable, invoicesTable, invoicePaymentsTable, companySettingsTable, constructionHistoriesTable, purchaseInvoicesTable, purchaseInvoiceItemsTable, vendorsTable } from "@workspace/db";
+import { db, projectsTable, costItemsTable, budgetsTable, invoicesTable, invoicePaymentsTable, companySettingsTable, constructionHistoriesTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -418,113 +418,5 @@ router.get("/:id/ledger", async (req, res) => {
   }
 });
 
-// GET /api/projects/:id/cost-detail-unified
-// Returns manual cost_items + purchase_invoice_items for a project (unified view)
-router.get("/:id/cost-detail-unified", async (req, res) => {
-  try {
-    const id = parseInt(req.params.id);
-    if (isNaN(id) || id <= 0) return res.status(400).json({ message: "Invalid project ID" });
-
-    // 1. Manual cost_items
-    const manualItems = await db
-      .select({
-        id: costItemsTable.id,
-        category: costItemsTable.category,
-        description: costItemsTable.description,
-        vendor: costItemsTable.vendor,
-        quantity: costItemsTable.quantity,
-        unit: costItemsTable.unit,
-        unitPrice: costItemsTable.unitPrice,
-        amount: costItemsTable.amount,
-        incurredDate: costItemsTable.incurredDate,
-        voucherNumber: costItemsTable.invoiceNumber,
-        notes: costItemsTable.notes,
-        sourceType: costItemsTable.sourceType,
-        sourceId: costItemsTable.sourceId,
-      })
-      .from(costItemsTable)
-      .where(eq(costItemsTable.projectId, id));
-
-    // 2. Purchase invoice items (for invoices linked to this project)
-    const invoiceItemRows = await db
-      .select({
-        id: purchaseInvoiceItemsTable.id,
-        category: purchaseInvoiceItemsTable.category,
-        description: purchaseInvoiceItemsTable.description,
-        specification: purchaseInvoiceItemsTable.specification,
-        quantity: purchaseInvoiceItemsTable.quantity,
-        unit: purchaseInvoiceItemsTable.unit,
-        unitPrice: purchaseInvoiceItemsTable.unitPrice,
-        amount: purchaseInvoiceItemsTable.amount,
-        taxRate: purchaseInvoiceItemsTable.taxRate,
-        costItemId: purchaseInvoiceItemsTable.costItemId,
-        purchaseDate: purchaseInvoicesTable.purchaseDate,
-        voucherNumber: purchaseInvoicesTable.voucherNumber,
-        vendorName: vendorsTable.name,
-        invoiceId: purchaseInvoicesTable.id,
-      })
-      .from(purchaseInvoiceItemsTable)
-      .innerJoin(
-        purchaseInvoicesTable,
-        eq(purchaseInvoiceItemsTable.purchaseInvoiceId, purchaseInvoicesTable.id)
-      )
-      .leftJoin(vendorsTable, eq(purchaseInvoicesTable.vendorId, vendorsTable.id))
-      .where(eq(purchaseInvoicesTable.projectId, id));
-
-    const unifiedManual = manualItems.map((ci) => ({
-      id: `manual-${ci.id}`,
-      sourceType: (ci.sourceType ?? "manual") as string,
-      sourceId: ci.id,
-      category: ci.category,
-      description: ci.description,
-      vendor: ci.vendor ?? null,
-      quantity: ci.quantity != null ? parseNumeric(ci.quantity) : null,
-      unit: ci.unit ?? null,
-      unitPrice: ci.unitPrice != null ? parseNumeric(ci.unitPrice) : null,
-      amount: parseNumeric(ci.amount),
-      incurredDate: ci.incurredDate,
-      voucherNumber: ci.voucherNumber ?? null,
-      notes: ci.notes ?? null,
-      invoiceId: null as number | null,
-    }));
-
-    const unifiedInvoice = invoiceItemRows.map((ii) => ({
-      id: `inv-item-${ii.id}`,
-      sourceType: "purchase_invoice" as string,
-      sourceId: ii.id,
-      category: ii.category,
-      description: [ii.description, ii.specification].filter(Boolean).join(" "),
-      vendor: ii.vendorName ?? null,
-      quantity: ii.quantity != null ? parseNumeric(ii.quantity) : null,
-      unit: ii.unit ?? null,
-      unitPrice: ii.unitPrice != null ? parseNumeric(ii.unitPrice) : null,
-      amount: parseNumeric(ii.amount),
-      incurredDate: ii.purchaseDate,
-      voucherNumber: ii.voucherNumber,
-      notes: null as string | null,
-      invoiceId: ii.invoiceId,
-    }));
-
-    // Exclude invoice items that already have a cost_item (to avoid double-counting)
-    const excludedCostItemSourceIds = new Set(
-      manualItems
-        .filter((ci) => ci.sourceType === "purchase_invoice" && ci.sourceId != null)
-        .map((ci) => ci.sourceId!)
-    );
-    const filteredInvoiceItems = unifiedInvoice.filter(
-      (ii) => !excludedCostItemSourceIds.has(ii.sourceId)
-    );
-
-    const items = [
-      ...unifiedManual,
-      ...filteredInvoiceItems,
-    ].sort((a, b) => (a.incurredDate > b.incurredDate ? -1 : 1));
-
-    return res.json({ items, total: items.length });
-  } catch (err) {
-    req.log.error({ err }, "Failed to get unified cost detail");
-    return res.status(500).json({ message: "Internal server error" });
-  }
-});
 
 export default router;

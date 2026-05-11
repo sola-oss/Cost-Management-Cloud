@@ -1,6 +1,13 @@
 import { Router, type IRouter } from "express";
-import { and, eq, gte, lte } from "drizzle-orm";
-import { db, costItemsTable, paymentsTable, projectsTable, vendorsTable } from "@workspace/db";
+import { and, eq, gte, lte, ne } from "drizzle-orm";
+import {
+  db,
+  purchaseInvoicesTable,
+  purchaseInvoiceItemsTable,
+  paymentsTable,
+  projectsTable,
+  vendorsTable,
+} from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -124,150 +131,67 @@ router.post("/calculate", async (req, res) => {
       effectiveEnd = result.effectiveEnd;
     }
 
-    let rawItems = await db
-      .select({
-        id: costItemsTable.id,
-        projectId: costItemsTable.projectId,
-        vendor: costItemsTable.vendor,
-        category: costItemsTable.category,
-        amount: costItemsTable.amount,
-        projectCode: projectsTable.projectCode,
-        projectName: projectsTable.name,
-      })
-      .from(costItemsTable)
-      .innerJoin(
-        projectsTable,
-        eq(costItemsTable.projectId, projectsTable.id)
-      )
-      .where(
-        and(
-          gte(costItemsTable.incurredDate, effectiveStart),
-          lte(costItemsTable.incurredDate, effectiveEnd)
-        )
-      );
-
+    // 仕入先グループフィルタ用 vendorId セット
+    let groupVendorIds: Set<number> | null = null;
     if (groupId) {
       const vendorsInGroup = await db
-        .select({ name: vendorsTable.name })
+        .select({ id: vendorsTable.id })
         .from(vendorsTable)
         .where(eq(vendorsTable.groupId, Number(groupId)));
-      const groupVendorNames = new Set(vendorsInGroup.map((v) => v.name));
-      if (groupVendorNames.size > 0) {
-        rawItems = rawItems.filter(
-          (item) => item.vendor && groupVendorNames.has(item.vendor)
-        );
-      } else {
-        rawItems = [];
-      }
+      groupVendorIds = new Set(vendorsInGroup.map((v) => v.id));
     }
 
     let items: AssessmentResultItem[];
 
-    if (assessmentType === "vendor") {
+    if (assessmentType === "vendor_project_worktype") {
       /**
-       * Vendor-only mode:
-       * - Display one aggregated row per vendor
-       * - Track per-project breakdown so confirm can create per-project payments
+       * 工種別モード: purchase_invoice_items 単位で集計
+       * （カテゴリは明細行レベルの概念）
        */
-      const vendorMap = new Map<
-        string,
-        {
-          vendor: string;
-          totalAmount: number;
-          costItemIds: number[];
-          projectMap: Map<
-            number,
-            {
-              projectId: number;
-              projectCode: string;
-              projectName: string;
-              amount: number;
-              costItemIds: number[];
-            }
-          >;
-        }
-      >();
+      let rawRows = await db
+        .select({
+          invoiceItemId: purchaseInvoiceItemsTable.id,
+          projectId: purchaseInvoicesTable.projectId,
+          vendorId: purchaseInvoicesTable.vendorId,
+          vendorName: vendorsTable.name,
+          projectCode: projectsTable.projectCode,
+          projectName: projectsTable.name,
+          amount: purchaseInvoiceItemsTable.amount,
+          category: purchaseInvoiceItemsTable.category,
+        })
+        .from(purchaseInvoiceItemsTable)
+        .innerJoin(
+          purchaseInvoicesTable,
+          eq(purchaseInvoiceItemsTable.purchaseInvoiceId, purchaseInvoicesTable.id)
+        )
+        .innerJoin(vendorsTable, eq(purchaseInvoicesTable.vendorId, vendorsTable.id))
+        .innerJoin(projectsTable, eq(purchaseInvoicesTable.projectId, projectsTable.id))
+        .where(
+          and(
+            gte(purchaseInvoicesTable.purchaseDate, effectiveStart),
+            lte(purchaseInvoicesTable.purchaseDate, effectiveEnd),
+            eq(purchaseInvoicesTable.isProvisional, false),
+            ne(purchaseInvoicesTable.status, "cancelled")
+          )
+        );
 
-      for (const item of rawItems) {
-        const vendorName = item.vendor ?? "（仕入先未登録）";
-        if (!vendorMap.has(vendorName)) {
-          vendorMap.set(vendorName, {
-            vendor: vendorName,
-            totalAmount: 0,
-            costItemIds: [],
-            projectMap: new Map(),
-          });
-        }
-        const entry = vendorMap.get(vendorName)!;
-        const amt = parseNum(item.amount);
-        entry.totalAmount += amt;
-        entry.costItemIds.push(item.id);
-
-        if (!entry.projectMap.has(item.projectId)) {
-          entry.projectMap.set(item.projectId, {
-            projectId: item.projectId,
-            projectCode: item.projectCode,
-            projectName: item.projectName,
-            amount: 0,
-            costItemIds: [],
-          });
-        }
-        const proj = entry.projectMap.get(item.projectId)!;
-        proj.amount += amt;
-        proj.costItemIds.push(item.id);
+      if (groupVendorIds !== null) {
+        rawRows = groupVendorIds.size > 0
+          ? rawRows.filter((r) => groupVendorIds!.has(r.vendorId))
+          : [];
       }
 
-      items = Array.from(vendorMap.values()).map((entry) => {
-        const projectBreakdowns = Array.from(entry.projectMap.values()).map(
-          (p) => ({
-            ...p,
-            amount: Math.round(p.amount),
-          })
-        );
-        // Use first project as representative for display only
-        const firstProject = projectBreakdowns[0] ?? {
-          projectId: 0,
-          projectCode: "",
-          projectName: "",
-          amount: 0,
-          costItemIds: [],
-        };
-        return {
-          vendor: entry.vendor,
-          projectId: firstProject.projectId,
-          projectCode: firstProject.projectCode,
-          projectName: firstProject.projectName,
-          totalAmount: Math.round(entry.totalAmount),
-          holdAmount: 0,
-          payAmount: Math.round(entry.totalAmount),
-          costItemIds: entry.costItemIds,
-          projectBreakdowns,
-        };
-      });
-    } else {
-      /**
-       * vendor_project and vendor_project_worktype modes:
-       * - Generate one row per vendor+project (or vendor+project+worktype)
-       */
       const map = new Map<string, AssessmentResultItem>();
-
-      for (const item of rawItems) {
-        const vendorName = item.vendor ?? "（仕入先未登録）";
-        const key =
-          assessmentType === "vendor_project_worktype"
-            ? `${vendorName}__${item.projectId}__${item.category}`
-            : `${vendorName}__${item.projectId}`;
-
+      for (const row of rawRows) {
+        const vendorName = row.vendorName ?? "（仕入先未登録）";
+        const key = `${vendorName}__${row.projectId}__${row.category}`;
         if (!map.has(key)) {
           map.set(key, {
             vendor: vendorName,
-            projectId: item.projectId,
-            projectCode: item.projectCode,
-            projectName: item.projectName,
-            workType:
-              assessmentType === "vendor_project_worktype"
-                ? (item.category ?? undefined)
-                : undefined,
+            projectId: row.projectId,
+            projectCode: row.projectCode,
+            projectName: row.projectName,
+            workType: row.category ?? undefined,
             totalAmount: 0,
             holdAmount: 0,
             payAmount: 0,
@@ -275,8 +199,8 @@ router.post("/calculate", async (req, res) => {
           });
         }
         const entry = map.get(key)!;
-        entry.totalAmount += parseNum(item.amount);
-        entry.costItemIds.push(item.id);
+        entry.totalAmount += parseNum(row.amount);
+        entry.costItemIds.push(row.invoiceItemId);
       }
 
       items = Array.from(map.values()).map((item) => ({
@@ -284,6 +208,103 @@ router.post("/calculate", async (req, res) => {
         totalAmount: Math.round(item.totalAmount),
         payAmount: Math.round(item.totalAmount),
       }));
+    } else {
+      /**
+       * vendor / vendor_project モード:
+       * purchase_invoices の totalAmount 単位で集計（確定・本伝票のみ）
+       */
+      let rawInvoices = await db
+        .select({
+          invoiceId: purchaseInvoicesTable.id,
+          projectId: purchaseInvoicesTable.projectId,
+          vendorId: purchaseInvoicesTable.vendorId,
+          totalAmount: purchaseInvoicesTable.totalAmount,
+          vendorName: vendorsTable.name,
+          projectCode: projectsTable.projectCode,
+          projectName: projectsTable.name,
+        })
+        .from(purchaseInvoicesTable)
+        .innerJoin(vendorsTable, eq(purchaseInvoicesTable.vendorId, vendorsTable.id))
+        .innerJoin(projectsTable, eq(purchaseInvoicesTable.projectId, projectsTable.id))
+        .where(
+          and(
+            gte(purchaseInvoicesTable.purchaseDate, effectiveStart),
+            lte(purchaseInvoicesTable.purchaseDate, effectiveEnd),
+            eq(purchaseInvoicesTable.isProvisional, false),
+            ne(purchaseInvoicesTable.status, "cancelled")
+          )
+        );
+
+      if (groupVendorIds !== null) {
+        rawInvoices = groupVendorIds.size > 0
+          ? rawInvoices.filter((r) => groupVendorIds!.has(r.vendorId))
+          : [];
+      }
+
+      if (assessmentType === "vendor") {
+        /**
+         * Vendor-only: one row per vendor, per-project breakdown for confirm step
+         */
+        const vendorMap = new Map<
+          string,
+          {
+            vendor: string;
+            totalAmount: number;
+            costItemIds: number[];
+            projectMap: Map<number, { projectId: number; projectCode: string; projectName: string; amount: number; costItemIds: number[] }>;
+          }
+        >();
+
+        for (const inv of rawInvoices) {
+          const vendorName = inv.vendorName ?? "（仕入先未登録）";
+          if (!vendorMap.has(vendorName)) {
+            vendorMap.set(vendorName, { vendor: vendorName, totalAmount: 0, costItemIds: [], projectMap: new Map() });
+          }
+          const entry = vendorMap.get(vendorName)!;
+          const amt = parseNum(inv.totalAmount);
+          entry.totalAmount += amt;
+          entry.costItemIds.push(inv.invoiceId);
+
+          if (!entry.projectMap.has(inv.projectId)) {
+            entry.projectMap.set(inv.projectId, { projectId: inv.projectId, projectCode: inv.projectCode, projectName: inv.projectName, amount: 0, costItemIds: [] });
+          }
+          const proj = entry.projectMap.get(inv.projectId)!;
+          proj.amount += amt;
+          proj.costItemIds.push(inv.invoiceId);
+        }
+
+        items = Array.from(vendorMap.values()).map((entry) => {
+          const projectBreakdowns = Array.from(entry.projectMap.values()).map((p) => ({ ...p, amount: Math.round(p.amount) }));
+          const firstProject = projectBreakdowns[0] ?? { projectId: 0, projectCode: "", projectName: "", amount: 0, costItemIds: [] };
+          return {
+            vendor: entry.vendor,
+            projectId: firstProject.projectId,
+            projectCode: firstProject.projectCode,
+            projectName: firstProject.projectName,
+            totalAmount: Math.round(entry.totalAmount),
+            holdAmount: 0,
+            payAmount: Math.round(entry.totalAmount),
+            costItemIds: entry.costItemIds,
+            projectBreakdowns,
+          };
+        });
+      } else {
+        /**
+         * vendor_project: one row per vendor+project
+         */
+        const map = new Map<string, AssessmentResultItem>();
+        for (const inv of rawInvoices) {
+          const vendorName = inv.vendorName ?? "（仕入先未登録）";
+          const key = `${vendorName}__${inv.projectId}`;
+          if (!map.has(key)) {
+            map.set(key, { vendor: vendorName, projectId: inv.projectId, projectCode: inv.projectCode, projectName: inv.projectName, totalAmount: 0, holdAmount: 0, payAmount: 0, costItemIds: [] });
+          }
+          const entry = map.get(key)!;
+          entry.totalAmount += parseNum(inv.totalAmount);
+          entry.costItemIds.push(inv.invoiceId);
+        }
+        items = Array.from(map.values()).map((item) => ({ ...item, totalAmount: Math.round(item.totalAmount), payAmount: Math.round(item.totalAmount) }));
+      }
     }
 
     items.sort((a, b) => {

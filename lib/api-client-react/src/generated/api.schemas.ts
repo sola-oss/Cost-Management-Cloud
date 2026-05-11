@@ -132,6 +132,17 @@ export const CostItemCategory = {
   expense: "expense",
 } as const;
 
+/**
+ * 原価の登録元区分（手動入力 or 仕入伝票自動同期）
+ */
+export type CostItemSourceType =
+  (typeof CostItemSourceType)[keyof typeof CostItemSourceType];
+
+export const CostItemSourceType = {
+  manual: "manual",
+  purchase_invoice: "purchase_invoice",
+} as const;
+
 export interface CostItem {
   id: number;
   projectId: number;
@@ -155,6 +166,16 @@ export interface CostItem {
   invoiceNumber?: string | null;
   /** 備考 */
   notes?: string | null;
+  /** 原価の登録元区分（手動入力 or 仕入伝票自動同期） */
+  sourceType: CostItemSourceType;
+  /** 登録元 ID（purchase_invoice_items.id） */
+  sourceId?: number | null;
+  /** 仕入伝票由来の場合の親伝票 ID */
+  purchaseInvoiceId?: number | null;
+  /** 仕入先 ID */
+  vendorId?: number | null;
+  /** 工種 ID */
+  workTypeId?: number | null;
   createdAt: string;
   updatedAt: string;
 }

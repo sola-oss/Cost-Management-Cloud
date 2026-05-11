@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CostItemCategory } from "./costItemCategory";
+import type { CostItemSourceType } from "./costItemSourceType";
 
 export interface CostItem {
   id: number;
@@ -30,6 +31,16 @@ export interface CostItem {
   invoiceNumber?: string | null;
   /** 備考 */
   notes?: string | null;
+  /** 原価の登録元区分（手動入力 or 仕入伝票自動同期） */
+  sourceType: CostItemSourceType;
+  /** 登録元 ID（purchase_invoice_items.id） */
+  sourceId?: number | null;
+  /** 仕入伝票由来の場合の親伝票 ID */
+  purchaseInvoiceId?: number | null;
+  /** 仕入先 ID */
+  vendorId?: number | null;
+  /** 工種 ID */
+  workTypeId?: number | null;
   createdAt: Date;
   updatedAt: Date;
 }

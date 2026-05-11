@@ -1,0 +1,208 @@
+# タスク：仕入伝票 → cost_items 自動同期と支払査定の参照元変更
+
+## 背景
+
+プロンプトAでtypecheck清掃、プロンプトBで発注書・仕入伝票の API・UI とリレー機能が完成している。
+- 発注書（`purchase_orders`）作成可能
+- 仕入伝票（`purchase_invoices`）作成可能、`/purchases` から保存される
+- 既存の22件の `cost_items`（`source_type='manual'`）はそのまま残存
+- 仕入伝票と cost_items の自動同期は**未実装**
+- 支払査定はまだ `cost_items` を直接参照している
+
+このタスクで3層構造を完全連動させる：
+1. 仕入伝票確定時に `cost_items` へ自動INSERT（明細1行ごと1レコード）
+2. 仕入伝票更新時に対応する `cost_items` を更新
+3. 仕入伝票削除時に対応する `cost_items` を削除
+4. 支払査定の参照元を `cost_items` から `purchase_invoices` に変更
+5. 原価明細タブの UNION 表示を整理（仕入伝票由来は cost_items 経由で見えるようになるため UNION 不要に）
+
+## 完成後の状態
+
+- 仕入伝票を作成すると、`purchase_invoice_items` の各行に対応する `cost_items` レコードが自動作成される
+  - `cost_items.sourceType = 'purchase_invoice'`
+  - `cost_items.sourceId = purchase_invoice_items.id`
+  - `purchase_invoice_items.costItemId` に対応する `cost_items.id` を保存
+- 原価明細タブはシンプルに `cost_items` だけ見れば全件揃う
+- 支払査定は仕入伝票単位で集計するように変更
+- 既存の22件の手動入力データは引き続き存在し、原価明細タブと支払査定の両方に表示される
+- 完全な3層構造: 発注書 → 仕入伝票 → 原価明細（自動同期） + 支払査定（仕入伝票参照）
+
+## 制約
+
+- DB スキーマは変更しない（前回確定済み）
+- 既存の22件の `cost_items` データ（`source_type='manual'`）は変更しない
+- typecheck はエラーゼロを維持
+
+## 実装手順
+
+### ステップ1：仕入伝票 API に cost_items 同期ロジック追加
+
+`artifacts/api-server/src/routes/purchase-invoices.ts` を改修：
+
+#### POST /api/purchase-invoices（仕入伝票作成）
+
+トランザクション内で以下を実行：
+1. `purchase_invoices` ヘッダ INSERT
+2. `purchase_invoice_items` 明細 INSERT（`costItemId` は一旦 NULL）
+3. 各明細について `cost_items` に対応レコードを INSERT:
+   - `projectId`: 仕入伝票の projectId
+   - `category`: 明細の category
+   - `description`: 明細の description
+   - `vendor`: 仕入先名（vendors テーブルから取得）
+   - `vendorId`: 明細経由の vendorId
+   - `workTypeId`: 明細の workTypeId
+   - `quantity`, `unit`, `unitPrice`, `amount`: 明細の対応値
+   - `incurredDate`: `purchase_invoices.purchaseDate`
+   - `invoiceNumber`: 仕入伝票の `voucherNumber`
+   - `sourceType`: `'purchase_invoice'`
+   - `sourceId`: `purchase_invoice_items.id`
+4. 作成された `cost_items.id` を対応する `purchase_invoice_items.costItemId` に UPDATE
+
+#### PATCH /api/purchase-invoices/:id（仕入伝票更新）
+
+明細の追加・更新・削除に応じて、対応する `cost_items` も同期：
+- 明細追加 → `cost_items` INSERT、`costItemId` を更新
+- 明細更新 → `cost_items` の対応レコードを UPDATE
+- 明細削除 → `cost_items` の対応レコードを DELETE
+
+実装方針: 一旦シンプルに「全明細削除 → 全明細再INSERT」で同期し直す方法でも可。ただし `cost_items` 側も `sourceType='purchase_invoice' AND sourceId IN (旧明細IDs)` を削除して再生成する。トランザクション内で実施。
+
+#### DELETE /api/purchase-invoices/:id（仕入伝票削除）
+
+トランザクション内で：
+1. 対応する `cost_items`（`sourceType='purchase_invoice' AND sourceId IN (この伝票の明細IDs)`）を DELETE
+2. `purchase_invoice_items` を DELETE
+3. `purchase_invoices` を DELETE
+4. リレー元の `purchase_order_items.deliveredQuantity` を戻す
+
+### ステップ2：仮伝票（isProvisional）の扱い
+
+仮伝票（`isProvisional=true`）でも `cost_items` への同期は実行する（実績原価として計上）。
+ただし `cost_items.notes` に "仮伝票" の旨を追記しておくと後で識別できる。
+
+判断：仮伝票は実績原価としてカウントすべきか、本確定後にカウントすべきか、業務フロー上の判断が必要。
+**実装方針**: 仮伝票でも `cost_items` に同期するが、ダッシュボードや収支状況で使う集計 SQL では `WHERE NOT (source_type='purchase_invoice' AND EXISTS (SELECT 1 FROM purchase_invoices WHERE id = ... AND is_provisional = true))` のように除外する選択肢を残す。
+
+このタスクではシンプルに**仮伝票も含めて全て cost_items に同期**し、集計時の除外は将来課題とする。完了報告でこの判断を明記すること。
+
+### ステップ3：原価明細タブの UNION 廃止
+
+プロンプトBで暫定的に作成した `GET /api/projects/:id/cost-detail-unified` を**廃止**し、フロントエンドは元の `GET /api/cost-items?projectId=` に戻す。
+
+理由：仕入伝票の明細が自動的に `cost_items` に入るので、UNION 不要になる。
+
+ズーム機能は維持：
+- `cost_items.sourceType='purchase_invoice'` の行は、クリック/ダブルクリックで `cost_items.sourceId` から逆引き → 仕入伝票明細 → 親伝票を特定 → `/purchases?id={id}` で開く
+- そのために API: `GET /api/cost-items/:id/source-voucher` を追加（`source_type` と `source_id` から伝票を逆引き）
+
+### ステップ4：支払査定の参照元変更
+
+`artifacts/api-server/src/routes/payment-assessments.ts`（または相当ファイル）の集計クエリを変更：
+
+#### 旧（cost_items を参照）
+
+```sql
+SELECT vendor, SUM(amount) FROM cost_items WHERE incurred_date BETWEEN ? AND ? GROUP BY vendor
+```
+
+#### 新（purchase_invoices を参照）
+
+```sql
+SELECT 
+  pi.vendor_id, 
+  v.name AS vendor_name, 
+  v.group_id,
+  SUM(pi.total_amount) AS amount,
+  COUNT(*) AS invoice_count
+FROM purchase_invoices pi
+JOIN vendors v ON pi.vendor_id = v.id
+WHERE pi.purchase_date BETWEEN ? AND ?
+  AND pi.status NOT IN ('cancelled', 'paid')
+  AND pi.is_provisional = false  -- 本確定のみ査定対象
+GROUP BY pi.vendor_id, v.name, v.group_id
+```
+
+仕入先グループフィルタ・査定方式（仕入先別 / 工事別 など）は既存仕様を維持。
+
+確定処理（`POST /api/payment-assessments/confirm`）：
+- `payments` テーブルへの書込は維持
+- 書込時に `payments.source = 'assessment'` に加えて、対応する `purchase_invoices.id` を `payments.purchaseInvoiceId`（カラム名は既存の payments スキーマに合わせる）に保存できるよう拡張**しない**。これはスキーマ変更を伴うため、本タスクではスキーマ変更ゼロを維持。`payments.notes` に伝票番号を入れて参照可能にする。
+
+既存の22件の手動入力データ（`cost_items` の `source_type='manual'`）は仕入伝票を持たないため、支払査定の対象外になる。これは想定通りの動作。
+
+### ステップ5：ダッシュボードと収支レポートの確認
+
+`/api/dashboard/*` 系エンドポイントは `cost_items` を参照したまま動くはず（自動同期で全データが入っているため）。ただし以下を実装後にスポット確認：
+- `/api/dashboard/cost-by-category`
+- `/api/dashboard/monthly-costs`
+- `/api/dashboard/budget-vs-actual`
+- `/api/projects/:id/summary`
+
+データに不整合がないか SELECT して確認するクエリを実行し、結果を報告。
+
+### ステップ6：typecheck と動作確認
+
+```bash
+pnpm run typecheck
+```
+
+エラーゼロを確認後、Replit プレビューで以下の動作確認：
+
+1. 仕入伝票を新規作成 → 工事詳細の原価明細タブに即座に反映される
+2. 仕入伝票の明細を編集 → 原価明細タブの該当行が更新される
+3. 仕入伝票を削除 → 原価明細タブの該当行が消える
+4. 支払査定で期間を指定して集計 → 仕入伝票ベースで仕入先別金額が出る
+5. 原価明細タブで仕入伝票由来の行をクリック → 仕入伝票の編集画面に飛ぶ
+6. 既存の22件の手動入力データは引き続き原価明細タブに表示される
+
+### ステップ7：完了報告
+
+```
+## プロンプトC 完了報告
+
+### 変更ファイル
+- [変更] artifacts/api-server/src/routes/purchase-invoices.ts（同期ロジック追加）
+- [変更] artifacts/api-server/src/routes/payment-assessments.ts（参照元変更）
+- [変更] artifacts/genka-kanri/src/pages/projects/cost-detail-tab.tsx（UNION廃止、ズーム機能）
+- [削除] /api/projects/:id/cost-detail-unified エンドポイント
+- [追加] /api/cost-items/:id/source-voucher エンドポイント
+- 他
+
+### 採用した実装方針
+- 仮伝票の扱い: ...
+- 同期方法（差分更新 or 全削除→再生成）: ...
+
+### typecheck 結果
+（エラーゼロ確認）
+
+### 動作確認結果
+- 仕入伝票作成→原価明細自動反映: ✅/❌
+- 仕入伝票編集→原価明細自動更新: ✅/❌
+- 仕入伝票削除→原価明細自動削除: ✅/❌
+- 支払査定の仕入伝票ベース集計: ✅/❌
+- ズーム機能: ✅/❌
+- 既存手動データの維持: ✅/❌
+
+### データ整合性確認
+（cost_items と purchase_invoice_items の件数突合 SQL の結果）
+
+### 既知の制限事項・将来課題
+- 仮伝票の集計除外は未実装
+- payments テーブルへの purchase_invoice_id カラム追加は未実装（スキーマ変更を避けたため）
+```
+
+## 絶対にやってはいけないこと
+
+- DB スキーマファイル（`lib/db/src/schema/`）の変更
+- 既存の22件の `cost_items` データ（`source_type='manual'`）の削除・変更
+- `payments` テーブルのスキーマ変更
+- 既存の請求書・入金管理機能の改修
+- `push-force` の使用
+- `cost_items` への手動入力（既存 `/purchases` の手動入力モードがあれば）の廃止
+
+## 注意点
+
+- トランザクション処理を必ず使う。同期途中で失敗するとデータ不整合になる
+- 既存22件の手動データは `source_type='manual'` で識別されるので、`source_type='purchase_invoice'` の同期削除クエリで誤って消さないこと
+- 支払査定の集計 SQL を変えると数字が変わる。Replit プレビューで実行前後の数字を確認して報告
+- 仮伝票の扱いは業務フロー判断が必要なため、実装方針を明記すること

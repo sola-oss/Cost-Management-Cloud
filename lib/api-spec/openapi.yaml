@@ -1437,6 +1437,26 @@ components:
           type: string
           nullable: true
           description: 備考
+        sourceType:
+          type: string
+          enum: [manual, purchase_invoice]
+          description: 原価の登録元区分（手動入力 or 仕入伝票自動同期）
+        sourceId:
+          type: integer
+          nullable: true
+          description: 登録元 ID（purchase_invoice_items.id）
+        purchaseInvoiceId:
+          type: integer
+          nullable: true
+          description: 仕入伝票由来の場合の親伝票 ID
+        vendorId:
+          type: integer
+          nullable: true
+          description: 仕入先 ID
+        workTypeId:
+          type: integer
+          nullable: true
+          description: 工種 ID
         createdAt:
           type: string
           format: date-time
@@ -1450,6 +1470,7 @@ components:
         - description
         - amount
         - incurredDate
+        - sourceType
         - createdAt
         - updatedAt
 
