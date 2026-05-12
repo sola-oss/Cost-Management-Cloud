@@ -131,11 +131,12 @@ function useWorkTypes() {
     queryFn: async () => {
       const res = await fetch("/api/work-types");
       if (!res.ok) return [];
-      return res.json();
+      const json = await res.json();
+      return Array.isArray(json) ? json : [];
     },
     staleTime: 60_000,
   });
-  return data ?? [];
+  return Array.isArray(data) ? data : [];
 }
 
 // ─── 得意先マスタ hook ────────────────────────────────────────────────────
@@ -171,7 +172,8 @@ function useVendors() {
     },
     staleTime: 60_000,
   });
-  return data ?? [];
+  // Guard against stale cache that may contain the raw API object instead of a parsed array
+  return Array.isArray(data) ? data : [];
 }
 
 // ─── 実行予算タブ ─────────────────────────────────────────────────────────
