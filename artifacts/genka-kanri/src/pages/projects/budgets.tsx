@@ -116,7 +116,7 @@ export default function BudgetManagement() {
   const bulkCreatePO = useBulkCreatePurchaseOrders();
 
   const [rows, setRows] = useState<RowState[]>([]);
-  const [selectedForOrder, setSelectedForOrder] = useState<Set<number>>(new Set());
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
 
@@ -165,7 +165,7 @@ export default function BudgetManagement() {
         isNew: false,
         isOriginalLocked: item.isOriginalLocked ?? false,
       })));
-      setSelectedForOrder(new Set());
+      setSelectedRows(new Set());
     }
   }, [budgetData]);
 
@@ -316,10 +316,8 @@ export default function BudgetManagement() {
     ));
   }
 
-  function handleToggleForOrder(rowIdx: number) {
-    const row = rows[rowIdx];
-    if (row.purchaseOrderId || !row.vendorId) return; // disabled
-    setSelectedForOrder(prev => {
+  function handleToggleRow(rowIdx: number) {
+    setSelectedRows(prev => {
       const next = new Set(prev);
       if (next.has(rowIdx)) next.delete(rowIdx);
       else next.add(rowIdx);
@@ -328,13 +326,13 @@ export default function BudgetManagement() {
   }
 
   async function handleDeleteSelected() {
-    if (selectedForOrder.size === 0) {
+    if (selectedRows.size === 0) {
       toast({ title: "行を選択してください", variant: "destructive" });
       return;
     }
-    if (!window.confirm(`選択した ${selectedForOrder.size} 行を削除しますか？`)) return;
+    if (!window.confirm(`選択した ${selectedRows.size} 行を削除しますか？`)) return;
 
-    const idxList = Array.from(selectedForOrder).sort((a, b) => b - a);
+    const idxList = Array.from(selectedRows).sort((a, b) => b - a);
     for (const idx of idxList) {
       const row = rows[idx];
       if (row.id) {
@@ -346,24 +344,19 @@ export default function BudgetManagement() {
         }
       }
     }
-    setRows(prev => prev.filter((_, i) => !selectedForOrder.has(i)));
-    setSelectedForOrder(new Set());
+    setRows(prev => prev.filter((_, i) => !selectedRows.has(i)));
+    setSelectedRows(new Set());
     queryClient.invalidateQueries({ queryKey: getListBudgetItemsQueryKey(projectId) });
     queryClient.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
     toast({ title: `${idxList.length} 行を削除しました` });
   }
 
-  // 発注可能行（purchaseOrderId なし & vendorId あり）
-  const orderableRows = rows.filter(r => !r.purchaseOrderId && !!r.vendorId);
-  const allOrderableChecked = orderableRows.length > 0 && selectedForOrder.size === orderableRows.length &&
-    orderableRows.every((_, i) => selectedForOrder.has(rows.indexOf(orderableRows[i])));
-
-  // 選択行を仕入先 ID でグループ化
+  // 選択行のうち発注可能（purchaseOrderId なし & vendorId あり）な行を仕入先 ID でグループ化
   const computedVendorGroups = (() => {
     const map = new Map<number, { vendorId: number; vendorName: string; items: { rowIdx: number; workTypeName: string; revisedBudget: number }[] }>();
-    for (const rowIdx of Array.from(selectedForOrder)) {
+    for (const rowIdx of Array.from(selectedRows)) {
       const row = rows[rowIdx];
-      if (!row || !row.vendorId) continue;
+      if (!row || !row.vendorId || row.purchaseOrderId) continue; // 発注不可行はスキップ
       const vid = parseInt(row.vendorId);
       if (!map.has(vid)) {
         map.set(vid, { vendorId: vid, vendorName: row.supplierName || vendors.find(v => v.id === vid)?.name || String(vid), items: [] });
@@ -374,7 +367,7 @@ export default function BudgetManagement() {
   })();
 
   function openBulkOrderModal() {
-    if (selectedForOrder.size === 0) return;
+    if (computedVendorGroups.length === 0) return;
     const next = new Map<number, { deliveryDate: string; notes: string }>();
     for (const grp of computedVendorGroups) {
       next.set(grp.vendorId, { deliveryDate: "", notes: "" });
@@ -403,7 +396,7 @@ export default function BudgetManagement() {
         },
       });
       setBulkOrderOpen(false);
-      setSelectedForOrder(new Set());
+      setSelectedRows(new Set());
       queryClient.invalidateQueries({ queryKey: getListBudgetItemsQueryKey(projectId) });
       toast({ title: "発注書を作成しました", description: `${computedVendorGroups.length} 社向けの発注書を作成しました。` });
     } catch {
@@ -724,12 +717,12 @@ export default function BudgetManagement() {
                     size="sm"
                     className="h-7 text-xs px-3 bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
                     onClick={openBulkOrderModal}
-                    disabled={selectedForOrder.size === 0 || computedVendorGroups.length === 0}
+                    disabled={computedVendorGroups.length === 0}
                   >
                     <ShoppingCart className="w-3.5 h-3.5" />
                     発注書を作成
-                    {selectedForOrder.size > 0 && (
-                      <span className="ml-1 bg-white/20 rounded px-1">{selectedForOrder.size}行・{computedVendorGroups.length}社</span>
+                    {selectedRows.size > 0 && computedVendorGroups.length > 0 && (
+                      <span className="ml-1 bg-white/20 rounded px-1">{computedVendorGroups.reduce((s,g)=>s+g.items.length,0)}行・{computedVendorGroups.length}社</span>
                     )}
                   </Button>
                 </div>
@@ -742,17 +735,8 @@ export default function BudgetManagement() {
                     <tr className="bg-teal-700 text-white">
                       <th className="border border-teal-600 px-1 py-1.5 w-8 text-center" title="発注対象を選択（仕入先未設定・発注済は選択不可）">
                         <Checkbox className="h-3.5 w-3.5 border-white"
-                          checked={allOrderableChecked}
-                          onCheckedChange={v => {
-                            if (v) {
-                              const idxSet = new Set(
-                                rows.map((_, i) => i).filter(i => !rows[i].purchaseOrderId && !!rows[i].vendorId)
-                              );
-                              setSelectedForOrder(idxSet);
-                            } else {
-                              setSelectedForOrder(new Set());
-                            }
-                          }}
+                          checked={selectedRows.size === rows.length && rows.length > 0}
+                          onCheckedChange={v => setSelectedRows(v ? new Set(rows.map((_, i) => i)) : new Set())}
                         />
                       </th>
                       {COLS.filter(col => !col.hidden).map(col => (
@@ -791,7 +775,7 @@ export default function BudgetManagement() {
                         const profit = parseN(row.contractAmount) - parseN(row.revisedBudget);
                         const ca = parseN(row.contractAmount);
                         const profitRate = ca > 0 ? ((profit / ca) * 100).toFixed(1) + "%" : "—";
-                        const isSelected = selectedForOrder.has(rowIdx);
+                        const isSelected = selectedRows.has(rowIdx);
                         const isDirty = row.isDirty || row.isNew;
                         const isOrdered = !!row.purchaseOrderId;
                         const isOrderable = !isOrdered && !!row.vendorId;
@@ -802,8 +786,8 @@ export default function BudgetManagement() {
                             <td className="border border-slate-100 px-1 py-0.5 text-center">
                               <Checkbox className="h-3.5 w-3.5"
                                 checked={isSelected}
-                                disabled={!isOrderable}
-                                onCheckedChange={() => handleToggleForOrder(rowIdx)} />
+                                
+                                onCheckedChange={() => handleToggleRow(rowIdx)} />
                             </td>
                             {COLS.filter(col => !col.hidden).map(col => (
                               <td key={col.key}
@@ -1121,7 +1105,7 @@ export default function BudgetManagement() {
 
             <div className="bg-slate-50 border rounded p-3 text-sm text-slate-600">
               <span className="font-semibold text-slate-800">{computedVendorGroups.length}社</span> の仕入先向けに
-              <span className="font-semibold text-slate-800"> {selectedForOrder.size}件</span> の明細をまとめて発注書を作成します。
+              <span className="font-semibold text-slate-800"> {computedVendorGroups.reduce((s,g)=>s+g.items.length,0)}件</span> の明細をまとめて発注書を作成します。
             </div>
           </div>
 
