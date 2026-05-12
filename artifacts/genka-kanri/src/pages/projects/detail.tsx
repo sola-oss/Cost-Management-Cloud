@@ -168,7 +168,7 @@ function useVendors() {
       if (!res.ok) return [];
       const json = await res.json();
       // API returns { items: VendorItem[], total: number }
-      return Array.isArray(json) ? json : (json.items ?? []);
+      return Array.isArray(json) ? json : (Array.isArray(json.items) ? json.items : []);
     },
     staleTime: 60_000,
   });
@@ -601,7 +601,7 @@ function BudgetTab({ projectId }: { projectId: number }) {
                                 </SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="__none__" className="text-xs text-slate-400">— 未選択 —</SelectItem>
-                                  {workTypeMaster.map((wt) => (
+                                  {Array.isArray(workTypeMaster) && workTypeMaster.map((wt) => (
                                     <SelectItem key={wt.id} value={wt.code} className="text-xs">
                                       <span className="font-mono text-slate-500 mr-1">{wt.code}</span>
                                       {wt.name}
@@ -627,7 +627,7 @@ function BudgetTab({ projectId }: { projectId: number }) {
                                 </SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="__none__" className="text-xs text-slate-400">— 未選択 —</SelectItem>
-                                  {vendors.map((v) => (
+                                  {Array.isArray(vendors) && vendors.map((v) => (
                                     <SelectItem key={v.id} value={String(v.id)} className="text-xs">{v.name}</SelectItem>
                                   ))}
                                 </SelectContent>
@@ -764,7 +764,7 @@ function BudgetTab({ projectId }: { projectId: number }) {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="__none__" className="text-xs text-slate-400">— 未選択 —</SelectItem>
-                            {workTypeMaster.map((wt) => (
+                            {Array.isArray(workTypeMaster) && workTypeMaster.map((wt) => (
                               <SelectItem key={wt.id} value={wt.code} className="text-xs">
                                 <span className="font-mono text-slate-500 mr-1">{wt.code}</span>
                                 {wt.name}
@@ -790,7 +790,7 @@ function BudgetTab({ projectId }: { projectId: number }) {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="__none__" className="text-xs text-slate-400">— 未選択 —</SelectItem>
-                            {vendors.map((v) => (
+                            {Array.isArray(vendors) && vendors.map((v) => (
                               <SelectItem key={v.id} value={String(v.id)} className="text-xs">{v.name}</SelectItem>
                             ))}
                           </SelectContent>
