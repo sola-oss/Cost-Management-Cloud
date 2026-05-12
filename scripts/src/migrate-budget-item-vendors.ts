@@ -25,7 +25,7 @@ async function main() {
       continue;
     }
     const match = vendors.find(
-      v => v.name.trim().toLowerCase() === name.toLowerCase()
+      v => v.name.trim() === name
     );
     if (!match) {
       console.log(`  ⚠️  一致なし: budget_item id=${item.id} supplierName="${name}"`);
