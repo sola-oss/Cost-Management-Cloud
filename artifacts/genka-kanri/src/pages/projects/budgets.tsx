@@ -14,21 +14,22 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   ArrowLeft, Save, Trash2, Plus, RefreshCw, Settings2, Copy, ChevronDown, ChevronRight, Download, Lock,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
 type WorkType = { id: number; code: string; name: string; constructionType?: string };
-
+type VendorItem = { id: number; name: string; code: string | null; groupName?: string | null };
 
 type RowState = {
   id?: number;
   workTypeCode: string;
   workTypeName: string;
-  supplierCode: string;
+  vendorId: string;
   supplierName: string;
   contractAmount: string;
   initialBudget: string;
@@ -52,13 +53,12 @@ function parseN(s: string) {
 }
 
 const COLS: { key: keyof RowState; label: string; width: string; align: "left" | "right"; numeric?: boolean; hidden?: boolean }[] = [
-  { key: "workTypeCode",   label: "工種",         width: "240px", align: "left" },
-  { key: "workTypeName",   label: "工種名",       width: "0px",   align: "left", hidden: true },
-  { key: "supplierCode",   label: "仕入先コード", width: "90px",  align: "left" },
-  { key: "supplierName",   label: "仕入先名",     width: "150px", align: "left" },
-  { key: "contractAmount", label: "請負金額",     width: "110px", align: "right", numeric: true },
-  { key: "initialBudget",  label: "当初予算",     width: "110px", align: "right", numeric: true },
-  { key: "revisedBudget",  label: "実行予算",     width: "110px", align: "right", numeric: true },
+  { key: "workTypeCode",   label: "工種",     width: "240px", align: "left" },
+  { key: "workTypeName",   label: "工種名",   width: "0px",   align: "left", hidden: true },
+  { key: "vendorId",       label: "仕入先",   width: "200px", align: "left" },
+  { key: "contractAmount", label: "請負金額", width: "110px", align: "right", numeric: true },
+  { key: "initialBudget",  label: "当初予算", width: "110px", align: "right", numeric: true },
+  { key: "revisedBudget",  label: "実行予算", width: "110px", align: "right", numeric: true },
 ];
 
 function useWorkTypes() {
@@ -74,6 +74,19 @@ function useWorkTypes() {
   return workTypes;
 }
 
+function useVendors() {
+  const { data } = useQuery<VendorItem[]>({
+    queryKey: ["/api/vendors"],
+    queryFn: async () => {
+      const res = await fetch("/api/vendors");
+      if (!res.ok) return [];
+      const json = await res.json();
+      return Array.isArray(json) ? json : (Array.isArray(json.items) ? json.items : []);
+    },
+    staleTime: 60_000,
+  });
+  return Array.isArray(data) ? data : [];
+}
 
 export default function BudgetManagement() {
   const { id } = useParams<{ id: string }>();
@@ -81,6 +94,7 @@ export default function BudgetManagement() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const workTypes = useWorkTypes();
+  const vendors = useVendors();
 
   const { data: project } = useGetProject(projectId, {
     query: { enabled: !!projectId, queryKey: getGetProjectQueryKey(projectId) },
@@ -112,13 +126,25 @@ export default function BudgetManagement() {
 
   const cellRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
+  const [vendorSearch, setVendorSearch] = useState("");
+  const [addVendorOpen, setAddVendorOpen] = useState(false);
+  const [addVendorName, setAddVendorName] = useState("");
+  const [addVendorCode, setAddVendorCode] = useState("");
+  const [addVendorSaving, setAddVendorSaving] = useState(false);
+  const [pendingVendorRowIdx, setPendingVendorRowIdx] = useState<number | null>(null);
+
+  const filteredVendors = vendors.filter(v => {
+    const q = vendorSearch.toLowerCase();
+    return !q || v.name.toLowerCase().includes(q) || (v.code ?? "").toLowerCase().includes(q);
+  });
+
   useEffect(() => {
     if (budgetData?.items) {
       setRows(budgetData.items.map(item => ({
         id: item.id,
         workTypeCode: item.workTypeCode,
         workTypeName: item.workTypeName,
-        supplierCode: item.supplierCode ?? "",
+        vendorId: item.vendorId ? String(item.vendorId) : "",
         supplierName: item.supplierName,
         contractAmount: String(item.contractAmount),
         initialBudget: String(item.initialBudget),
@@ -143,6 +169,49 @@ export default function BudgetManagement() {
     setRows(prev => prev.map((r, i) =>
       i === rowIdx ? { ...r, workTypeCode: wt.code, workTypeName: wt.name, isDirty: true } : r
     ));
+  }
+
+  function handleSelectVendor(rowIdx: number, vendorId: string) {
+    const vd = vendors.find(v => String(v.id) === vendorId);
+    setRows(prev => prev.map((r, i) =>
+      i === rowIdx
+        ? { ...r, vendorId, supplierName: vd?.name ?? "", isDirty: true }
+        : r
+    ));
+  }
+
+  async function handleAddVendor() {
+    if (!addVendorName.trim()) return;
+    setAddVendorSaving(true);
+    try {
+      const res = await fetch("/api/vendors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: addVendorName.trim(),
+          code: addVendorCode.trim() || undefined,
+        }),
+      });
+      if (!res.ok) throw new Error("failed");
+      const newVendor = await res.json() as { id: number; name: string };
+      queryClient.invalidateQueries({ queryKey: ["/api/vendors"] });
+      if (pendingVendorRowIdx !== null) {
+        setRows(prev => prev.map((r, i) =>
+          i === pendingVendorRowIdx
+            ? { ...r, vendorId: String(newVendor.id), supplierName: newVendor.name, isDirty: true }
+            : r
+        ));
+      }
+      setAddVendorOpen(false);
+      setAddVendorName("");
+      setAddVendorCode("");
+      setPendingVendorRowIdx(null);
+      toast({ title: "仕入先を登録しました" });
+    } catch {
+      toast({ title: "登録エラー", description: "仕入先の登録に失敗しました。", variant: "destructive" });
+    } finally {
+      setAddVendorSaving(false);
+    }
   }
 
   async function handleImportFromEstimate() {
@@ -204,7 +273,7 @@ export default function BudgetManagement() {
   function handleAddRow() {
     const newRow: RowState = {
       workTypeCode: "", workTypeName: "",
-      supplierCode: "", supplierName: "",
+      vendorId: "", supplierName: "",
       contractAmount: "0", initialBudget: "0", revisedBudget: "0",
       isDirty: true, isNew: true, isOriginalLocked: false,
     };
@@ -224,7 +293,7 @@ export default function BudgetManagement() {
         ...r,
         workTypeCode: prev.workTypeCode,
         workTypeName: prev.workTypeName,
-        supplierCode: prev.supplierCode,
+        vendorId: prev.vendorId,
         supplierName: prev.supplierName,
         contractAmount: prev.contractAmount,
         initialBudget: prev.initialBudget,
@@ -270,7 +339,7 @@ export default function BudgetManagement() {
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>, rowIdx: number, colKey: string) {
-    const visibleCols = COLS.filter(c => !c.hidden);
+    const visibleCols = COLS.filter(c => !c.hidden && c.key !== "vendorId");
     if (e.key === "Enter" && e.ctrlKey) {
       e.preventDefault();
       if (rowIdx > 0) {
@@ -320,6 +389,7 @@ export default function BudgetManagement() {
         workTypeName: string;
         supplierCode: string;
         supplierName: string;
+        vendorId: number | null;
         contractAmount: number;
         initialBudget?: number;
         revisedBudget: number;
@@ -327,8 +397,9 @@ export default function BudgetManagement() {
       } = {
         workTypeCode: row.workTypeCode || "—",
         workTypeName: row.workTypeName || "—",
-        supplierCode: row.supplierCode,
+        supplierCode: "",
         supplierName: row.supplierName,
+        vendorId: row.vendorId ? parseInt(row.vendorId) : null,
         contractAmount: parseN(row.contractAmount),
         revisedBudget: parseN(row.revisedBudget),
         sortOrder: i,
@@ -672,6 +743,60 @@ export default function BudgetManagement() {
                                       ))}
                                     </SelectContent>
                                   </Select>
+                                ) : col.key === "vendorId" ? (
+                                  <Select
+                                    value={row.vendorId || "__none__"}
+                                    onValueChange={val => {
+                                      if (val === "__none__") {
+                                        setRows(prev => prev.map((r, i) =>
+                                          i === rowIdx ? { ...r, vendorId: "", supplierName: "", isDirty: true } : r
+                                        ));
+                                      } else {
+                                        handleSelectVendor(rowIdx, val);
+                                      }
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-7 w-full border-0 rounded-none text-xs focus:ring-1 focus:ring-teal-400 focus:ring-inset" style={{ minHeight: "28px" }}>
+                                      <SelectValue placeholder="仕入先を選択">
+                                        {row.vendorId ? (
+                                          <span>{row.supplierName || vendors.find(v => String(v.id) === row.vendorId)?.name || ""}</span>
+                                        ) : (
+                                          <span className="text-slate-400">仕入先を選択</span>
+                                        )}
+                                      </SelectValue>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <div className="px-2 py-1.5 border-b border-slate-100">
+                                        <input
+                                          className="w-full text-xs outline-none bg-transparent placeholder:text-slate-400"
+                                          placeholder="仕入先を検索..."
+                                          value={vendorSearch}
+                                          onChange={e => setVendorSearch(e.target.value)}
+                                          onKeyDown={e => e.stopPropagation()}
+                                        />
+                                      </div>
+                                      <SelectItem value="__none__" className="text-xs text-slate-400">— 未選択 —</SelectItem>
+                                      {filteredVendors.map(v => (
+                                        <SelectItem key={v.id} value={String(v.id)} className="text-xs">
+                                          {v.code && <span className="font-mono text-slate-400 mr-1">{v.code}</span>}
+                                          {v.name}
+                                        </SelectItem>
+                                      ))}
+                                      <div className="border-t border-slate-100 mt-1 pt-1 px-2 pb-1">
+                                        <button
+                                          type="button"
+                                          className="text-xs text-teal-600 hover:text-teal-700 flex items-center gap-1"
+                                          onMouseDown={e => {
+                                            e.preventDefault();
+                                            setPendingVendorRowIdx(rowIdx);
+                                            setAddVendorOpen(true);
+                                          }}
+                                        >
+                                          <Plus className="w-3 h-3" /> 新しい仕入先を登録
+                                        </button>
+                                      </div>
+                                    </SelectContent>
+                                  </Select>
                                 ) : col.key === "initialBudget" && row.isOriginalLocked ? (
                                   <div className="w-full h-full px-2 py-1 bg-slate-100 text-right text-xs text-slate-500 flex items-center justify-end gap-1" style={{ minHeight: "28px" }}>
                                     <span>{parseN(row.initialBudget).toLocaleString("ja-JP")}</span>
@@ -722,7 +847,7 @@ export default function BudgetManagement() {
                     <tfoot>
                       <tr className="bg-slate-100 font-bold border-t-2 border-slate-300">
                         <td className="border border-slate-200 px-1 py-1.5" />
-                        <td className="border border-slate-200 px-2 py-1.5" colSpan={4}>合計</td>
+                        <td className="border border-slate-200 px-2 py-1.5" colSpan={2}>合計</td>
                         <td className="border border-slate-200 px-2 py-1.5 text-right">
                           {fmt(totalContractAmount)}
                         </td>
@@ -806,6 +931,52 @@ export default function BudgetManagement() {
           {saving ? "保存中..." : "保存する"}
         </Button>
       </div>
+
+      {/* ── 新しい仕入先を登録 ダイアログ ── */}
+      <Dialog open={addVendorOpen} onOpenChange={open => {
+        setAddVendorOpen(open);
+        if (!open) { setAddVendorName(""); setAddVendorCode(""); setPendingVendorRowIdx(null); }
+      }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>新しい仕入先を登録</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <label className="text-xs font-medium text-slate-700">仕入先名 <span className="text-red-500">*</span></label>
+              <input
+                className="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400"
+                value={addVendorName}
+                onChange={e => setAddVendorName(e.target.value)}
+                placeholder="例：○○工業株式会社"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-700">仕入先コード（任意）</label>
+              <input
+                className="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-teal-400"
+                value={addVendorCode}
+                onChange={e => setAddVendorCode(e.target.value)}
+                placeholder="例：V001"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => { setAddVendorOpen(false); setAddVendorName(""); setAddVendorCode(""); setPendingVendorRowIdx(null); }}>
+              キャンセル
+            </Button>
+            <Button
+              size="sm"
+              className="bg-teal-600 hover:bg-teal-700"
+              onClick={handleAddVendor}
+              disabled={!addVendorName.trim() || addVendorSaving}
+            >
+              {addVendorSaving ? "登録中..." : "登録する"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

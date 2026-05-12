@@ -232,6 +232,46 @@ function BudgetTab({ projectId }: { projectId: number }) {
   const [vendorGroupSettings, setVendorGroupSettings] = useState<Map<number, { deliveryDate: string; notes: string }>>(new Map());
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
 
+  const [vendorSearch, setVendorSearch] = useState("");
+  const [addVendorOpen, setAddVendorOpen] = useState(false);
+  const [addVendorName, setAddVendorName] = useState("");
+  const [addVendorCode, setAddVendorCode] = useState("");
+  const [addVendorSaving, setAddVendorSaving] = useState(false);
+  const [vendorContext, setVendorContext] = useState<"editRow" | "newRow">("editRow");
+
+  const filteredVendors = vendors.filter(v => {
+    const q = vendorSearch.toLowerCase();
+    return !q || v.name.toLowerCase().includes(q) || (v.vendorCode ?? "").toLowerCase().includes(q);
+  });
+
+  async function handleAddVendor() {
+    if (!addVendorName.trim()) return;
+    setAddVendorSaving(true);
+    try {
+      const res = await fetch("/api/vendors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: addVendorName.trim(), code: addVendorCode.trim() || undefined }),
+      });
+      if (!res.ok) throw new Error("failed");
+      const nv = await res.json() as { id: number; name: string };
+      queryClient.invalidateQueries({ queryKey: ["/api/vendors"] });
+      if (vendorContext === "editRow") {
+        setEditingValues(v => ({ ...v, vendorId: String(nv.id), supplierName: nv.name }));
+      } else {
+        setNewRow(r => ({ ...r, vendorId: String(nv.id), supplierName: nv.name }));
+      }
+      setAddVendorOpen(false);
+      setAddVendorName("");
+      setAddVendorCode("");
+      toast({ title: "仕入先を登録しました" });
+    } catch {
+      toast({ title: "登録エラー", description: "仕入先の登録に失敗しました。", variant: "destructive" });
+    } finally {
+      setAddVendorSaving(false);
+    }
+  }
+
   const items = budgetItemsData?.items ?? [];
 
   const totalContractAmount = items.reduce((s, i) => s + (i.contractAmount ?? 0), 0);
@@ -626,10 +666,32 @@ function BudgetTab({ projectId }: { projectId: number }) {
                                   <SelectValue placeholder="仕入先を選択" />
                                 </SelectTrigger>
                                 <SelectContent>
+                                  <div className="px-2 py-1.5 border-b border-slate-100">
+                                    <input
+                                      className="w-full text-xs outline-none bg-transparent placeholder:text-slate-400"
+                                      placeholder="仕入先を検索..."
+                                      value={vendorSearch}
+                                      onChange={e => setVendorSearch(e.target.value)}
+                                      onKeyDown={e => e.stopPropagation()}
+                                    />
+                                  </div>
                                   <SelectItem value="__none__" className="text-xs text-slate-400">— 未選択 —</SelectItem>
-                                  {Array.isArray(vendors) && vendors.map((v) => (
+                                  {Array.isArray(filteredVendors) && filteredVendors.map((v) => (
                                     <SelectItem key={v.id} value={String(v.id)} className="text-xs">{v.name}</SelectItem>
                                   ))}
+                                  <div className="border-t border-slate-100 mt-1 pt-1 px-2 pb-1">
+                                    <button
+                                      type="button"
+                                      className="text-xs text-teal-600 hover:text-teal-700 flex items-center gap-1"
+                                      onMouseDown={e => {
+                                        e.preventDefault();
+                                        setVendorContext("editRow");
+                                        setAddVendorOpen(true);
+                                      }}
+                                    >
+                                      <Plus className="w-3 h-3" /> 新しい仕入先を登録
+                                    </button>
+                                  </div>
                                 </SelectContent>
                               </Select>
                             </TableCell>
@@ -789,10 +851,32 @@ function BudgetTab({ projectId }: { projectId: number }) {
                             <SelectValue placeholder="仕入先を選択" />
                           </SelectTrigger>
                           <SelectContent>
+                            <div className="px-2 py-1.5 border-b border-slate-100">
+                              <input
+                                className="w-full text-xs outline-none bg-transparent placeholder:text-slate-400"
+                                placeholder="仕入先を検索..."
+                                value={vendorSearch}
+                                onChange={e => setVendorSearch(e.target.value)}
+                                onKeyDown={e => e.stopPropagation()}
+                              />
+                            </div>
                             <SelectItem value="__none__" className="text-xs text-slate-400">— 未選択 —</SelectItem>
-                            {Array.isArray(vendors) && vendors.map((v) => (
+                            {Array.isArray(filteredVendors) && filteredVendors.map((v) => (
                               <SelectItem key={v.id} value={String(v.id)} className="text-xs">{v.name}</SelectItem>
                             ))}
+                            <div className="border-t border-slate-100 mt-1 pt-1 px-2 pb-1">
+                              <button
+                                type="button"
+                                className="text-xs text-teal-600 hover:text-teal-700 flex items-center gap-1"
+                                onMouseDown={e => {
+                                  e.preventDefault();
+                                  setVendorContext("newRow");
+                                  setAddVendorOpen(true);
+                                }}
+                              >
+                                <Plus className="w-3 h-3" /> 新しい仕入先を登録
+                              </button>
+                            </div>
                           </SelectContent>
                         </Select>
                       </TableCell>
@@ -866,6 +950,52 @@ function BudgetTab({ projectId }: { projectId: number }) {
           </Table>
         </CardContent>
       </Card>
+
+      {/* ── 新しい仕入先を登録 ダイアログ ── */}
+      <Dialog open={addVendorOpen} onOpenChange={open => {
+        setAddVendorOpen(open);
+        if (!open) { setAddVendorName(""); setAddVendorCode(""); }
+      }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>新しい仕入先を登録</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <label className="text-xs font-medium text-slate-700">仕入先名 <span className="text-red-500">*</span></label>
+              <input
+                className="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-teal-400"
+                value={addVendorName}
+                onChange={e => setAddVendorName(e.target.value)}
+                placeholder="例：○○工業株式会社"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-700">仕入先コード（任意）</label>
+              <input
+                className="mt-1 w-full border border-slate-300 rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-teal-400"
+                value={addVendorCode}
+                onChange={e => setAddVendorCode(e.target.value)}
+                placeholder="例：V001"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => { setAddVendorOpen(false); setAddVendorName(""); setAddVendorCode(""); }}>
+              キャンセル
+            </Button>
+            <Button
+              size="sm"
+              className="bg-teal-600 hover:bg-teal-700"
+              onClick={handleAddVendor}
+              disabled={!addVendorName.trim() || addVendorSaving}
+            >
+              {addVendorSaving ? "登録中..." : "登録する"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── 発注書一括作成モーダル ── */}
       <Dialog open={bulkOrderOpen} onOpenChange={setBulkOrderOpen}>
