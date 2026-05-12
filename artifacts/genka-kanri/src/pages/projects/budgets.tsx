@@ -356,7 +356,7 @@ export default function BudgetManagement() {
     const map = new Map<number, { vendorId: number; vendorName: string; items: { rowIdx: number; workTypeName: string; revisedBudget: number }[] }>();
     for (const rowIdx of Array.from(selectedRows)) {
       const row = rows[rowIdx];
-      if (!row || !row.vendorId || row.purchaseOrderId) continue; // 発注不可行はスキップ
+      if (!row || !row.id || !row.vendorId || row.purchaseOrderId) continue; // 未保存・発注不可行はスキップ
       const vid = parseInt(row.vendorId);
       if (!map.has(vid)) {
         map.set(vid, { vendorId: vid, vendorName: row.supplierName || vendors.find(v => v.id === vid)?.name || String(vid), items: [] });
@@ -733,7 +733,7 @@ export default function BudgetManagement() {
                 <table className="w-full border-collapse text-xs">
                   <thead>
                     <tr className="bg-teal-700 text-white">
-                      <th className="border border-teal-600 px-1 py-1.5 w-8 text-center" title="発注対象を選択（仕入先未設定・発注済は選択不可）">
+                      <th className="border border-teal-600 px-1 py-1.5 w-8 text-center" title="行を選択（削除・発注書作成に使用）">
                         <Checkbox className="h-3.5 w-3.5 border-white"
                           checked={selectedRows.size === rows.length && rows.length > 0}
                           onCheckedChange={v => setSelectedRows(v ? new Set(rows.map((_, i) => i)) : new Set())}
