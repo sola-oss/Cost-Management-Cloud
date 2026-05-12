@@ -3,11 +3,13 @@ import { useParams, Link } from "wouter";
 import {
   useGetProject, useGetProjectSummary, useListBudgetItems,
   useCreateBudgetItem, useUpdateBudgetItem, useDeleteBudgetItem,
+  useBulkCreatePurchaseOrders,
   getGetProjectQueryKey, getGetProjectSummaryQueryKey,
   getListBudgetItemsQueryKey,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -17,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   ArrowLeft, Save, Trash2, Plus, RefreshCw, Settings2, Copy, ChevronDown, ChevronRight, Download, Lock,
+  ShoppingCart, PackageCheck, Loader2,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
@@ -27,6 +30,7 @@ type VendorItem = { id: number; name: string; code: string | null; groupName?: s
 
 type RowState = {
   id?: number;
+  purchaseOrderId: number | null;
   workTypeCode: string;
   workTypeName: string;
   vendorId: string;
@@ -109,11 +113,18 @@ export default function BudgetManagement() {
   const createItem = useCreateBudgetItem();
   const updateItem = useUpdateBudgetItem();
   const deleteItem = useDeleteBudgetItem();
+  const bulkCreatePO = useBulkCreatePurchaseOrders();
 
   const [rows, setRows] = useState<RowState[]>([]);
-  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const [selectedForOrder, setSelectedForOrder] = useState<Set<number>>(new Set());
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
+
+  // 一括発注モーダル state
+  const [bulkOrderOpen, setBulkOrderOpen] = useState(false);
+  const [orderDate, setOrderDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [vendorGroupSettings, setVendorGroupSettings] = useState<Map<number, { deliveryDate: string; notes: string }>>(new Map());
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
 
   const [displayMode, setDisplayMode] = useState<"contract" | "progress">("contract");
   const [profitMode, setProfitMode] = useState<"profit" | "remaining">("profit");
@@ -142,6 +153,7 @@ export default function BudgetManagement() {
     if (budgetData?.items) {
       setRows(budgetData.items.map(item => ({
         id: item.id,
+        purchaseOrderId: item.purchaseOrderId ?? null,
         workTypeCode: item.workTypeCode,
         workTypeName: item.workTypeName,
         vendorId: item.vendorId ? String(item.vendorId) : "",
@@ -153,7 +165,7 @@ export default function BudgetManagement() {
         isNew: false,
         isOriginalLocked: item.isOriginalLocked ?? false,
       })));
-      setSelectedRows(new Set());
+      setSelectedForOrder(new Set());
     }
   }, [budgetData]);
 
@@ -272,6 +284,7 @@ export default function BudgetManagement() {
 
   function handleAddRow() {
     const newRow: RowState = {
+      purchaseOrderId: null,
       workTypeCode: "", workTypeName: "",
       vendorId: "", supplierName: "",
       contractAmount: "0", initialBudget: "0", revisedBudget: "0",
@@ -303,8 +316,10 @@ export default function BudgetManagement() {
     ));
   }
 
-  function handleToggleRow(rowIdx: number) {
-    setSelectedRows(prev => {
+  function handleToggleForOrder(rowIdx: number) {
+    const row = rows[rowIdx];
+    if (row.purchaseOrderId || !row.vendorId) return; // disabled
+    setSelectedForOrder(prev => {
       const next = new Set(prev);
       if (next.has(rowIdx)) next.delete(rowIdx);
       else next.add(rowIdx);
@@ -313,13 +328,13 @@ export default function BudgetManagement() {
   }
 
   async function handleDeleteSelected() {
-    if (selectedRows.size === 0) {
+    if (selectedForOrder.size === 0) {
       toast({ title: "行を選択してください", variant: "destructive" });
       return;
     }
-    if (!window.confirm(`選択した ${selectedRows.size} 行を削除しますか？`)) return;
+    if (!window.confirm(`選択した ${selectedForOrder.size} 行を削除しますか？`)) return;
 
-    const idxList = Array.from(selectedRows).sort((a, b) => b - a);
+    const idxList = Array.from(selectedForOrder).sort((a, b) => b - a);
     for (const idx of idxList) {
       const row = rows[idx];
       if (row.id) {
@@ -331,11 +346,71 @@ export default function BudgetManagement() {
         }
       }
     }
-    setRows(prev => prev.filter((_, i) => !selectedRows.has(i)));
-    setSelectedRows(new Set());
+    setRows(prev => prev.filter((_, i) => !selectedForOrder.has(i)));
+    setSelectedForOrder(new Set());
     queryClient.invalidateQueries({ queryKey: getListBudgetItemsQueryKey(projectId) });
     queryClient.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
     toast({ title: `${idxList.length} 行を削除しました` });
+  }
+
+  // 発注可能行（purchaseOrderId なし & vendorId あり）
+  const orderableRows = rows.filter(r => !r.purchaseOrderId && !!r.vendorId);
+  const allOrderableChecked = orderableRows.length > 0 && selectedForOrder.size === orderableRows.length &&
+    orderableRows.every((_, i) => selectedForOrder.has(rows.indexOf(orderableRows[i])));
+
+  // 選択行を仕入先 ID でグループ化
+  const computedVendorGroups = (() => {
+    const map = new Map<number, { vendorId: number; vendorName: string; items: { rowIdx: number; workTypeName: string; revisedBudget: number }[] }>();
+    for (const rowIdx of Array.from(selectedForOrder)) {
+      const row = rows[rowIdx];
+      if (!row || !row.vendorId) continue;
+      const vid = parseInt(row.vendorId);
+      if (!map.has(vid)) {
+        map.set(vid, { vendorId: vid, vendorName: row.supplierName || vendors.find(v => v.id === vid)?.name || String(vid), items: [] });
+      }
+      map.get(vid)!.items.push({ rowIdx, workTypeName: row.workTypeName, revisedBudget: parseN(row.revisedBudget) });
+    }
+    return Array.from(map.values());
+  })();
+
+  function openBulkOrderModal() {
+    if (selectedForOrder.size === 0) return;
+    const next = new Map<number, { deliveryDate: string; notes: string }>();
+    for (const grp of computedVendorGroups) {
+      next.set(grp.vendorId, { deliveryDate: "", notes: "" });
+    }
+    setVendorGroupSettings(next);
+    setBulkOrderOpen(true);
+  }
+
+  async function handleBulkCreate() {
+    if (computedVendorGroups.length === 0) return;
+    setBulkSubmitting(true);
+    try {
+      await bulkCreatePO.mutateAsync({
+        id: projectId,
+        data: {
+          orderDate,
+          groups: computedVendorGroups.map(grp => {
+            const s = vendorGroupSettings.get(grp.vendorId) ?? { deliveryDate: "", notes: "" };
+            return {
+              vendorId: grp.vendorId,
+              deliveryDate: s.deliveryDate || undefined,
+              notes: s.notes || undefined,
+              budgetItemIds: grp.items.map(it => rows[it.rowIdx].id!).filter(Boolean),
+            };
+          }),
+        },
+      });
+      setBulkOrderOpen(false);
+      setSelectedForOrder(new Set());
+      queryClient.invalidateQueries({ queryKey: getListBudgetItemsQueryKey(projectId) });
+      toast({ title: "発注書を作成しました", description: `${computedVendorGroups.length} 社向けの発注書を作成しました。` });
+    } catch {
+      toast({ title: "発注書の作成に失敗しました", variant: "destructive" });
+    } finally {
+      setBulkSubmitting(false);
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>, rowIdx: number, colKey: string) {
@@ -645,6 +720,18 @@ export default function BudgetManagement() {
                     onClick={handleDeleteSelected}>
                     <Trash2 className="w-3.5 h-3.5 mr-1" /> 行削除
                   </Button>
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs px-3 bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+                    onClick={openBulkOrderModal}
+                    disabled={selectedForOrder.size === 0 || computedVendorGroups.length === 0}
+                  >
+                    <ShoppingCart className="w-3.5 h-3.5" />
+                    発注書を作成
+                    {selectedForOrder.size > 0 && (
+                      <span className="ml-1 bg-white/20 rounded px-1">{selectedForOrder.size}行・{computedVendorGroups.length}社</span>
+                    )}
+                  </Button>
                 </div>
               </div>
 
@@ -653,10 +740,19 @@ export default function BudgetManagement() {
                 <table className="w-full border-collapse text-xs">
                   <thead>
                     <tr className="bg-teal-700 text-white">
-                      <th className="border border-teal-600 px-1 py-1.5 w-8 text-center">
+                      <th className="border border-teal-600 px-1 py-1.5 w-8 text-center" title="発注対象を選択（仕入先未設定・発注済は選択不可）">
                         <Checkbox className="h-3.5 w-3.5 border-white"
-                          checked={selectedRows.size === rows.length && rows.length > 0}
-                          onCheckedChange={v => setSelectedRows(v ? new Set(rows.map((_, i) => i)) : new Set())}
+                          checked={allOrderableChecked}
+                          onCheckedChange={v => {
+                            if (v) {
+                              const idxSet = new Set(
+                                rows.map((_, i) => i).filter(i => !rows[i].purchaseOrderId && !!rows[i].vendorId)
+                              );
+                              setSelectedForOrder(idxSet);
+                            } else {
+                              setSelectedForOrder(new Set());
+                            }
+                          }}
                         />
                       </th>
                       {COLS.filter(col => !col.hidden).map(col => (
@@ -695,8 +791,10 @@ export default function BudgetManagement() {
                         const profit = parseN(row.contractAmount) - parseN(row.revisedBudget);
                         const ca = parseN(row.contractAmount);
                         const profitRate = ca > 0 ? ((profit / ca) * 100).toFixed(1) + "%" : "—";
-                        const isSelected = selectedRows.has(rowIdx);
+                        const isSelected = selectedForOrder.has(rowIdx);
                         const isDirty = row.isDirty || row.isNew;
+                        const isOrdered = !!row.purchaseOrderId;
+                        const isOrderable = !isOrdered && !!row.vendorId;
                         return (
                           <tr key={rowIdx}
                             className={`border-b border-slate-100 hover:bg-teal-50/30 transition-colors
@@ -704,7 +802,8 @@ export default function BudgetManagement() {
                             <td className="border border-slate-100 px-1 py-0.5 text-center">
                               <Checkbox className="h-3.5 w-3.5"
                                 checked={isSelected}
-                                onCheckedChange={() => handleToggleRow(rowIdx)} />
+                                disabled={!isOrderable}
+                                onCheckedChange={() => handleToggleForOrder(rowIdx)} />
                             </td>
                             {COLS.filter(col => !col.hidden).map(col => (
                               <td key={col.key}
@@ -744,6 +843,16 @@ export default function BudgetManagement() {
                                     </SelectContent>
                                   </Select>
                                 ) : col.key === "vendorId" ? (
+                                  isOrdered ? (
+                                    <div className="h-7 px-2 flex items-center gap-1.5 text-xs" style={{ minHeight: "28px" }}>
+                                      <span className="truncate">{row.supplierName}</span>
+                                      <Link href={`/purchase-orders/${row.purchaseOrderId}`}>
+                                        <Badge className="text-[10px] px-1 py-0 h-4 bg-emerald-100 text-emerald-700 border border-emerald-300 hover:bg-emerald-200 cursor-pointer gap-0.5">
+                                          <PackageCheck className="w-2.5 h-2.5" />発注済
+                                        </Badge>
+                                      </Link>
+                                    </div>
+                                  ) : (
                                   <Select
                                     value={row.vendorId || "__none__"}
                                     onValueChange={val => {
@@ -797,6 +906,7 @@ export default function BudgetManagement() {
                                       </div>
                                     </SelectContent>
                                   </Select>
+                                  )
                                 ) : col.key === "initialBudget" && row.isOriginalLocked ? (
                                   <div className="w-full h-full px-2 py-1 bg-slate-100 text-right text-xs text-slate-500 flex items-center justify-end gap-1" style={{ minHeight: "28px" }}>
                                     <span>{parseN(row.initialBudget).toLocaleString("ja-JP")}</span>
@@ -931,6 +1041,105 @@ export default function BudgetManagement() {
           {saving ? "保存中..." : "保存する"}
         </Button>
       </div>
+
+      {/* ── 一括発注書作成 ダイアログ ── */}
+      <Dialog open={bulkOrderOpen} onOpenChange={open => { if (!open) setBulkOrderOpen(false); }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShoppingCart className="w-5 h-5 text-emerald-600" />
+              発注書を一括作成
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="flex items-center gap-3">
+              <label className="text-sm font-medium text-slate-700 shrink-0">発注日</label>
+              <Input
+                type="date"
+                value={orderDate}
+                onChange={e => setOrderDate(e.target.value)}
+                className="h-8 text-sm w-44"
+              />
+            </div>
+
+            {/* 仕入先グループ別設定 */}
+            <div className="space-y-2">
+              {computedVendorGroups.map(grp => {
+                const settings = vendorGroupSettings.get(grp.vendorId) ?? { deliveryDate: "", notes: "" };
+                return (
+                  <div key={grp.vendorId} className="border rounded overflow-hidden">
+                    <div className="bg-slate-50 border-b px-3 py-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-semibold text-slate-800">{grp.vendorName}</span>
+                        <span className="text-xs text-slate-500">{grp.items.length}件</span>
+                      </div>
+                      <ul className="mt-1 space-y-0.5">
+                        {grp.items.map(it => (
+                          <li key={it.rowIdx} className="text-xs text-slate-600 flex justify-between">
+                            <span>{it.workTypeName}</span>
+                            <span className="font-mono">{it.revisedBudget.toLocaleString("ja-JP")}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="px-3 py-2 space-y-2 bg-white">
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-slate-500 w-12 shrink-0">納期</label>
+                        <Input
+                          type="date"
+                          value={settings.deliveryDate}
+                          onChange={e => {
+                            setVendorGroupSettings(prev => {
+                              const next = new Map(prev);
+                              next.set(grp.vendorId, { ...settings, deliveryDate: e.target.value });
+                              return next;
+                            });
+                          }}
+                          className="h-7 text-xs w-40"
+                        />
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <label className="text-xs text-slate-500 w-12 shrink-0 pt-1">備考</label>
+                        <Input
+                          value={settings.notes}
+                          onChange={e => {
+                            setVendorGroupSettings(prev => {
+                              const next = new Map(prev);
+                              next.set(grp.vendorId, { ...settings, notes: e.target.value });
+                              return next;
+                            });
+                          }}
+                          className="h-7 text-xs"
+                          placeholder="発注書に記載する備考（任意）"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="bg-slate-50 border rounded p-3 text-sm text-slate-600">
+              <span className="font-semibold text-slate-800">{computedVendorGroups.length}社</span> の仕入先向けに
+              <span className="font-semibold text-slate-800"> {selectedForOrder.size}件</span> の明細をまとめて発注書を作成します。
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkOrderOpen(false)} disabled={bulkSubmitting}>
+              キャンセル
+            </Button>
+            <Button
+              className="bg-emerald-600 hover:bg-emerald-700 gap-2"
+              onClick={handleBulkCreate}
+              disabled={bulkSubmitting}
+            >
+              {bulkSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShoppingCart className="w-4 h-4" />}
+              発注書を作成する
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── 新しい仕入先を登録 ダイアログ ── */}
       <Dialog open={addVendorOpen} onOpenChange={open => {
