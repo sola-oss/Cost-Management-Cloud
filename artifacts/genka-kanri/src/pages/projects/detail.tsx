@@ -158,7 +158,7 @@ function useClients() {
 
 // ─── 仕入先マスタ hook ────────────────────────────────────────────────────────
 
-type VendorItem = { id: number; name: string; vendorCode: string; groupName?: string | null };
+type VendorItem = { id: number; name: string; code: string | null; groupName?: string | null };
 
 function useVendors() {
   const { data } = useQuery<VendorItem[]>({
@@ -241,7 +241,7 @@ function BudgetTab({ projectId }: { projectId: number }) {
 
   const filteredVendors = vendors.filter(v => {
     const q = vendorSearch.toLowerCase();
-    return !q || v.name.toLowerCase().includes(q) || (v.vendorCode ?? "").toLowerCase().includes(q);
+    return !q || v.name.toLowerCase().includes(q) || (v.code ?? "").toLowerCase().includes(q);
   });
 
   async function handleAddVendor() {
