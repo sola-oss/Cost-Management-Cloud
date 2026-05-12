@@ -688,8 +688,8 @@ export default function BudgetManagement() {
                   )}
                 </div>
 
-                <div className="ml-auto flex gap-2">
-                  <div className="relative group">
+                <div className="ml-auto flex items-center gap-2">
+                  <div className="relative group flex items-center gap-2">
                     <Button
                       size="sm"
                       variant="outline"
@@ -701,9 +701,9 @@ export default function BudgetManagement() {
                       {importing ? "取込み中..." : "見積書から取込"}
                     </Button>
                     {rows.length > 0 && (
-                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-700 text-white text-xs rounded whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-30">
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
                         当初予算は登録済みです
-                      </div>
+                      </span>
                     )}
                   </div>
                   <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={handleAddRow}>
