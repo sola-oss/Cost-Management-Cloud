@@ -51,23 +51,29 @@ interface PaymentsResponse {
 
 // ─── 日付ユーティリティ ───────────────────────────────────────────────────────
 
+function formatDateLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function getTodayStr() {
-  const d = new Date();
-  return d.toISOString().split("T")[0];
+  return formatDateLocal(new Date());
 }
 
 function getWeekEndStr() {
   const d = new Date();
-  const day = d.getDay();
-  const diff = 7 - day;
+  const dow = d.getDay(); // 0=日, 1=月 … 6=土
+  const diff = (7 - dow) % 7; // 今日が日曜なら 0、それ以外は今週日曜までの日数
   d.setDate(d.getDate() + diff);
-  return d.toISOString().split("T")[0];
+  return formatDateLocal(d);
 }
 
 function getMonthEndStr() {
   const d = new Date();
   const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-  return last.toISOString().split("T")[0];
+  return formatDateLocal(last);
 }
 
 // ─── API フック ─────────────────────────────────────────────────────────────
@@ -395,11 +401,7 @@ export default function Payments() {
   }
 
   function selectByIds(ids: number[]) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      ids.forEach((id) => next.add(id));
-      return next;
-    });
+    setSelectedIds(new Set(ids));
   }
 
   function quickSelectThisWeek() {
