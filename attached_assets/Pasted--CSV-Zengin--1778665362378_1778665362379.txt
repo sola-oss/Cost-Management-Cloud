@@ -1,0 +1,133 @@
+【機能追加依頼】全銀フォーマット振込CSV出力の準備：会社設定・仕入先マスタへの振込項目追加
+
+## 背景
+支払管理画面の「振込データを出力」ボタンで、選択した支払を全銀フォーマット
+（Zengin、Shift-JIS固定長）の総合振込CSVとして出力する機能を後続タスク（⑤-3）で実装します。
+そのために、会社設定（振込元情報）と仕入先マスタ（振込先情報）に
+全銀フォーマットで必要な項目を追加する必要があります。
+
+## スコープ
+このタスクで実装するのは「DBスキーマ拡張 + UI項目追加」のみです。
+Zengin CSV生成ロジックは含めません（⑤-3で実装）。
+
+---
+
+## 1. スキーマ変更
+
+### 1-1. company_settings テーブルに以下のカラムを追加
+
+| カラム名 | 型 | NOT NULL | デフォルト | 用途 |
+|---|---|---|---|---|
+| consignor_code | text | — | '' | 委託者コード（銀行から付与される10桁の番号） |
+| company_name_kana | text | — | '' | 会社名カナ（半角カナ40桁、全銀ヘッダの委託者名に使用） |
+| bank_code | text | — | '' | 仕向銀行コード（4桁） |
+| bank_name_kana | text | — | '' | 仕向銀行名カナ（半角カナ15桁） |
+| bank_branch_code | text | — | '' | 仕向支店コード（3桁） |
+| bank_branch_kana | text | — | '' | 仕向支店名カナ（半角カナ15桁） |
+
+注意：
+- 既存の bank_name, bank_branch, bank_account_type, bank_account_number, bank_account_name は
+  そのまま活かしてください（再利用）。
+- bank_account_type は既存実装で「普通/当座」の日本語が入っているはずなので変更不要。
+  Zengin出力時に '1'/'2' へマッピングする処理は⑤-3で行います。
+
+### 1-2. vendors テーブルに以下のカラムを追加
+
+| カラム名 | 型 | NOT NULL | デフォルト | 用途 |
+|---|---|---|---|---|
+| bank_code | text | — | '' | 被仕向銀行コード（4桁） |
+| bank_name | text | — | '' | 被仕向銀行名 |
+| bank_name_kana | text | — | '' | 被仕向銀行名カナ（半角カナ15桁） |
+| bank_branch_code | text | — | '' | 被仕向支店コード（3桁） |
+| bank_branch | text | — | '' | 被仕向支店名 |
+| bank_branch_kana | text | — | '' | 被仕向支店名カナ（半角カナ15桁） |
+| bank_account_type | text | — | '普通' | 預金種目（普通/当座/貯蓄/その他） |
+| bank_account_number | text | — | '' | 口座番号 |
+| bank_account_holder | text | — | '' | 受取人名（漢字） |
+| bank_account_holder_kana | text | — | '' | 受取人名カナ（半角カナ30桁） |
+
+### 1-3. マイグレーション
+- Drizzle のマイグレーションファイルを生成してください
+- すべて NULL 許可ではなく空文字デフォルトとし、既存行は空文字で埋まる想定
+- マイグレーション実行も行ってください
+
+---
+
+## 2. 会社設定画面のUI拡張
+
+ファイル: artifacts/genka-kanri/src/pages/settings/index.tsx
+
+### 既存セクションの整理と新規セクションの追加
+現在の銀行関連項目を「振込元情報」セクションとして整理し、
+全銀フォーマット用の項目を追加してください。
+
+「振込元情報（全銀フォーマット用）」セクション
+- 委託者コード（consignor_code） — placeholder「銀行から付与される10桁」
+- 会社名カナ（company_name_kana） — placeholder「半角カナ40桁以内」
+- 銀行コード（bank_code） — placeholder「4桁」
+- 銀行名（bank_name） ※既存
+- 銀行名カナ（bank_name_kana） — placeholder「半角カナ15桁以内」
+- 支店コード（bank_branch_code） — placeholder「3桁」
+- 支店名（bank_branch） ※既存
+- 支店名カナ（bank_branch_kana） — placeholder「半角カナ15桁以内」
+- 口座種別（bank_account_type） ※既存
+- 口座番号（bank_account_number） ※既存
+- 口座名義（bank_account_name） ※既存
+
+各カナ項目は半角カナ（日本語の全角カナではなく、ｶﾀｶﾅなどの半角）入力推奨ですが、
+このタスクではバリデーション・自動変換は不要です（入力された値をそのまま保存）。
+プレースホルダで「半角カナ」と明記するだけで十分です。
+
+---
+
+## 3. 仕入先マスタ画面のUI拡張
+
+ファイル: artifacts/genka-kanri/src/pages/vendors.tsx の VendorFormDialog コンポーネント
+
+「振込先口座情報」セクションを既存項目の下に追加してください。
+レイアウトはアコーディオン等で折りたためる形が望ましい（任意項目のため）。
+
+「振込先口座情報」セクション
+- 銀行コード（bank_code） — placeholder「4桁」
+- 銀行名（bank_name）
+- 銀行名カナ（bank_name_kana） — placeholder「半角カナ15桁以内」
+- 支店コード（bank_branch_code） — placeholder「3桁」
+- 支店名（bank_branch）
+- 支店名カナ（bank_branch_kana） — placeholder「半角カナ15桁以内」
+- 預金種目（bank_account_type） — セレクトボックス（普通/当座/貯蓄/その他）デフォルト「普通」
+- 口座番号（bank_account_number） — placeholder「7桁以内」
+- 受取人名（bank_account_holder） — placeholder「漢字可」
+- 受取人名カナ（bank_account_holder_kana） — placeholder「半角カナ30桁以内」
+
+---
+
+## 4. API・型定義の更新
+
+- lib/api-spec のスキーマ更新が必要であれば対応してください
+- Orval などで自動生成しているフロント側の型もregenerateしてください
+- PUT /api/company-settings と POST/PUT /api/vendors の各エンドポイントが
+  新規カラムを受け入れて保存できることを確認してください
+
+---
+
+## 5. 動作確認手順
+
+1. /settings を開く → 「振込元情報」セクションが表示されている
+2. 全項目に何か入力（例：consignor_code に「1234567890」、company_name_kana に「ｶﾌﾞｼｷｶﾞｲｼｬﾀｲｾｲｹﾝｾﾂｺｳｷﾞｮｳ」など）→ 保存 → リロード後も値が保持される
+3. /vendors を開く → 既存仕入先の「編集」を押す → 「振込先口座情報」セクションが表示される
+4. 全項目に何か入力 → 保存 → 一覧で編集を再度開いて値が保持されていること
+5. 新規仕入先追加の場合も同様に動作すること
+6. 振込項目を一切入力しなくても従来通り保存できること（後方互換）
+7. 既存データ（22件のcost_itemsや既存vendors）が壊れていないこと
+
+---
+
+## 報告内容
+
+- 変更したファイル一覧
+- 生成したマイグレーション名
+- 型チェックがクリーンに通ったこと
+- 動作確認結果（特に5の手順について）
+
+コードを書き始める前に、不明点があれば質問してください。
+質問がなければ実装を進めてください。

@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Users, Plus, Pencil, Trash2, Loader2, Save } from "lucide-react";
+import { Users, Plus, Pencil, Trash2, Loader2, Save, ChevronDown, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface VendorGroup {
@@ -30,6 +30,16 @@ interface Vendor {
   phone: string | null;
   email: string | null;
   notes: string | null;
+  bankCode: string | null;
+  bankName: string | null;
+  bankNameKana: string | null;
+  bankBranchCode: string | null;
+  bankBranch: string | null;
+  bankBranchKana: string | null;
+  bankAccountType: string | null;
+  bankAccountNumber: string | null;
+  bankAccountHolder: string | null;
+  bankAccountHolderKana: string | null;
 }
 
 const CLOSING_DAY_OPTIONS = [
@@ -54,6 +64,13 @@ const PAYMENT_DAY_OPTIONS = [
   { value: 20, label: "20日" },
   { value: 25, label: "25日" },
   { value: 99, label: "月末" },
+];
+
+const BANK_ACCOUNT_TYPE_OPTIONS = [
+  { value: "普通", label: "普通" },
+  { value: "当座", label: "当座" },
+  { value: "貯蓄", label: "貯蓄" },
+  { value: "その他", label: "その他" },
 ];
 
 function useVendorGroups() {
@@ -132,6 +149,16 @@ interface VendorFormState {
   phone: string;
   email: string;
   notes: string;
+  bankCode: string;
+  bankName: string;
+  bankNameKana: string;
+  bankBranchCode: string;
+  bankBranch: string;
+  bankBranchKana: string;
+  bankAccountType: string;
+  bankAccountNumber: string;
+  bankAccountHolder: string;
+  bankAccountHolderKana: string;
 }
 
 function defaultForm(v?: Vendor | null): VendorFormState {
@@ -146,6 +173,16 @@ function defaultForm(v?: Vendor | null): VendorFormState {
     phone: v?.phone ?? "",
     email: v?.email ?? "",
     notes: v?.notes ?? "",
+    bankCode: v?.bankCode ?? "",
+    bankName: v?.bankName ?? "",
+    bankNameKana: v?.bankNameKana ?? "",
+    bankBranchCode: v?.bankBranchCode ?? "",
+    bankBranch: v?.bankBranch ?? "",
+    bankBranchKana: v?.bankBranchKana ?? "",
+    bankAccountType: v?.bankAccountType ?? "普通",
+    bankAccountNumber: v?.bankAccountNumber ?? "",
+    bankAccountHolder: v?.bankAccountHolder ?? "",
+    bankAccountHolderKana: v?.bankAccountHolderKana ?? "",
   };
 }
 
@@ -159,6 +196,7 @@ interface VendorFormDialogProps {
 function VendorFormDialog({ open, onClose, initial, groups }: VendorFormDialogProps) {
   const { toast } = useToast();
   const [form, setForm] = useState<VendorFormState>(() => defaultForm(initial));
+  const [bankOpen, setBankOpen] = useState(false);
   const create = useCreateVendor();
   const update = useUpdateVendor();
   const isPending = create.isPending || update.isPending;
@@ -166,6 +204,7 @@ function VendorFormDialog({ open, onClose, initial, groups }: VendorFormDialogPr
   useEffect(() => {
     if (open) {
       setForm(defaultForm(initial));
+      setBankOpen(false);
     }
   }, [open, initial]);
 
@@ -192,6 +231,16 @@ function VendorFormDialog({ open, onClose, initial, groups }: VendorFormDialogPr
       phone: form.phone.trim() || null,
       email: form.email.trim() || null,
       notes: form.notes.trim() || null,
+      bankCode: form.bankCode.trim(),
+      bankName: form.bankName.trim(),
+      bankNameKana: form.bankNameKana.trim(),
+      bankBranchCode: form.bankBranchCode.trim(),
+      bankBranch: form.bankBranch.trim(),
+      bankBranchKana: form.bankBranchKana.trim(),
+      bankAccountType: form.bankAccountType,
+      bankAccountNumber: form.bankAccountNumber.trim(),
+      bankAccountHolder: form.bankAccountHolder.trim(),
+      bankAccountHolderKana: form.bankAccountHolderKana.trim(),
     };
     try {
       if (initial) {
@@ -213,7 +262,7 @@ function VendorFormDialog({ open, onClose, initial, groups }: VendorFormDialogPr
         <DialogHeader>
           <DialogTitle>{initial ? "仕入先編集" : "仕入先新規登録"}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+        <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <Label>仕入先名 <span className="text-destructive">*</span></Label>
@@ -305,6 +354,84 @@ function VendorFormDialog({ open, onClose, initial, groups }: VendorFormDialogPr
           <div>
             <Label>備考</Label>
             <Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} className="mt-1 resize-none" rows={2} />
+          </div>
+
+          {/* 振込先口座情報（アコーディオン） */}
+          <div className="border rounded-lg overflow-hidden">
+            <button
+              type="button"
+              className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 hover:bg-slate-100 transition-colors text-left"
+              onClick={() => setBankOpen((prev) => !prev)}
+            >
+              <span className="text-sm font-semibold text-slate-700">振込先口座情報</span>
+              <span className="flex items-center gap-1 text-xs text-slate-500">
+                {bankOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+              </span>
+            </button>
+            {bankOpen && (
+              <div className="px-4 pb-4 pt-3 space-y-3">
+                <p className="text-xs text-slate-400">全銀フォーマットCSV出力に使用します。カナ項目は半角カナで入力してください。</p>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label className="text-xs">銀行コード</Label>
+                    <Input value={form.bankCode} onChange={(e) => set("bankCode", e.target.value)} placeholder="4桁" className="mt-1 h-8 text-sm" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">銀行名</Label>
+                    <Input value={form.bankName} onChange={(e) => set("bankName", e.target.value)} placeholder="〇〇銀行" className="mt-1 h-8 text-sm" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">銀行名カナ</Label>
+                    <Input value={form.bankNameKana} onChange={(e) => set("bankNameKana", e.target.value)} placeholder="半角カナ15桁以内" className="mt-1 h-8 text-sm" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label className="text-xs">支店コード</Label>
+                    <Input value={form.bankBranchCode} onChange={(e) => set("bankBranchCode", e.target.value)} placeholder="3桁" className="mt-1 h-8 text-sm" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">支店名</Label>
+                    <Input value={form.bankBranch} onChange={(e) => set("bankBranch", e.target.value)} placeholder="〇〇支店" className="mt-1 h-8 text-sm" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">支店名カナ</Label>
+                    <Input value={form.bankBranchKana} onChange={(e) => set("bankBranchKana", e.target.value)} placeholder="半角カナ15桁以内" className="mt-1 h-8 text-sm" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label className="text-xs">預金種目</Label>
+                    <Select value={form.bankAccountType} onValueChange={(v) => set("bankAccountType", v)}>
+                      <SelectTrigger className="mt-1 h-8 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {BANK_ACCOUNT_TYPE_OPTIONS.map((o) => (
+                          <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs">口座番号</Label>
+                    <Input value={form.bankAccountNumber} onChange={(e) => set("bankAccountNumber", e.target.value)} placeholder="7桁以内" className="mt-1 h-8 text-sm" />
+                  </div>
+                  <div>
+                    <Label className="text-xs">受取人名</Label>
+                    <Input value={form.bankAccountHolder} onChange={(e) => set("bankAccountHolder", e.target.value)} placeholder="漢字可" className="mt-1 h-8 text-sm" />
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-xs">受取人名カナ</Label>
+                  <Input value={form.bankAccountHolderKana} onChange={(e) => set("bankAccountHolderKana", e.target.value)} placeholder="半角カナ30桁以内" className="mt-1 h-8 text-sm" />
+                </div>
+              </div>
+            )}
           </div>
         </div>
         <DialogFooter>

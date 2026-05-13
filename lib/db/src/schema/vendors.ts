@@ -30,6 +30,17 @@ export const vendorsTable = pgTable("vendors", {
   phone: text("phone"),
   email: text("email"),
   notes: text("notes"),
+  // 振込先口座情報（全銀フォーマット用）
+  bankCode: text("bank_code").default(""),
+  bankName: text("bank_name").default(""),
+  bankNameKana: text("bank_name_kana").default(""),
+  bankBranchCode: text("bank_branch_code").default(""),
+  bankBranch: text("bank_branch").default(""),
+  bankBranchKana: text("bank_branch_kana").default(""),
+  bankAccountType: text("bank_account_type").default("普通"),
+  bankAccountNumber: text("bank_account_number").default(""),
+  bankAccountHolder: text("bank_account_holder").default(""),
+  bankAccountHolderKana: text("bank_account_holder_kana").default(""),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

@@ -27,6 +27,12 @@ router.get("/", async (req, res) => {
         staffName: "",
         staffMobile: "",
         staffEmail: "",
+        consignorCode: "",
+        companyNameKana: "",
+        bankCode: "",
+        bankNameKana: "",
+        bankBranchCode: "",
+        bankBranchKana: "",
       });
     }
     return res.json(rows[0]);
@@ -43,6 +49,7 @@ router.put("/", async (req, res) => {
       invoiceRegistrationNumber, representativeName, department,
       bankName, bankBranch, bankAccountType, bankAccountNumber, bankAccountName,
       constructionLicense, staffName, staffMobile, staffEmail,
+      consignorCode, companyNameKana, bankCode, bankNameKana, bankBranchCode, bankBranchKana,
     } = req.body;
 
     const values = {
@@ -63,6 +70,12 @@ router.put("/", async (req, res) => {
       staffName: staffName ?? "",
       staffMobile: staffMobile ?? "",
       staffEmail: staffEmail ?? "",
+      consignorCode: consignorCode ?? "",
+      companyNameKana: companyNameKana ?? "",
+      bankCode: bankCode ?? "",
+      bankNameKana: bankNameKana ?? "",
+      bankBranchCode: bankBranchCode ?? "",
+      bankBranchKana: bankBranchKana ?? "",
     };
 
     const rows = await db.select({ id: companySettingsTable.id }).from(companySettingsTable).limit(1);

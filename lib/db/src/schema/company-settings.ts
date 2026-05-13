@@ -19,6 +19,13 @@ export const companySettingsTable = pgTable("company_settings", {
   staffName: text("staff_name").default(""),
   staffMobile: text("staff_mobile").default(""),
   staffEmail: text("staff_email").default(""),
+  // 全銀フォーマット用
+  consignorCode: text("consignor_code").default(""),
+  companyNameKana: text("company_name_kana").default(""),
+  bankCode: text("bank_code").default(""),
+  bankNameKana: text("bank_name_kana").default(""),
+  bankBranchCode: text("bank_branch_code").default(""),
+  bankBranchKana: text("bank_branch_kana").default(""),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

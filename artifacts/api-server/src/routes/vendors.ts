@@ -27,7 +27,11 @@ router.get("/", async (req, res) => {
 
 router.post("/", async (req, res) => {
   try {
-    const { name, code, groupId, closingDay, paymentMonths, paymentDay, contactName, phone, email, notes } = req.body;
+    const {
+      name, code, groupId, closingDay, paymentMonths, paymentDay, contactName, phone, email, notes,
+      bankCode, bankName, bankNameKana, bankBranchCode, bankBranch, bankBranchKana,
+      bankAccountType, bankAccountNumber, bankAccountHolder, bankAccountHolderKana,
+    } = req.body;
     if (!name) return res.status(400).json({ message: "name は必須です" });
     const [row] = await db
       .insert(vendorsTable)
@@ -42,6 +46,16 @@ router.post("/", async (req, res) => {
         phone: phone ?? null,
         email: email ?? null,
         notes: notes ?? null,
+        bankCode: bankCode ?? "",
+        bankName: bankName ?? "",
+        bankNameKana: bankNameKana ?? "",
+        bankBranchCode: bankBranchCode ?? "",
+        bankBranch: bankBranch ?? "",
+        bankBranchKana: bankBranchKana ?? "",
+        bankAccountType: bankAccountType ?? "普通",
+        bankAccountNumber: bankAccountNumber ?? "",
+        bankAccountHolder: bankAccountHolder ?? "",
+        bankAccountHolderKana: bankAccountHolderKana ?? "",
       })
       .returning();
     return res.status(201).json(row);
@@ -54,7 +68,11 @@ router.post("/", async (req, res) => {
 router.patch("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { name, code, groupId, closingDay, paymentMonths, paymentDay, contactName, phone, email, notes } = req.body;
+    const {
+      name, code, groupId, closingDay, paymentMonths, paymentDay, contactName, phone, email, notes,
+      bankCode, bankName, bankNameKana, bankBranchCode, bankBranch, bankBranchKana,
+      bankAccountType, bankAccountNumber, bankAccountHolder, bankAccountHolderKana,
+    } = req.body;
     const [row] = await db
       .update(vendorsTable)
       .set({
@@ -68,6 +86,16 @@ router.patch("/:id", async (req, res) => {
         ...(phone !== undefined && { phone: phone ?? null }),
         ...(email !== undefined && { email: email ?? null }),
         ...(notes !== undefined && { notes: notes ?? null }),
+        ...(bankCode !== undefined && { bankCode: bankCode ?? "" }),
+        ...(bankName !== undefined && { bankName: bankName ?? "" }),
+        ...(bankNameKana !== undefined && { bankNameKana: bankNameKana ?? "" }),
+        ...(bankBranchCode !== undefined && { bankBranchCode: bankBranchCode ?? "" }),
+        ...(bankBranch !== undefined && { bankBranch: bankBranch ?? "" }),
+        ...(bankBranchKana !== undefined && { bankBranchKana: bankBranchKana ?? "" }),
+        ...(bankAccountType !== undefined && { bankAccountType: bankAccountType ?? "普通" }),
+        ...(bankAccountNumber !== undefined && { bankAccountNumber: bankAccountNumber ?? "" }),
+        ...(bankAccountHolder !== undefined && { bankAccountHolder: bankAccountHolder ?? "" }),
+        ...(bankAccountHolderKana !== undefined && { bankAccountHolderKana: bankAccountHolderKana ?? "" }),
         updatedAt: new Date(),
       })
       .where(eq(vendorsTable.id, id))

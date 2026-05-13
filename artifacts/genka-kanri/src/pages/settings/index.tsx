@@ -28,6 +28,12 @@ interface CompanySettings {
   staffName: string;
   staffMobile: string;
   staffEmail: string;
+  consignorCode: string;
+  companyNameKana: string;
+  bankCode: string;
+  bankNameKana: string;
+  bankBranchCode: string;
+  bankBranchKana: string;
 }
 
 const defaultSettings: CompanySettings = {
@@ -49,6 +55,12 @@ const defaultSettings: CompanySettings = {
   staffName: "",
   staffMobile: "",
   staffEmail: "",
+  consignorCode: "",
+  companyNameKana: "",
+  bankCode: "",
+  bankNameKana: "",
+  bankBranchCode: "",
+  bankBranchKana: "",
 };
 
 async function fetchSettings(): Promise<CompanySettings> {
@@ -221,20 +233,55 @@ export default function CompanySettingsPage() {
           </div>
         </section>
 
-        {/* 銀行情報 */}
+        {/* 振込元情報（全銀フォーマット用） */}
         <section className="bg-white rounded-xl border p-6 space-y-4">
-          <h2 className="text-base font-semibold text-slate-700 border-b pb-2">振込先銀行情報</h2>
+          <div className="border-b pb-2">
+            <h2 className="text-base font-semibold text-slate-700">振込元情報（全銀フォーマット用）</h2>
+            <p className="text-xs text-slate-400 mt-0.5">総合振込CSVの出力に使用します。カナ項目は半角カナで入力してください。</p>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>委託者コード</Label>
+              <Input value={form.consignorCode} onChange={(e) => set("consignorCode", e.target.value)} className="mt-1" placeholder="銀行から付与される10桁" />
+            </div>
+            <div>
+              <Label>会社名カナ</Label>
+              <Input value={form.companyNameKana} onChange={(e) => set("companyNameKana", e.target.value)} className="mt-1" placeholder="半角カナ40桁以内" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <Label>銀行コード</Label>
+              <Input value={form.bankCode} onChange={(e) => set("bankCode", e.target.value)} className="mt-1" placeholder="4桁" />
+            </div>
             <div>
               <Label>銀行名</Label>
               <Input value={form.bankName} onChange={(e) => set("bankName", e.target.value)} className="mt-1" placeholder="〇〇銀行" />
             </div>
             <div>
+              <Label>銀行名カナ</Label>
+              <Input value={form.bankNameKana} onChange={(e) => set("bankNameKana", e.target.value)} className="mt-1" placeholder="半角カナ15桁以内" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <Label>支店コード</Label>
+              <Input value={form.bankBranchCode} onChange={(e) => set("bankBranchCode", e.target.value)} className="mt-1" placeholder="3桁" />
+            </div>
+            <div>
               <Label>支店名</Label>
               <Input value={form.bankBranch} onChange={(e) => set("bankBranch", e.target.value)} className="mt-1" placeholder="〇〇支店" />
             </div>
+            <div>
+              <Label>支店名カナ</Label>
+              <Input value={form.bankBranchKana} onChange={(e) => set("bankBranchKana", e.target.value)} className="mt-1" placeholder="半角カナ15桁以内" />
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+
+          <div className="grid grid-cols-3 gap-4">
             <div>
               <Label>口座種別</Label>
               <Select value={form.bankAccountType} onValueChange={(v) => set("bankAccountType", v)}>
@@ -251,10 +298,10 @@ export default function CompanySettingsPage() {
               <Label>口座番号</Label>
               <Input value={form.bankAccountNumber} onChange={(e) => set("bankAccountNumber", e.target.value)} className="mt-1" placeholder="1234567" />
             </div>
-          </div>
-          <div>
-            <Label>口座名義</Label>
-            <Input value={form.bankAccountName} onChange={(e) => set("bankAccountName", e.target.value)} className="mt-1" placeholder="カ）〇〇ケンセツ" />
+            <div>
+              <Label>口座名義</Label>
+              <Input value={form.bankAccountName} onChange={(e) => set("bankAccountName", e.target.value)} className="mt-1" placeholder="ｶ）〇〇ｹﾝｾﾂ" />
+            </div>
           </div>
         </section>
 
