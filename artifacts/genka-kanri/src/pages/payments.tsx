@@ -1,17 +1,19 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useListProjects, getListProjectsQueryKey } from "@workspace/api-client-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  CreditCard, Plus, Save, Loader2, CheckCircle2, Clock, AlertCircle, RefreshCw, Trash2, RotateCcw,
+  CreditCard, Plus, Save, Loader2, CheckCircle2, Clock, AlertCircle,
+  RefreshCw, Trash2, RotateCcw, Upload, AlertTriangle,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { useForm } from "react-hook-form";
@@ -45,6 +47,27 @@ interface PaymentsResponse {
   totalAmount: number;
   paidAmount: number;
   pendingAmount: number;
+}
+
+// ─── 日付ユーティリティ ───────────────────────────────────────────────────────
+
+function getTodayStr() {
+  const d = new Date();
+  return d.toISOString().split("T")[0];
+}
+
+function getWeekEndStr() {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = 7 - day;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().split("T")[0];
+}
+
+function getMonthEndStr() {
+  const d = new Date();
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+  return last.toISOString().split("T")[0];
 }
 
 // ─── API フック ─────────────────────────────────────────────────────────────
@@ -237,6 +260,7 @@ export default function Payments() {
   const [projectFilter, setProjectFilter] = useState("all");
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const { data: payments, isLoading, refetch } = usePayments(statusFilter, projectFilter);
   const { data: projects } = useListProjects(undefined, { query: { queryKey: getListProjectsQueryKey() } });
@@ -300,15 +324,24 @@ export default function Payments() {
     }
   }
 
-  const allItems = payments?.items ?? [];
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const todayStr = getTodayStr();
+  const today = new Date(todayStr);
 
-  const items = overdueOnly
-    ? allItems.filter(
-        (i) => i.status === "pending" && i.dueDate && new Date(i.dueDate) < today
-      )
+  const allItems = payments?.items ?? [];
+
+  const baseItems = overdueOnly
+    ? allItems.filter((i) => i.status === "pending" && i.dueDate && i.dueDate < todayStr)
     : allItems;
+
+  // 改善A: 支払期日昇順（NULL末尾）
+  const items = useMemo(() => {
+    return [...baseItems].sort((a, b) => {
+      if (!a.dueDate && !b.dueDate) return 0;
+      if (!a.dueDate) return 1;
+      if (!b.dueDate) return -1;
+      return a.dueDate.localeCompare(b.dueDate);
+    });
+  }, [baseItems]);
 
   const dueSoonCount = allItems.filter((i) => {
     if (i.status !== "pending" || !i.dueDate) return false;
@@ -318,8 +351,91 @@ export default function Payments() {
 
   const overdueCount = allItems.filter((i) => {
     if (i.status !== "pending" || !i.dueDate) return false;
-    return new Date(i.dueDate) < today;
+    return i.dueDate < todayStr;
   }).length;
+
+  const overdueAmount = allItems
+    .filter((i) => i.status === "pending" && i.dueDate && i.dueDate < todayStr)
+    .reduce((s, i) => s + i.amount, 0);
+
+  // ─── チェックボックス関連 ──────────────────────────────────────────────────
+
+  function isCheckable(item: PaymentItem) {
+    return item.status === "pending" && !!item.vendor?.trim();
+  }
+
+  const checkableIds = useMemo(() => items.filter(isCheckable).map((i) => i.id), [items]);
+
+  const allChecked = checkableIds.length > 0 && checkableIds.every((id) => selectedIds.has(id));
+  const someChecked = checkableIds.some((id) => selectedIds.has(id));
+
+  function toggleAll() {
+    if (allChecked) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        checkableIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        checkableIds.forEach((id) => next.add(id));
+        return next;
+      });
+    }
+  }
+
+  function toggleOne(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectByIds(ids: number[]) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  function quickSelectThisWeek() {
+    const weekEnd = getWeekEndStr();
+    const ids = allItems
+      .filter((i) => isCheckable(i) && i.dueDate && i.dueDate >= todayStr && i.dueDate <= weekEnd)
+      .map((i) => i.id);
+    selectByIds(ids);
+  }
+
+  function quickSelectThisMonth() {
+    const monthEnd = getMonthEndStr();
+    const ids = allItems
+      .filter((i) => isCheckable(i) && i.dueDate && i.dueDate >= todayStr && i.dueDate <= monthEnd)
+      .map((i) => i.id);
+    selectByIds(ids);
+  }
+
+  function quickSelectOverdue() {
+    const ids = allItems
+      .filter((i) => isCheckable(i) && i.dueDate && i.dueDate < todayStr)
+      .map((i) => i.id);
+    selectByIds(ids);
+  }
+
+  function quickSelectAllPending() {
+    const ids = allItems.filter((i) => isCheckable(i)).map((i) => i.id);
+    selectByIds(ids);
+  }
+
+  const selectedItems = allItems.filter((i) => selectedIds.has(i.id));
+  const selectedAmount = selectedItems.reduce((s, i) => s + i.amount, 0);
+
+  function handleExportClick() {
+    toast({ title: "準備中です", description: "振込データ出力機能は近日公開予定です。" });
+  }
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -439,11 +555,21 @@ export default function Payments() {
         </Dialog>
       </div>
 
+      {/* 改善B: 期日超過警告バナー */}
+      {overdueCount > 0 && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-red-800">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
+          <span className="text-sm">
+            期日超過の支払が <strong>{overdueCount}件</strong> あります（合計 {formatCurrency(overdueAmount)}）。早急にご確認ください。
+          </span>
+        </div>
+      )}
+
       {/* KPIサマリー */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="border-none bg-slate-50">
           <CardHeader className="py-3 pb-1">
-            <CardTitle className="text-xs text-slate-500 font-medium">支払総額</CardTitle>
+            <div className="text-xs text-slate-500 font-medium">支払総額</div>
           </CardHeader>
           <CardContent className="pb-4">
             <div className="text-xl font-bold">{formatCurrency(payments?.totalAmount ?? 0)}</div>
@@ -452,9 +578,9 @@ export default function Payments() {
         </Card>
         <Card className="border-none bg-amber-50">
           <CardHeader className="py-3 pb-1">
-            <CardTitle className="text-xs text-amber-600 font-medium flex items-center gap-1">
+            <div className="text-xs text-amber-600 font-medium flex items-center gap-1">
               <Clock className="w-3 h-3" />未払
-            </CardTitle>
+            </div>
           </CardHeader>
           <CardContent className="pb-4">
             <div className="text-xl font-bold text-amber-700">{formatCurrency(payments?.pendingAmount ?? 0)}</div>
@@ -468,9 +594,9 @@ export default function Payments() {
         </Card>
         <Card className="border-none bg-emerald-50">
           <CardHeader className="py-3 pb-1">
-            <CardTitle className="text-xs text-emerald-600 font-medium flex items-center gap-1">
+            <div className="text-xs text-emerald-600 font-medium flex items-center gap-1">
               <CheckCircle2 className="w-3 h-3" />支払済
-            </CardTitle>
+            </div>
           </CardHeader>
           <CardContent className="pb-4">
             <div className="text-xl font-bold text-emerald-700">{formatCurrency(payments?.paidAmount ?? 0)}</div>
@@ -481,7 +607,7 @@ export default function Payments() {
         </Card>
         <Card className="border-none bg-slate-50">
           <CardHeader className="py-3 pb-1">
-            <CardTitle className="text-xs text-slate-500 font-medium">支払率</CardTitle>
+            <div className="text-xs text-slate-500 font-medium">支払率</div>
           </CardHeader>
           <CardContent className="pb-4">
             <div className="text-xl font-bold">
@@ -550,12 +676,56 @@ export default function Payments() {
               </Button>
             </div>
           </div>
+
+          {/* 改善C-2: クイック選択ボタン + C-3: 選択サマリー */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t mt-2">
+            <div className="flex flex-wrap gap-2">
+              <span className="text-xs text-slate-400 self-center">振込対象を選択：</span>
+              <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={quickSelectThisWeek}>
+                今週支払い
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs px-2" onClick={quickSelectThisMonth}>
+                今月支払い
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs px-2 text-red-600 border-red-200 hover:bg-red-50" onClick={quickSelectOverdue}>
+                期日超過のみ
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs px-2 text-amber-700 border-amber-200 hover:bg-amber-50" onClick={quickSelectAllPending}>
+                全未払
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500">
+                選択: <strong>{selectedIds.size}件</strong> / {formatCurrency(selectedAmount)}
+              </span>
+              <Button
+                size="sm"
+                className="h-7 text-xs gap-1"
+                disabled={selectedIds.size === 0}
+                onClick={handleExportClick}
+              >
+                <Upload className="w-3.5 h-3.5" />
+                振込データを出力
+              </Button>
+            </div>
+          </div>
         </CardHeader>
+
         <CardContent className="p-0">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader className="bg-slate-50">
                 <TableRow>
+                  {/* 改善C-1: ヘッダーチェックボックス */}
+                  <TableHead className="w-10 pl-4">
+                    <Checkbox
+                      checked={allChecked}
+                      data-state={someChecked && !allChecked ? "indeterminate" : undefined}
+                      onCheckedChange={toggleAll}
+                      disabled={checkableIds.length === 0}
+                      aria-label="全選択"
+                    />
+                  </TableHead>
                   <TableHead className="w-[100px]">状態</TableHead>
                   <TableHead>工事</TableHead>
                   <TableHead>支払先</TableHead>
@@ -570,32 +740,56 @@ export default function Payments() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={8}>
+                      <TableCell colSpan={9}>
                         <Skeleton className="h-4 w-full" />
                       </TableCell>
                     </TableRow>
                   ))
                 ) : items.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="h-32 text-center text-slate-500">
+                    <TableCell colSpan={9} className="h-32 text-center text-slate-500">
                       支払記録がありません。「支払登録」から追加してください。
                     </TableCell>
                   </TableRow>
                 ) : (
                   items.map((item) => {
-                    const isOverdue =
-                      item.status === "pending" && item.dueDate && new Date(item.dueDate) < new Date();
+                    const isOverdue = item.status === "pending" && !!item.dueDate && item.dueDate < todayStr;
+                    const isToday = item.status === "pending" && item.dueDate === todayStr;
                     const isDueSoon =
                       item.status === "pending" &&
-                      item.dueDate &&
+                      !!item.dueDate &&
                       !isOverdue &&
-                      (new Date(item.dueDate).getTime() - Date.now()) / 86400000 <= 7;
+                      !isToday &&
+                      (new Date(item.dueDate).getTime() - today.getTime()) / 86400000 <= 7;
+                    const checkable = isCheckable(item);
+                    const checked = selectedIds.has(item.id);
+
+                    // 改善B+D: 行背景
+                    let rowBg = "";
+                    if (isOverdue) rowBg = "bg-red-50 hover:bg-red-100";
+                    else if (isToday) rowBg = "bg-yellow-50 hover:bg-yellow-100";
+                    else rowBg = "hover:bg-slate-50/50";
 
                     return (
-                      <TableRow
-                        key={item.id}
-                        className={`hover:bg-slate-50/50 ${isOverdue ? "bg-red-50/50" : ""}`}
-                      >
+                      <TableRow key={item.id} className={rowBg}>
+                        {/* 改善C-1: 行チェックボックス */}
+                        <TableCell className="pl-4">
+                          {checkable ? (
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={() => toggleOne(item.id)}
+                              aria-label={`${item.vendor} を選択`}
+                            />
+                          ) : (
+                            <span title={
+                              item.status === "paid" ? "支払済の行は対象外です" :
+                              item.status === "partial" ? "一部払の行は対象外です" :
+                              !item.vendor?.trim() ? "仕入先が未設定です" : "対象外"
+                            }>
+                              <Checkbox checked={false} disabled aria-label="対象外" />
+                            </span>
+                          )}
+                        </TableCell>
                         <TableCell>
                           <div className="flex flex-col gap-1">
                             <StatusBadge status={item.status} />
@@ -605,7 +799,7 @@ export default function Payments() {
                                 期日超過
                               </Badge>
                             )}
-                            {isDueSoon && !isOverdue && (
+                            {isDueSoon && (
                               <Badge variant="outline" className="bg-orange-50 text-orange-600 border-orange-200 gap-1 text-xs w-fit">
                                 <Clock className="w-3 h-3" />
                                 今週期限
@@ -648,7 +842,7 @@ export default function Payments() {
                                   : "text-slate-600"
                               }`}
                             >
-                              {new Date(item.dueDate).toLocaleDateString("ja-JP", { month: "numeric", day: "numeric" })}
+                              {new Date(item.dueDate + "T00:00:00").toLocaleDateString("ja-JP", { month: "numeric", day: "numeric" })}
                               {isOverdue && " ⚠️"}
                             </span>
                           ) : (
@@ -658,7 +852,7 @@ export default function Payments() {
                         <TableCell>
                           {item.paidDate ? (
                             <span className="text-sm text-emerald-700">
-                              {new Date(item.paidDate).toLocaleDateString("ja-JP", { month: "numeric", day: "numeric" })}
+                              {new Date(item.paidDate + "T00:00:00").toLocaleDateString("ja-JP", { month: "numeric", day: "numeric" })}
                             </span>
                           ) : (
                             <span className="text-slate-400 text-sm">-</span>
