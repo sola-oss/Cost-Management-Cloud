@@ -389,7 +389,8 @@ function ZenginExportDialog({ open, onClose, selectedItems, vendors, defaultDate
 
       toast({
         title: "振込データを出力しました",
-        description: `${selectedItems.length}件 / ${formatCurrency(totalAmount)}`,
+        description: `ファイル名：${filename}（${selectedItems.length}件 / ${formatCurrency(totalAmount)}）`,
+        duration: 8000,
       });
       onClose();
     } catch {

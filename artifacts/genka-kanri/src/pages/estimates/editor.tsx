@@ -404,7 +404,7 @@ export default function EstimateEditor({ id }: { id?: number }) {
   });
 
   useEffect(() => {
-    if (!isNew || !companySettings) return;
+    if (!isNew || !companySettings || !companySettings.id) return;
     sf({
       companyName: companySettings.companyName ?? "",
       companyAddress: [companySettings.postalCode ? `〒${companySettings.postalCode}` : "", companySettings.address ?? ""].filter(Boolean).join(" "),

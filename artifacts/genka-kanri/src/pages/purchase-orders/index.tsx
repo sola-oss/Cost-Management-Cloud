@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useListProjects, getListProjectsQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -453,11 +454,11 @@ export default function PurchaseOrders() {
               </div>
               <div className="space-y-1">
                 <Label className="text-xs text-slate-600">発注日</Label>
-                <Input type="date" value={formOrderDate} onChange={(e) => setFormOrderDate(e.target.value)} className="text-sm" />
+                <DateInput value={formOrderDate} onChange={(e) => setFormOrderDate(e.target.value)} className="text-sm" />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs text-slate-600">納期予定</Label>
-                <Input type="date" value={formDeliveryDate} onChange={(e) => setFormDeliveryDate(e.target.value)} className="text-sm" />
+                <DateInput value={formDeliveryDate} onChange={(e) => setFormDeliveryDate(e.target.value)} className="text-sm" />
               </div>
               <div className="space-y-1">
                 <Label className="text-xs text-slate-600">ステータス</Label>

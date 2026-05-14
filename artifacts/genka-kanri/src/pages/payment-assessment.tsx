@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -242,8 +243,7 @@ export default function PaymentAssessment() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
               <Label className="text-xs text-slate-600">対象期間（開始）</Label>
-              <Input
-                type="date"
+              <DateInput
                 value={startDate}
                 onChange={(e) => { setStartDate(e.target.value); resetCalculation(); }}
                 className="mt-1"
@@ -251,8 +251,7 @@ export default function PaymentAssessment() {
             </div>
             <div>
               <Label className="text-xs text-slate-600">対象期間（終了）</Label>
-              <Input
-                type="date"
+              <DateInput
                 value={endDate}
                 onChange={(e) => { setEndDate(e.target.value); resetCalculation(); }}
                 className="mt-1"
@@ -327,8 +326,7 @@ export default function PaymentAssessment() {
             </div>
             <div>
               <Label className="text-xs text-slate-600">支払期日（確定時）</Label>
-              <Input
-                type="date"
+              <DateInput
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
                 className="mt-1"

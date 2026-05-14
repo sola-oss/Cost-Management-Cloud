@@ -1,9 +1,24 @@
 import { Link, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, CreditCard, Calculator, Users, Layers, FileText, Wrench, Settings, Receipt, ClipboardList } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarProvider, SidebarRail, SidebarTrigger, SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from "./ui/sidebar";
 
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
+
+  const { data: companySettings } = useQuery({
+    queryKey: ["company-settings"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/company-settings`);
+      if (!res.ok) return null;
+      return res.json() as Promise<{ companyName?: string }>;
+    },
+    staleTime: 60_000,
+  });
+
+  const companyDisplayName = companySettings?.companyName || "会社名未設定";
 
   const mainNav = [
     { title: "ダッシュボード", icon: LayoutDashboard, url: "/" },
@@ -136,7 +151,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="flex-1" />
             <div className="flex items-center gap-2 text-sm font-medium text-slate-600 border px-3 py-1.5 rounded-full bg-slate-50">
               <Building2 className="w-4 h-4" />
-              <span>大成建設工業株式会社</span>
+              <span>{companyDisplayName}</span>
             </div>
           </header>
           <div className="flex-1 overflow-auto">

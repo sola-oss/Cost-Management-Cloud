@@ -4,6 +4,7 @@ import { useListProjects, getListProjectsQueryKey } from "@workspace/api-client-
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DateInput } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -521,8 +522,7 @@ export default function Purchases() {
               {/* 仕入日 */}
               <div className="space-y-1">
                 <Label className="text-xs text-slate-600">仕入日 <span className="text-red-500">*</span></Label>
-                <Input
-                  type="date"
+                <DateInput
                   value={purchaseDate}
                   onChange={e => setPurchaseDate(e.target.value)}
                   className="text-sm"
@@ -560,8 +560,7 @@ export default function Purchases() {
               {/* 支払予定日 */}
               <div className="space-y-1">
                 <Label className="text-xs text-slate-600">支払予定日</Label>
-                <Input
-                  type="date"
+                <DateInput
                   value={paymentDueDate}
                   onChange={e => setPaymentDueDate(e.target.value)}
                   className="text-sm"
