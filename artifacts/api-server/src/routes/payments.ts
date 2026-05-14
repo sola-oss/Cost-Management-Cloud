@@ -71,11 +71,12 @@ function padC(val: string, len: number): string {
   return s.slice(0, len).padEnd(len, " ");
 }
 
-function accountTypeCode(type: string | null | undefined): string {
+function accountTypeCode(type: string | null | undefined, fallback = "9"): string {
   if (type === "普通") return "1";
   if (type === "当座") return "2";
   if (type === "貯蓄") return "4";
-  return "9";
+  if (type === "その他") return "9";
+  return fallback;
 }
 
 // ─── GET /api/payments ────────────────────────────────────────────────────────
@@ -239,7 +240,7 @@ router.post("/zengin", async (req, res) => {
         padN(vendor?.bankBranchCode ?? "", 3) +
         padC(vendor?.bankBranchKana ?? "", 15) +
         "0000" +
-        accountTypeCode(vendor?.bankAccountType) +
+        accountTypeCode(vendor?.bankAccountType, "0") +
         padN(vendor?.bankAccountNumber ?? "", 7) +
         padC(vendor?.bankAccountHolderKana ?? "", 30) +
         padN(String(amtInt), 10) +

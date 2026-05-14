@@ -335,18 +335,18 @@ function ZenginExportDialog({ open, onClose, selectedItems, vendors, defaultDate
       if (seen.has(item.vendor)) continue;
       seen.add(item.vendor);
       const vendor = vendors.find((v) => v.name === item.vendor);
-      const missing: string[] = [];
       if (!vendor) {
-        missing.push("仕入先マスタ未登録");
+        warnings.push({ vendorName: item.vendor, missingFields: ["仕入先マスタ未登録"] });
       } else {
-        if (!vendor.bankCode) missing.push("銀行コード");
-        if (!vendor.bankBranchCode) missing.push("支店コード");
-        if (!vendor.bankAccountType) missing.push("口座種別");
-        if (!vendor.bankAccountNumber) missing.push("口座番号");
-        if (!vendor.bankAccountHolderKana) missing.push("受取人名カナ");
-      }
-      if (missing.length > 0) {
-        warnings.push({ vendorName: item.vendor, missingFields: missing });
+        const hasIncomplete =
+          !vendor.bankCode ||
+          !vendor.bankBranchCode ||
+          !vendor.bankAccountType ||
+          !vendor.bankAccountNumber ||
+          !vendor.bankAccountHolderKana;
+        if (hasIncomplete) {
+          warnings.push({ vendorName: item.vendor, missingFields: ["口座情報未入力"] });
+        }
       }
     }
     return warnings;
