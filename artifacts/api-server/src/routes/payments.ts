@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq, and, desc } from "drizzle-orm";
-import { db, paymentsTable, projectsTable } from "@workspace/db";
+import { eq, and, desc, inArray } from "drizzle-orm";
+import iconv from "iconv-lite";
+import { db, paymentsTable, projectsTable, companySettingsTable, vendorsTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -16,7 +17,69 @@ function formatPayment(p: typeof paymentsTable.$inferSelect) {
   };
 }
 
-// GET /api/payments — 支払一覧（projectId任意, status任意）
+// ─── 全銀フォーマット ヘルパー ────────────────────────────────────────────────
+
+const KATA_MAP: Record<number, string> = {
+  0x30A1: "ｧ", 0x30A2: "ｱ", 0x30A3: "ｨ", 0x30A4: "ｲ", 0x30A5: "ｩ",
+  0x30A6: "ｳ", 0x30A7: "ｪ", 0x30A8: "ｴ", 0x30A9: "ｫ", 0x30AA: "ｵ",
+  0x30AB: "ｶ", 0x30AC: "ｶﾞ", 0x30AD: "ｷ", 0x30AE: "ｷﾞ", 0x30AF: "ｸ",
+  0x30B0: "ｸﾞ", 0x30B1: "ｹ", 0x30B2: "ｹﾞ", 0x30B3: "ｺ", 0x30B4: "ｺﾞ",
+  0x30B5: "ｻ", 0x30B6: "ｻﾞ", 0x30B7: "ｼ", 0x30B8: "ｼﾞ", 0x30B9: "ｽ",
+  0x30BA: "ｽﾞ", 0x30BB: "ｾ", 0x30BC: "ｾﾞ", 0x30BD: "ｿ", 0x30BE: "ｿﾞ",
+  0x30BF: "ﾀ", 0x30C0: "ﾀﾞ", 0x30C1: "ﾁ", 0x30C2: "ﾁﾞ", 0x30C3: "ｯ",
+  0x30C4: "ﾂ", 0x30C5: "ﾂﾞ", 0x30C6: "ﾃ", 0x30C7: "ﾃﾞ", 0x30C8: "ﾄ",
+  0x30C9: "ﾄﾞ", 0x30CA: "ﾅ", 0x30CB: "ﾆ", 0x30CC: "ﾇ", 0x30CD: "ﾈ",
+  0x30CE: "ﾉ", 0x30CF: "ﾊ", 0x30D0: "ﾊﾞ", 0x30D1: "ﾊﾟ", 0x30D2: "ﾋ",
+  0x30D3: "ﾋﾞ", 0x30D4: "ﾋﾟ", 0x30D5: "ﾌ", 0x30D6: "ﾌﾞ", 0x30D7: "ﾌﾟ",
+  0x30D8: "ﾍ", 0x30D9: "ﾍﾞ", 0x30DA: "ﾍﾟ", 0x30DB: "ﾎ", 0x30DC: "ﾎﾞ",
+  0x30DD: "ﾎﾟ", 0x30DE: "ﾏ", 0x30DF: "ﾐ", 0x30E0: "ﾑ", 0x30E1: "ﾒ",
+  0x30E2: "ﾓ", 0x30E3: "ｬ", 0x30E4: "ﾔ", 0x30E5: "ｭ", 0x30E6: "ﾕ",
+  0x30E7: "ｮ", 0x30E8: "ﾖ", 0x30E9: "ﾗ", 0x30EA: "ﾘ", 0x30EB: "ﾙ",
+  0x30EC: "ﾚ", 0x30ED: "ﾛ", 0x30EE: "ﾜ", 0x30EF: "ﾜ", 0x30F0: "ｲ",
+  0x30F1: "ｴ", 0x30F2: "ｦ", 0x30F3: "ﾝ", 0x30F4: "ｳﾞ", 0x30F5: "ｶ",
+  0x30F6: "ｹ", 0x30FB: "･", 0x30FC: "ｰ",
+};
+
+function toHalfWidth(str: string): string {
+  if (!str) return "";
+  let result = "";
+  for (let i = 0; i < str.length; i++) {
+    const cp = str.charCodeAt(i);
+    if (cp >= 0xFF01 && cp <= 0xFF5E) {
+      result += String.fromCharCode(cp - 0xFEE0);
+    } else if (cp === 0x3000) {
+      result += " ";
+    } else if (cp >= 0x3041 && cp <= 0x3096) {
+      const kata = cp + 0x60;
+      result += KATA_MAP[kata] ?? String.fromCharCode(cp);
+    } else if (cp >= 0x30A1 && cp <= 0x30FC) {
+      result += KATA_MAP[cp] ?? String.fromCharCode(cp);
+    } else {
+      result += str[i];
+    }
+  }
+  return result;
+}
+
+function padN(val: string | number, len: number): string {
+  const s = String(val).replace(/\D/g, "").padStart(len, "0");
+  return s.slice(-len);
+}
+
+function padC(val: string, len: number): string {
+  const s = toHalfWidth(val ?? "");
+  return s.slice(0, len).padEnd(len, " ");
+}
+
+function accountTypeCode(type: string | null | undefined): string {
+  if (type === "普通") return "1";
+  if (type === "当座") return "2";
+  if (type === "貯蓄") return "4";
+  return "9";
+}
+
+// ─── GET /api/payments ────────────────────────────────────────────────────────
+
 router.get("/", async (req, res) => {
   try {
     const { projectId, status } = req.query as Record<string, string>;
@@ -59,7 +122,8 @@ router.get("/", async (req, res) => {
   }
 });
 
-// POST /api/payments — 支払登録
+// ─── POST /api/payments ───────────────────────────────────────────────────────
+
 router.post("/", async (req, res) => {
   try {
     const { projectId, vendor, description, amount, dueDate, invoiceNumber, notes } = req.body;
@@ -91,7 +155,142 @@ router.post("/", async (req, res) => {
   }
 });
 
-// PATCH /api/payments/:id/pay — 支払済みにマーク
+// ─── POST /api/payments/zengin ────────────────────────────────────────────────
+
+router.post("/zengin", async (req, res) => {
+  try {
+    const { paymentIds, executionDate } = req.body as {
+      paymentIds: number[];
+      executionDate: string;
+    };
+
+    if (!Array.isArray(paymentIds) || paymentIds.length === 0) {
+      return res.status(400).json({ message: "paymentIds が空です" });
+    }
+    if (!executionDate || !/^\d{4}-\d{2}-\d{2}$/.test(executionDate)) {
+      return res.status(400).json({ message: "executionDate が不正です (YYYY-MM-DD)" });
+    }
+
+    // 会社設定取得
+    const settingsRows = await db.select().from(companySettingsTable).limit(1);
+    const s = settingsRows[0];
+    const missing: string[] = [];
+    if (!s?.consignorCode) missing.push("委託者コード");
+    if (!s?.companyNameKana) missing.push("会社名カナ");
+    if (!s?.bankCode) missing.push("銀行コード");
+    if (!s?.bankBranchCode) missing.push("支店コード");
+    if (!s?.bankAccountType) missing.push("口座種別");
+    if (!s?.bankAccountNumber) missing.push("口座番号");
+    if (missing.length > 0) {
+      return res.status(400).json({
+        message: `会社設定の振込元情報が未入力です。未入力項目：${missing.join("、")}`,
+      });
+    }
+
+    // 支払データ取得
+    const payments = await db
+      .select()
+      .from(paymentsTable)
+      .where(inArray(paymentsTable.id, paymentIds));
+    if (payments.length === 0) {
+      return res.status(400).json({ message: "対象の支払データが見つかりません" });
+    }
+
+    // 仕入先マスタ（名前引き）
+    const vendors = await db.select().from(vendorsTable);
+    const vendorMap = new Map(vendors.map((v) => [v.name, v]));
+
+    // 取組日 MMDD
+    const [, mm, dd] = executionDate.split("-");
+    const mmdd = `${mm}${dd}`;
+
+    // ヘッダレコード（120バイト）
+    // 1+2+1+10+40+4+4+15+3+15+1+7+17 = 120
+    const header =
+      "1" +
+      "21" +
+      "0" +
+      padN(s.consignorCode!, 10) +
+      padC(s.companyNameKana!, 40) +
+      mmdd +
+      padN(s.bankCode!, 4) +
+      padC(s.bankNameKana ?? "", 15) +
+      padN(s.bankBranchCode!, 3) +
+      padC(s.bankBranchKana ?? "", 15) +
+      accountTypeCode(s.bankAccountType) +
+      padN(s.bankAccountNumber!, 7) +
+      " ".repeat(17);
+
+    // データレコード
+    // 1+4+15+3+15+4+1+7+30+10+1+10+10+1+1+7 = 120
+    const dataRecords: string[] = [];
+    let totalAmount = 0;
+
+    for (const payment of payments) {
+      const vendor = vendorMap.get(payment.vendor);
+      const amt = parseNumeric(payment.amount) - (payment.paidAmount ? parseNumeric(payment.paidAmount) : 0);
+      const amtInt = Math.max(0, Math.round(amt));
+      totalAmount += amtInt;
+
+      const dataRecord =
+        "2" +
+        padN(vendor?.bankCode ?? "", 4) +
+        padC(vendor?.bankNameKana ?? "", 15) +
+        padN(vendor?.bankBranchCode ?? "", 3) +
+        padC(vendor?.bankBranchKana ?? "", 15) +
+        "0000" +
+        accountTypeCode(vendor?.bankAccountType) +
+        padN(vendor?.bankAccountNumber ?? "", 7) +
+        padC(vendor?.bankAccountHolderKana ?? "", 30) +
+        padN(String(amtInt), 10) +
+        "0" +
+        " ".repeat(10) +
+        " ".repeat(10) +
+        "7" +
+        " " +
+        " ".repeat(7);
+
+      dataRecords.push(dataRecord);
+    }
+
+    // トレーラレコード（120バイト）
+    // 1+6+12+101 = 120
+    const trailer =
+      "8" +
+      padN(dataRecords.length, 6) +
+      padN(totalAmount, 12) +
+      " ".repeat(101);
+
+    // エンドレコード（120バイト）
+    // 1+119 = 120
+    const end = "9" + " ".repeat(119);
+
+    const text = [header, ...dataRecords, trailer, end].join("\r\n") + "\r\n";
+
+    const buffer = iconv.encode(text, "Shift_JIS");
+
+    const now = new Date();
+    const ts =
+      now.getFullYear().toString() +
+      String(now.getMonth() + 1).padStart(2, "0") +
+      String(now.getDate()).padStart(2, "0") +
+      "_" +
+      String(now.getHours()).padStart(2, "0") +
+      String(now.getMinutes()).padStart(2, "0") +
+      String(now.getSeconds()).padStart(2, "0");
+    const filename = `furikomi_${ts}.txt`;
+
+    res.setHeader("Content-Type", "text/plain; charset=Shift_JIS");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    return res.send(buffer);
+  } catch (err) {
+    req.log.error({ err }, "Failed to generate zengin file");
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ─── PATCH /api/payments/:id/pay ──────────────────────────────────────────────
+
 router.patch("/:id/pay", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
@@ -122,7 +321,8 @@ router.patch("/:id/pay", async (req, res) => {
   }
 });
 
-// PATCH /api/payments/:id/unpay — 未払いに戻す
+// ─── PATCH /api/payments/:id/unpay ───────────────────────────────────────────
+
 router.patch("/:id/unpay", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
@@ -141,7 +341,8 @@ router.patch("/:id/unpay", async (req, res) => {
   }
 });
 
-// DELETE /api/payments/:id
+// ─── DELETE /api/payments/:id ────────────────────────────────────────────────
+
 router.delete("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);

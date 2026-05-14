@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useLocation } from "wouter";
 import { useListProjects, getListProjectsQueryKey } from "@workspace/api-client-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -13,7 +14,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   CreditCard, Plus, Save, Loader2, CheckCircle2, Clock, AlertCircle,
-  RefreshCw, Trash2, RotateCcw, Upload, AlertTriangle,
+  RefreshCw, Trash2, RotateCcw, Upload, AlertTriangle, ExternalLink,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { useForm } from "react-hook-form";
@@ -49,6 +50,27 @@ interface PaymentsResponse {
   pendingAmount: number;
 }
 
+interface CompanySettings {
+  consignorCode: string | null;
+  companyNameKana: string | null;
+  bankCode: string | null;
+  bankBranchCode: string | null;
+  bankAccountType: string | null;
+  bankAccountNumber: string | null;
+  [key: string]: unknown;
+}
+
+interface VendorItem {
+  id: number;
+  name: string;
+  bankCode: string | null;
+  bankBranchCode: string | null;
+  bankAccountType: string | null;
+  bankAccountNumber: string | null;
+  bankAccountHolderKana: string | null;
+  [key: string]: unknown;
+}
+
 // ─── 日付ユーティリティ ───────────────────────────────────────────────────────
 
 function formatDateLocal(d: Date): string {
@@ -64,8 +86,8 @@ function getTodayStr() {
 
 function getWeekEndStr() {
   const d = new Date();
-  const dow = d.getDay(); // 0=日, 1=月 … 6=土
-  const diff = (7 - dow) % 7; // 今日が日曜なら 0、それ以外は今週日曜までの日数
+  const dow = d.getDay();
+  const diff = (7 - dow) % 7;
   d.setDate(d.getDate() + diff);
   return formatDateLocal(d);
 }
@@ -89,6 +111,31 @@ function usePayments(statusFilter?: string, projectFilter?: string) {
       if (!res.ok) throw new Error("Failed to fetch payments");
       return res.json() as Promise<PaymentsResponse>;
     },
+  });
+}
+
+function useCompanySettings() {
+  return useQuery({
+    queryKey: ["/api/company-settings"],
+    queryFn: async () => {
+      const res = await fetch("/api/company-settings");
+      if (!res.ok) throw new Error("Failed to fetch company settings");
+      return res.json() as Promise<CompanySettings>;
+    },
+    staleTime: 60_000,
+  });
+}
+
+function useVendors() {
+  return useQuery({
+    queryKey: ["/api/vendors"],
+    queryFn: async () => {
+      const res = await fetch("/api/vendors");
+      if (!res.ok) throw new Error("Failed to fetch vendors");
+      const data = await res.json();
+      return (data.items ?? []) as VendorItem[];
+    },
+    staleTime: 60_000,
   });
 }
 
@@ -258,18 +305,198 @@ function MarkPaidDialog({ payment, onPaid }: { payment: PaymentItem; onPaid: () 
   );
 }
 
+// ─── 全銀データ出力ダイアログ ─────────────────────────────────────────────────
+
+interface VendorWarning {
+  vendorName: string;
+  missingFields: string[];
+}
+
+interface ZenginDialogProps {
+  open: boolean;
+  onClose: () => void;
+  selectedItems: PaymentItem[];
+  vendors: VendorItem[];
+  defaultDate: string;
+}
+
+function ZenginExportDialog({ open, onClose, selectedItems, vendors, defaultDate }: ZenginDialogProps) {
+  const today = getTodayStr();
+  const [executionDate, setExecutionDate] = useState(defaultDate >= today ? defaultDate : today);
+  const [isExporting, setIsExporting] = useState(false);
+  const { toast } = useToast();
+
+  const totalAmount = selectedItems.reduce((s, i) => s + i.amount - (i.paidAmount ?? 0), 0);
+
+  const vendorWarnings = useMemo<VendorWarning[]>(() => {
+    const seen = new Set<string>();
+    const warnings: VendorWarning[] = [];
+    for (const item of selectedItems) {
+      if (seen.has(item.vendor)) continue;
+      seen.add(item.vendor);
+      const vendor = vendors.find((v) => v.name === item.vendor);
+      const missing: string[] = [];
+      if (!vendor) {
+        missing.push("仕入先マスタ未登録");
+      } else {
+        if (!vendor.bankCode) missing.push("銀行コード");
+        if (!vendor.bankBranchCode) missing.push("支店コード");
+        if (!vendor.bankAccountType) missing.push("口座種別");
+        if (!vendor.bankAccountNumber) missing.push("口座番号");
+        if (!vendor.bankAccountHolderKana) missing.push("受取人名カナ");
+      }
+      if (missing.length > 0) {
+        warnings.push({ vendorName: item.vendor, missingFields: missing });
+      }
+    }
+    return warnings;
+  }, [selectedItems, vendors]);
+
+  const handleExport = async () => {
+    if (!executionDate || executionDate < today) {
+      toast({ title: "取組日エラー", description: "取組日は今日以降の日付を指定してください", variant: "destructive" });
+      return;
+    }
+    setIsExporting(true);
+    try {
+      const res = await fetch("/api/payments/zengin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          paymentIds: selectedItems.map((i) => i.id),
+          executionDate,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: "不明なエラー" }));
+        toast({ title: "出力エラー", description: err.message ?? "振込データの生成に失敗しました", variant: "destructive" });
+        return;
+      }
+
+      // ファイル名をレスポンスヘッダから取得
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      const filename = match?.[1] ?? `furikomi_${Date.now()}.txt`;
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "振込データを出力しました",
+        description: `${selectedItems.length}件 / ${formatCurrency(totalAmount)}`,
+      });
+      onClose();
+    } catch {
+      toast({ title: "出力エラー", description: "通信エラーが発生しました", variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Upload className="w-4 h-4" />
+            振込データ出力
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {/* 取組日 */}
+          <div>
+            <label className="text-sm font-medium text-slate-700">
+              取組日 <span className="text-destructive">*</span>
+            </label>
+            <Input
+              type="date"
+              value={executionDate}
+              min={today}
+              onChange={(e) => setExecutionDate(e.target.value)}
+              className="mt-1"
+            />
+            <p className="text-xs text-slate-400 mt-1">今日以降の日付を指定してください</p>
+          </div>
+
+          {/* 出力対象サマリー */}
+          <div className="bg-slate-50 rounded-lg p-3 text-sm">
+            <div className="font-medium text-slate-700">出力対象</div>
+            <div className="text-slate-900 mt-1">
+              <span className="font-bold text-lg">{selectedItems.length}</span>
+              <span className="text-slate-500 ml-1">件 / </span>
+              <span className="font-bold">{formatCurrency(totalAmount)}</span>
+              <span className="text-slate-500 ml-1">を出力します</span>
+            </div>
+          </div>
+
+          {/* 仕入先振込先情報の警告 */}
+          {vendorWarnings.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-medium text-amber-800">振込先情報が不足している仕入先があります</div>
+                  <div className="text-amber-700 mt-1 text-xs">
+                    以下の仕入先は振込先情報が未入力のため、出力されたファイルは銀行で取り込めない可能性があります。
+                  </div>
+                  <ul className="mt-2 space-y-1">
+                    {vendorWarnings.map((w) => (
+                      <li key={w.vendorName} className="text-amber-700 text-xs">
+                        ・<span className="font-medium">{w.vendorName}</span>
+                        <span className="text-amber-600">（{w.missingFields.join("・")}未入力）</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="text-amber-600 text-xs mt-2">
+                    このまま出力するか、仕入先マスタで口座情報を編集してください。
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={isExporting}>
+            キャンセル
+          </Button>
+          <Button onClick={handleExport} disabled={isExporting || !executionDate || executionDate < today}>
+            {isExporting ? (
+              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+            ) : (
+              <Upload className="w-4 h-4 mr-2" />
+            )}
+            出力
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── メインページ ──────────────────────────────────────────────────────────────
 
 export default function Payments() {
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const [statusFilter, setStatusFilter] = useState("all");
   const [projectFilter, setProjectFilter] = useState("all");
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [zenginOpen, setZenginOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const { data: payments, isLoading, refetch } = usePayments(statusFilter, projectFilter);
   const { data: projects } = useListProjects(undefined, { query: { queryKey: getListProjectsQueryKey() } });
+  const { data: companySettings } = useCompanySettings();
+  const { data: vendors = [] } = useVendors();
   const createPayment = useCreatePayment();
   const revertPayment = useRevertPayment();
   const deletePayment = useDeletePayment();
@@ -339,7 +566,6 @@ export default function Payments() {
     ? allItems.filter((i) => i.status === "pending" && i.dueDate && i.dueDate < todayStr)
     : allItems;
 
-  // 改善A: 支払期日昇順（NULL末尾）
   const items = useMemo(() => {
     return [...baseItems].sort((a, b) => {
       if (!a.dueDate && !b.dueDate) return 0;
@@ -435,8 +661,50 @@ export default function Payments() {
   const selectedItems = allItems.filter((i) => selectedIds.has(i.id));
   const selectedAmount = selectedItems.reduce((s, i) => s + i.amount, 0);
 
+  // デフォルト取組日：選択行の最も早い支払期日（過去日なら今日）
+  const defaultExecutionDate = useMemo(() => {
+    const dueDates = selectedItems
+      .map((i) => i.dueDate)
+      .filter((d): d is string => !!d)
+      .sort();
+    if (dueDates.length === 0) return todayStr;
+    const earliest = dueDates[0];
+    return earliest >= todayStr ? earliest : todayStr;
+  }, [selectedItems, todayStr]);
+
   function handleExportClick() {
-    toast({ title: "準備中です", description: "振込データ出力機能は近日公開予定です。" });
+    if (selectedIds.size === 0) return;
+
+    // 会社設定の必須チェック
+    if (companySettings) {
+      const missingLabels: string[] = [];
+      if (!companySettings.consignorCode) missingLabels.push("委託者コード");
+      if (!companySettings.companyNameKana) missingLabels.push("会社名カナ");
+      if (!companySettings.bankCode) missingLabels.push("銀行コード");
+      if (!companySettings.bankBranchCode) missingLabels.push("支店コード");
+      if (!companySettings.bankAccountType) missingLabels.push("口座種別");
+      if (!companySettings.bankAccountNumber) missingLabels.push("口座番号");
+
+      if (missingLabels.length > 0) {
+        toast({
+          title: "会社設定の振込元情報が未入力です",
+          description: `未入力項目：${missingLabels.join("、")}。会社設定画面で入力してください。`,
+          variant: "destructive",
+          action: (
+            <button
+              className="flex items-center gap-1 text-xs underline whitespace-nowrap"
+              onClick={() => setLocation("/settings")}
+            >
+              <ExternalLink className="w-3 h-3" />
+              設定画面へ
+            </button>
+          ) as unknown as undefined,
+        });
+        return;
+      }
+    }
+
+    setZenginOpen(true);
   }
 
   return (
@@ -557,7 +825,7 @@ export default function Payments() {
         </Dialog>
       </div>
 
-      {/* 改善B: 期日超過警告バナー */}
+      {/* 期日超過警告バナー */}
       {overdueCount > 0 && (
         <div className="flex items-center gap-3 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-red-800">
           <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
@@ -626,7 +894,6 @@ export default function Payments() {
         <CardHeader className="border-b py-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex gap-2 flex-wrap">
-              {/* ステータスフィルタ */}
               {[
                 { value: "all", label: "すべて" },
                 { value: "pending", label: "未払" },
@@ -645,7 +912,6 @@ export default function Payments() {
                   {opt.label}
                 </button>
               ))}
-              {/* 期日超過フィルタ */}
               <button
                 onClick={() => { setOverdueOnly(!overdueOnly); if (!overdueOnly) setStatusFilter("all"); }}
                 className={`text-xs px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1 ${
@@ -659,7 +925,6 @@ export default function Payments() {
               </button>
             </div>
             <div className="flex items-center gap-2">
-              {/* 工事フィルタ */}
               <Select value={projectFilter} onValueChange={setProjectFilter}>
                 <SelectTrigger className="h-8 w-[160px] text-xs">
                   <SelectValue placeholder="工事で絞込" />
@@ -679,7 +944,7 @@ export default function Payments() {
             </div>
           </div>
 
-          {/* 改善C-2: クイック選択ボタン + C-3: 選択サマリー */}
+          {/* クイック選択ボタン + 選択サマリー */}
           <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t mt-2">
             <div className="flex flex-wrap gap-2">
               <span className="text-xs text-slate-400 self-center">振込対象を選択：</span>
@@ -718,7 +983,6 @@ export default function Payments() {
             <Table>
               <TableHeader className="bg-slate-50">
                 <TableRow>
-                  {/* 改善C-1: ヘッダーチェックボックス */}
                   <TableHead className="w-10 pl-4">
                     <Checkbox
                       checked={allChecked}
@@ -766,7 +1030,6 @@ export default function Payments() {
                     const checkable = isCheckable(item);
                     const checked = selectedIds.has(item.id);
 
-                    // 改善B+D: 行背景
                     let rowBg = "";
                     if (isOverdue) rowBg = "bg-red-50 hover:bg-red-100";
                     else if (isToday) rowBg = "bg-yellow-50 hover:bg-yellow-100";
@@ -774,7 +1037,6 @@ export default function Payments() {
 
                     return (
                       <TableRow key={item.id} className={rowBg}>
-                        {/* 改善C-1: 行チェックボックス */}
                         <TableCell className="pl-4">
                           {checkable ? (
                             <Checkbox
@@ -895,6 +1157,17 @@ export default function Payments() {
           </div>
         </CardContent>
       </Card>
+
+      {/* 全銀データ出力ダイアログ */}
+      {zenginOpen && (
+        <ZenginExportDialog
+          open={zenginOpen}
+          onClose={() => setZenginOpen(false)}
+          selectedItems={selectedItems}
+          vendors={vendors}
+          defaultDate={defaultExecutionDate}
+        />
+      )}
     </div>
   );
 }
