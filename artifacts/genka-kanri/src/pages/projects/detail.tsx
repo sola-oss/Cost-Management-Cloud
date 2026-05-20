@@ -100,6 +100,8 @@ const projectEditSchema = z.object({
   progressRate: z.coerce.number().min(0).max(100).optional().or(z.literal("")),
   recognitionBasis: z.string().optional(),
   publicPrivateType: z.string().optional(),
+  floorAreaTsubo: z.coerce.number().optional().or(z.literal("")),
+  floorAreaSqm: z.coerce.number().optional().or(z.literal("")),
   clientCode: z.string().optional(),
   constructionHistoryType: z.string().optional(),
   constructionHistoryEngineer: z.string().optional(),
@@ -829,6 +831,8 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
       progressRate: project.progressRate ?? undefined,
       recognitionBasis: project.recognitionBasis ?? "",
       publicPrivateType: project.publicPrivateType ?? "",
+      floorAreaTsubo: project.floorAreaTsubo != null ? project.floorAreaTsubo : "",
+      floorAreaSqm: project.floorAreaSqm != null ? project.floorAreaSqm : "",
       clientCode: project.clientCode ?? "",
       constructionHistoryType: project.constructionHistoryType ?? "",
       constructionHistoryEngineer: project.constructionHistoryEngineer ?? "",
@@ -887,6 +891,8 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
       progressRate: normalizeNum(values.progressRate),
       recognitionBasis: normalizeStr(values.recognitionBasis),
       publicPrivateType: normalizeStr(values.publicPrivateType),
+      floorAreaTsubo: normalizeNum(values.floorAreaTsubo),
+      floorAreaSqm: normalizeNum(values.floorAreaSqm),
       clientCode: normalizeStr(values.clientCode),
       constructionHistoryType: normalizeStr(values.constructionHistoryType),
       constructionHistoryEngineer: normalizeStr(values.constructionHistoryEngineer),
@@ -1018,6 +1024,26 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
                           <SelectItem value="元請">元請</SelectItem>
                           <SelectItem value="下請">下請</SelectItem>
                           <SelectItem value="直工事">直工事</SelectItem>
+                          <SelectItem value="その他">その他</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="publicPrivateType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>公共・民間区分</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value || ""}>
+                        <FormControl>
+                          <SelectTrigger><SelectValue placeholder="選択してください" /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="公共">公共</SelectItem>
+                          <SelectItem value="民間">民間</SelectItem>
                           <SelectItem value="その他">その他</SelectItem>
                         </SelectContent>
                       </Select>
@@ -1172,6 +1198,34 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
                     </FormItem>
                   )}
                 />
+                <div className="flex gap-3">
+                  <FormField
+                    control={form.control}
+                    name="floorAreaTsubo"
+                    render={({ field }) => (
+                      <FormItem className="flex-1">
+                        <FormLabel>延床面積（坪）</FormLabel>
+                        <FormControl>
+                          <Input type="number" placeholder="0.0" {...field} value={field.value ?? ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="floorAreaSqm"
+                    render={({ field }) => (
+                      <FormItem className="flex-1">
+                        <FormLabel>延床面積（㎡）</FormLabel>
+                        <FormControl>
+                          <Input type="number" placeholder="0.0" {...field} value={field.value ?? ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
                 <FormField
                   control={form.control}
                   name="category1"
@@ -1361,6 +1415,12 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
                   <dd className="font-medium text-slate-900">{project.orderType}</dd>
                 </div>
               )}
+              {project.publicPrivateType && (
+                <div>
+                  <dt className="text-slate-500 mb-0.5">公共・民間区分</dt>
+                  <dd className="font-medium text-slate-900">{project.publicPrivateType}</dd>
+                </div>
+              )}
               {project.overview && (
                 <div>
                   <dt className="text-slate-500 mb-0.5">工事概要</dt>
@@ -1435,6 +1495,16 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
                 <div>
                   <dt className="text-slate-500 mb-0.5">工事担当</dt>
                   <dd className="font-medium text-slate-900">{project.siteManager}</dd>
+                </div>
+              )}
+              {(project.floorAreaTsubo != null || project.floorAreaSqm != null) && (
+                <div>
+                  <dt className="text-slate-500 mb-0.5">延床面積</dt>
+                  <dd className="font-medium text-slate-900">
+                    {project.floorAreaTsubo != null && <span>{project.floorAreaTsubo} 坪</span>}
+                    {project.floorAreaTsubo != null && project.floorAreaSqm != null && <span className="mx-1">/</span>}
+                    {project.floorAreaSqm != null && <span>{project.floorAreaSqm} ㎡</span>}
+                  </dd>
                 </div>
               )}
               {(project.category1 || project.category2 || project.category3) && (

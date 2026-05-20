@@ -535,8 +535,27 @@ export default function NewProject() {
                     )}
                   />
 
-                  {/* 受注区分 + 坪 + ㎡ */}
+                  {/* 受注区分 + 公共/民間 + 坪 + ㎡ */}
                   <div className="flex gap-2 items-start">
+                    <FormField
+                      control={form.control}
+                      name="publicPrivateType"
+                      render={({ field }) => (
+                        <FormItem className="flex-1">
+                          <FormLabel className="text-xs text-slate-600">公共・民間区分</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value || ""}>
+                            <FormControl>
+                              <SelectTrigger className="text-sm"><SelectValue placeholder="選択" /></SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="公共">公共</SelectItem>
+                              <SelectItem value="民間">民間</SelectItem>
+                              <SelectItem value="その他">その他</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </FormItem>
+                      )}
+                    />
                     <FormField
                       control={form.control}
                       name="orderType"
