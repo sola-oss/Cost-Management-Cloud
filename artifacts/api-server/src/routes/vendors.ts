@@ -29,6 +29,7 @@ router.post("/", async (req, res) => {
   try {
     const {
       name, code, groupId, closingDay, paymentMonths, paymentDay, contactName, phone, email, notes,
+      invoiceRegistrationNumber,
       bankCode, bankName, bankNameKana, bankBranchCode, bankBranch, bankBranchKana,
       bankAccountType, bankAccountNumber, bankAccountHolder, bankAccountHolderKana,
     } = req.body;
@@ -46,6 +47,7 @@ router.post("/", async (req, res) => {
         phone: phone ?? null,
         email: email ?? null,
         notes: notes ?? null,
+        invoiceRegistrationNumber: invoiceRegistrationNumber ?? "",
         bankCode: bankCode ?? "",
         bankName: bankName ?? "",
         bankNameKana: bankNameKana ?? "",
@@ -70,6 +72,7 @@ router.patch("/:id", async (req, res) => {
     const id = parseInt(req.params.id);
     const {
       name, code, groupId, closingDay, paymentMonths, paymentDay, contactName, phone, email, notes,
+      invoiceRegistrationNumber,
       bankCode, bankName, bankNameKana, bankBranchCode, bankBranch, bankBranchKana,
       bankAccountType, bankAccountNumber, bankAccountHolder, bankAccountHolderKana,
     } = req.body;
@@ -86,6 +89,7 @@ router.patch("/:id", async (req, res) => {
         ...(phone !== undefined && { phone: phone ?? null }),
         ...(email !== undefined && { email: email ?? null }),
         ...(notes !== undefined && { notes: notes ?? null }),
+        ...(invoiceRegistrationNumber !== undefined && { invoiceRegistrationNumber: invoiceRegistrationNumber ?? "" }),
         ...(bankCode !== undefined && { bankCode: bankCode ?? "" }),
         ...(bankName !== undefined && { bankName: bankName ?? "" }),
         ...(bankNameKana !== undefined && { bankNameKana: bankNameKana ?? "" }),

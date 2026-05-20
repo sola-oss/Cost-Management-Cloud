@@ -40,6 +40,7 @@ interface Vendor {
   bankAccountNumber: string | null;
   bankAccountHolder: string | null;
   bankAccountHolderKana: string | null;
+  invoiceRegistrationNumber: string | null;
 }
 
 const CLOSING_DAY_OPTIONS = [
@@ -159,6 +160,7 @@ interface VendorFormState {
   bankAccountNumber: string;
   bankAccountHolder: string;
   bankAccountHolderKana: string;
+  invoiceRegistrationNumber: string;
 }
 
 function defaultForm(v?: Vendor | null): VendorFormState {
@@ -173,6 +175,7 @@ function defaultForm(v?: Vendor | null): VendorFormState {
     phone: v?.phone ?? "",
     email: v?.email ?? "",
     notes: v?.notes ?? "",
+    invoiceRegistrationNumber: v?.invoiceRegistrationNumber ?? "",
     bankCode: v?.bankCode ?? "",
     bankName: v?.bankName ?? "",
     bankNameKana: v?.bankNameKana ?? "",
@@ -220,6 +223,11 @@ function VendorFormDialog({ open, onClose, initial, groups }: VendorFormDialogPr
       toast({ title: "入力エラー", description: "仕入先名は必須です", variant: "destructive" });
       return;
     }
+    const invoiceNum = form.invoiceRegistrationNumber.trim();
+    if (invoiceNum && !/^T\d{13}$/.test(invoiceNum)) {
+      toast({ title: "入力エラー", description: "インボイス登録番号は「T」＋13桁の数字で入力してください（例: T1234567890123）", variant: "destructive" });
+      return;
+    }
     const payload = {
       name: form.name.trim(),
       code: form.code.trim() || null,
@@ -231,6 +239,7 @@ function VendorFormDialog({ open, onClose, initial, groups }: VendorFormDialogPr
       phone: form.phone.trim() || null,
       email: form.email.trim() || null,
       notes: form.notes.trim() || null,
+      invoiceRegistrationNumber: invoiceNum,
       bankCode: form.bankCode.trim(),
       bankName: form.bankName.trim(),
       bankNameKana: form.bankNameKana.trim(),
@@ -285,6 +294,22 @@ function VendorFormDialog({ open, onClose, initial, groups }: VendorFormDialogPr
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+
+          <div className="border-t pt-3">
+            <p className="text-xs font-semibold text-slate-500 mb-2">インボイス制度</p>
+            <div>
+              <Label className="text-xs">適格請求書発行事業者登録番号</Label>
+              <div className="flex items-center gap-2 mt-1">
+                <Input
+                  value={form.invoiceRegistrationNumber}
+                  onChange={(e) => set("invoiceRegistrationNumber", e.target.value)}
+                  placeholder="例: T1234567890123"
+                  className="h-8 text-sm font-mono"
+                />
+              </div>
+              <p className="text-xs text-slate-400 mt-1">「T」＋13桁の数字。未登録の場合は空欄のままにしてください。</p>
             </div>
           </div>
 
@@ -507,6 +532,7 @@ export default function Vendors() {
                 <TableHead>仕入先名</TableHead>
                 <TableHead>コード</TableHead>
                 <TableHead>グループ</TableHead>
+                <TableHead>適格番号</TableHead>
                 <TableHead>締日</TableHead>
                 <TableHead>支払サイト</TableHead>
                 <TableHead className="w-24 text-center">操作</TableHead>
@@ -521,7 +547,7 @@ export default function Vendors() {
                 </TableRow>
               ) : items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-slate-400">
+                  <TableCell colSpan={7} className="text-center py-8 text-slate-400">
                     仕入先が登録されていません
                   </TableCell>
                 </TableRow>
@@ -534,6 +560,13 @@ export default function Vendors() {
                       {v.groupName ? (
                         <Badge variant="secondary" className="text-xs">{v.groupName}</Badge>
                       ) : "—"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {v.invoiceRegistrationNumber ? (
+                        <span className="font-mono text-xs text-slate-700">{v.invoiceRegistrationNumber}</span>
+                      ) : (
+                        <span className="text-xs text-slate-400">未登録</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-sm">{closingDayLabel(v.closingDay)}締め</TableCell>
                     <TableCell className="text-sm">

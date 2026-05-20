@@ -30,6 +30,8 @@ export const vendorsTable = pgTable("vendors", {
   phone: text("phone"),
   email: text("email"),
   notes: text("notes"),
+  // インボイス制度 適格請求書発行事業者登録番号
+  invoiceRegistrationNumber: text("invoice_registration_number").default(""),
   // 振込先口座情報（全銀フォーマット用）
   bankCode: text("bank_code").default(""),
   bankName: text("bank_name").default(""),
