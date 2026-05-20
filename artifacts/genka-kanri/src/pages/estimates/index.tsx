@@ -207,6 +207,8 @@ export default function EstimateList() {
                             <div className="font-medium text-slate-800 text-sm">{e.projectName}</div>
                             <div className="text-slate-400">{e.projectCode}</div>
                           </div>
+                        ) : e.subject ? (
+                          <span className="font-medium text-slate-800 text-sm">{e.subject}</span>
                         ) : (
                           <span className="text-slate-400">—</span>
                         )}
