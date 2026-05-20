@@ -183,7 +183,6 @@ export default function EstimateList() {
                 <th className="text-left px-4 py-2.5">見積番号</th>
                 <th className="text-left px-4 py-2.5">工事名</th>
                 <th className="text-left px-4 py-2.5">得意先</th>
-                <th className="text-left px-4 py-2.5">件名</th>
                 <th className="text-left px-4 py-2.5">見積日</th>
                 <th className="text-right px-4 py-2.5">見積金額（税込）</th>
                 <th className="text-center px-4 py-2.5">ステータス</th>
@@ -214,7 +213,6 @@ export default function EstimateList() {
                         )}
                       </td>
                       <td className="px-4 py-3 font-medium">{e.clientName || "—"}</td>
-                      <td className="px-4 py-3 max-w-[200px] truncate text-slate-700">{e.subject || "—"}</td>
                       <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{fmtDate(e.estimateDate)}</td>
                       <td className="px-4 py-3 text-right font-semibold text-slate-800">{fmt(e.taxIncludedAmount)}</td>
                       <td className="px-4 py-3 text-center">
