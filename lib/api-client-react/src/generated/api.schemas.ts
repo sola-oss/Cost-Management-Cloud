@@ -823,84 +823,6 @@ export interface BulkCreatePurchaseOrdersResponse {
   createdPurchaseOrders: BulkCreatePurchaseOrdersResponseCreatedPurchaseOrdersItem[];
 }
 
-export type VendorInvoiceStatus =
-  (typeof VendorInvoiceStatus)[keyof typeof VendorInvoiceStatus];
-
-export const VendorInvoiceStatus = {
-  pending: "pending",
-  confirmed: "confirmed",
-} as const;
-
-export interface VendorInvoice {
-  id: number;
-  vendorId: number;
-  vendorName?: string;
-  projectId?: number | null;
-  invoiceNumber?: string | null;
-  invoiceDate: string;
-  periodYear: number;
-  periodMonth: number;
-  amount: number;
-  taxAmount: number;
-  totalAmount: number;
-  notes?: string | null;
-  status: VendorInvoiceStatus;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-export interface VendorInvoiceListResponse {
-  items: VendorInvoice[];
-  total: number;
-}
-
-export interface CreateVendorInvoiceRequest {
-  vendorId: number;
-  projectId?: number | null;
-  invoiceNumber?: string | null;
-  invoiceDate: string;
-  periodYear: number;
-  periodMonth: number;
-  amount: number;
-  taxRate?: number;
-  notes?: string | null;
-}
-
-export type UpdateVendorInvoiceRequestStatus =
-  (typeof UpdateVendorInvoiceRequestStatus)[keyof typeof UpdateVendorInvoiceRequestStatus];
-
-export const UpdateVendorInvoiceRequestStatus = {
-  pending: "pending",
-  confirmed: "confirmed",
-} as const;
-
-export interface UpdateVendorInvoiceRequest {
-  vendorId?: number;
-  projectId?: number | null;
-  invoiceNumber?: string | null;
-  invoiceDate?: string;
-  periodYear?: number;
-  periodMonth?: number;
-  amount?: number;
-  taxRate?: number;
-  notes?: string | null;
-  status?: UpdateVendorInvoiceRequestStatus;
-}
-
-export type VendorInvoiceReconciliationResponseItemsItem = {
-  vendorId: number;
-  vendorName: string;
-  purchaseInputTotal: number;
-  invoiceTotal: number;
-  difference: number;
-};
-
-export interface VendorInvoiceReconciliationResponse {
-  year: number;
-  month: number;
-  items: VendorInvoiceReconciliationResponseItemsItem[];
-}
-
 export type ListProjectsParams = {
   status?: ListProjectsStatus;
   page?: number;
@@ -956,15 +878,4 @@ export type SaveInvoiceItemsBody = {
 
 export type SaveInvoiceItems200 = {
   items: InvoiceItem[];
-};
-
-export type ListVendorInvoicesParams = {
-  vendorId?: number;
-  year?: number;
-  month?: number;
-};
-
-export type GetVendorInvoiceReconciliationParams = {
-  year: number;
-  month: number;
 };

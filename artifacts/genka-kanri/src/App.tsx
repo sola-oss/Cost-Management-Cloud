@@ -35,7 +35,6 @@ import PurchaseOrders from "@/pages/purchase-orders/index";
 import PurchaseOrderDetail from "@/pages/purchase-orders/detail";
 import PurchaseOrderPrint from "@/pages/purchase-orders/print";
 import PurchaseInvoices from "@/pages/purchase-invoices";
-import VendorInvoices from "@/pages/vendor-invoices";
 
 const queryClient = new QueryClient();
 
@@ -107,7 +106,6 @@ function Router() {
           {(params) => <PurchaseOrderDetail id={parseInt(params.id)} />}
         </Route>
         <Route path="/purchase-invoices" component={PurchaseInvoices} />
-        <Route path="/vendor-invoices" component={VendorInvoices} />
         <Route component={NotFound} />
       </Switch>
     </AppLayout>
