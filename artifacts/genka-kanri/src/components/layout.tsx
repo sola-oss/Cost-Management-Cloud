@@ -29,7 +29,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     { title: "見積書", icon: FileText, url: "/estimates" },
     { title: "発注書", icon: ClipboardList, url: "/purchase-orders" },
     { title: "仕入入力", icon: ShoppingCart, url: "/purchases" },
-    { title: "仕入伝票", icon: FileText, url: "/purchase-invoices" },
     { title: "仕入先請求書", icon: Receipt, url: "/vendor-invoices" },
     { title: "支払査定", icon: Calculator, url: "/payment-assessment" },
     { title: "支払管理", icon: CreditCard, url: "/payments" },

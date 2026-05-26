@@ -12,8 +12,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, Save, FileText, ExternalLink, ClipboardList } from "lucide-react";
+import { Plus, Trash2, Save, FileText, ExternalLink, ClipboardList, Pencil } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface WorkTypeItem {
@@ -131,6 +132,183 @@ function useVendors() {
   });
 }
 
+// ── 仕入伝票一覧 ─────────────────────────────────────────────────────────────
+interface PurchaseInvoice {
+  id: number;
+  voucherNumber: string;
+  projectId: number;
+  vendorId: number;
+  purchaseDate: string;
+  paymentDueDate: string | null;
+  status: string;
+  isProvisional: boolean;
+  subtotal: number;
+  taxAmount: number;
+  totalAmount: number;
+  vendorName: string;
+  projectCode: string;
+  projectName: string;
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  provisional: "仮確定",
+  confirmed: "確定",
+  assessed: "査定済",
+  paid: "支払済",
+  cancelled: "キャンセル",
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  provisional: "bg-amber-100 text-amber-700 border-amber-200",
+  confirmed:   "bg-blue-100 text-blue-700 border-blue-200",
+  assessed:    "bg-purple-100 text-purple-700 border-purple-200",
+  paid:        "bg-emerald-100 text-emerald-700 border-emerald-200",
+  cancelled:   "bg-red-100 text-red-700 border-red-200",
+};
+
+function fmt(n: number): string {
+  return n.toLocaleString("ja-JP", { style: "currency", currency: "JPY" });
+}
+
+function usePurchaseInvoices(projectId: string, status: string) {
+  const params = new URLSearchParams();
+  if (projectId !== "__all__") params.set("projectId", projectId);
+  if (status !== "__all__") params.set("status", status);
+  return useQuery({
+    queryKey: ["/api/purchase-invoices", projectId, status],
+    queryFn: async () => {
+      const res = await fetch(`/api/purchase-invoices?${params.toString()}`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json() as Promise<{ items: PurchaseInvoice[]; total: number }>;
+    },
+  });
+}
+
+function PurchaseInvoiceList() {
+  const [filterProject, setFilterProject] = useState("__all__");
+  const [filterStatus, setFilterStatus] = useState("__all__");
+
+  const { data: projectsData } = useListProjects(undefined, {
+    query: { queryKey: getListProjectsQueryKey() },
+  });
+  const projects = projectsData?.items ?? [];
+  const { data: invoicesData, isLoading } = usePurchaseInvoices(filterProject, filterStatus);
+  const invoices = invoicesData?.items ?? [];
+
+  return (
+    <div className="space-y-4">
+      {/* フィルター */}
+      <Card>
+        <CardContent className="pt-4 pb-3">
+          <div className="flex flex-wrap gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-500">工事</Label>
+              <Select value={filterProject} onValueChange={setFilterProject}>
+                <SelectTrigger className="w-56 text-sm h-8">
+                  <SelectValue placeholder="すべての工事" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">すべての工事</SelectItem>
+                  {projects.map((p) => (
+                    <SelectItem key={p.id} value={String(p.id)}>
+                      {p.projectCode} {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-500">ステータス</Label>
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="w-36 text-sm h-8">
+                  <SelectValue placeholder="すべて" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">すべて</SelectItem>
+                  {Object.entries(STATUS_LABELS).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {invoicesData && (
+              <div className="flex items-end pb-0.5">
+                <span className="text-sm text-slate-500">{invoicesData.total}件</span>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 一覧テーブル */}
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-slate-50 text-xs">
+                <TableHead className="font-medium">伝票番号</TableHead>
+                <TableHead className="font-medium">工事</TableHead>
+                <TableHead className="font-medium">仕入先</TableHead>
+                <TableHead className="font-medium">仕入日</TableHead>
+                <TableHead className="font-medium">支払予定日</TableHead>
+                <TableHead className="font-medium">状態</TableHead>
+                <TableHead className="font-medium text-right">合計金額</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8 text-slate-400">読み込み中...</TableCell>
+                </TableRow>
+              ) : invoices.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-10 text-slate-400">
+                    <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                    <div>仕入伝票がありません。</div>
+                    <div className="text-xs mt-1">「仕入入力」タブから登録してください。</div>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                invoices.map((inv) => (
+                  <TableRow key={inv.id} className="hover:bg-slate-50/60">
+                    <TableCell className="font-mono text-sm font-medium">
+                      <Link
+                        href={`/purchases?id=${inv.id}`}
+                        className="text-teal-700 hover:text-teal-900 hover:underline flex items-center gap-1"
+                      >
+                        {inv.voucherNumber}
+                        <Pencil className="w-3 h-3 opacity-50" />
+                      </Link>
+                      {inv.isProvisional && (
+                        <Badge variant="outline" className="mt-1 text-[10px] text-amber-600 border-amber-400 bg-amber-50">仮</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      <div className="font-medium">{inv.projectCode}</div>
+                      <div className="text-xs text-slate-500 truncate max-w-[160px]">{inv.projectName}</div>
+                    </TableCell>
+                    <TableCell className="text-sm">{inv.vendorName}</TableCell>
+                    <TableCell className="text-sm text-slate-600">{inv.purchaseDate}</TableCell>
+                    <TableCell className="text-sm text-slate-500">{inv.paymentDueDate ?? "—"}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={`text-xs ${STATUS_COLORS[inv.status] ?? ""}`}>
+                        {STATUS_LABELS[inv.status] ?? inv.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right font-medium text-sm">
+                      {fmt(inv.totalAmount)}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // ── 編集対象の仕入伝票型 ──────────────────────────────────────────────────────
 interface PurchaseInvoiceDetail {
   id: number;
@@ -162,8 +340,17 @@ export default function Purchases() {
 
   // 編集モード：URLパラメータ ?id= を読み取る
   const searchStr = useSearch();
-  const editInvoiceId = new URLSearchParams(searchStr).get("id");
+  const searchParams = new URLSearchParams(searchStr);
+  const editInvoiceId = searchParams.get("id");
   const editInvoiceIdNum = editInvoiceId ? parseInt(editInvoiceId) : null;
+
+  // タブ状態：編集モード時は入力タブ固定、それ以外はURLパラメータ
+  const activeTab = editInvoiceIdNum ? "input" :
+    (searchParams.get("tab") === "list" ? "list" : "input");
+
+  const handleTabChange = (value: string) => {
+    navigate(value === "list" ? "/purchases?tab=list" : "/purchases");
+  };
 
   const { data: projectsData } = useListProjects(undefined, {
     query: { queryKey: getListProjectsQueryKey() },
@@ -446,517 +633,539 @@ export default function Purchases() {
     <div className="p-4 max-w-7xl mx-auto space-y-4">
 
       {/* ── ページヘッダー ── */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <FileText className="w-5 h-5 text-teal-700" />
-          <h1 className="text-xl font-bold text-slate-900">
-            {editInvoiceIdNum
-              ? `仕入伝票 編集${editInvoiceData ? ` — ${editInvoiceData.voucherNumber}` : ""}`
-              : "仕入入力"}
-          </h1>
-          {isDraft && (
-            <Badge variant="outline" className="text-amber-600 border-amber-400 bg-amber-50">
-              仮伝票
-            </Badge>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {!editInvoiceIdNum && (
+      <div className="flex items-center gap-3">
+        <FileText className="w-5 h-5 text-teal-700" />
+        <h1 className="text-xl font-bold text-slate-900">仕入入力</h1>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <TabsList className="h-9">
+          <TabsTrigger value="input" className="text-sm">仕入入力</TabsTrigger>
+          <TabsTrigger value="list" className="text-sm">仕入伝票一覧</TabsTrigger>
+        </TabsList>
+
+        {/* ── 仕入入力タブ ── */}
+        <TabsContent value="input" className="mt-4 space-y-4">
+
+          {/* 編集モード時のサブタイトル */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {editInvoiceIdNum && (
+                <span className="text-sm font-medium text-slate-600">
+                  仕入伝票 編集{editInvoiceData ? ` — ${editInvoiceData.voucherNumber}` : ""}
+                </span>
+              )}
+              {isDraft && (
+                <Badge variant="outline" className="text-amber-600 border-amber-400 bg-amber-50">
+                  仮伝票
+                </Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {!editInvoiceIdNum && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setImportPOOpen(true)}
+                  className="text-teal-700 border-teal-300 hover:bg-teal-50"
+                >
+                  <ClipboardList className="w-3.5 h-3.5 mr-1" />
+                  発注書から取込
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => editInvoiceIdNum ? navigate("/purchases?tab=list") : newSlip()}
+              >
+                {editInvoiceIdNum ? "一覧に戻る" : "新規"}
+              </Button>
+              <Button
+                size="sm"
+                className="bg-teal-600 hover:bg-teal-700 text-white"
+                onClick={handleRegister}
+                disabled={saving}
+              >
+                {saving ? (
+                  <span className="flex items-center gap-1.5"><span className="animate-spin">⏳</span>{editInvoiceIdNum ? "更新中..." : "登録中..."}</span>
+                ) : (
+                  <span className="flex items-center gap-1.5"><Save className="w-3.5 h-3.5" />{editInvoiceIdNum ? "更新する" : "登録"}</span>
+                )}
+              </Button>
+            </div>
+          </div>
+
+          {/* ── 基本情報カード（2カラム） ── */}
+          <Card>
+            <CardHeader className="py-2 px-4 border-b bg-teal-700">
+              <CardTitle className="text-xs font-semibold text-white">基本情報</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4 pb-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-3">
+
+                {/* ── 左カラム ── */}
+                <div className="space-y-3">
+                  {/* 伝票番号 */}
+                  <div className="space-y-1">
+                    <Label className="text-xs text-slate-600">伝票番号</Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={editInvoiceData?.voucherNumber ?? "（自動採番）"}
+                        readOnly
+                        className="text-sm font-mono bg-slate-50 text-slate-500 cursor-default"
+                      />
+                      {!editInvoiceIdNum && (
+                        <span className="text-[10px] text-slate-400 whitespace-nowrap">登録時に採番</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 仕入日 */}
+                  <div className="space-y-1">
+                    <Label className="text-xs text-slate-600">仕入日 <span className="text-red-500">*</span></Label>
+                    <DateInput
+                      value={purchaseDate}
+                      onChange={e => setPurchaseDate(e.target.value)}
+                      className="text-sm"
+                    />
+                  </div>
+
+                  {/* 仕入先 */}
+                  <div className="space-y-1">
+                    <Label className="text-xs text-slate-600">仕入先</Label>
+                    {vendors.length === 0 ? (
+                      <div className="flex items-center gap-2 py-1.5">
+                        <span className="text-xs text-slate-400">仕入先が未登録です。</span>
+                        <Link href="/vendors" className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 hover:underline font-medium">
+                          <ExternalLink className="w-3 h-3" />
+                          新規登録
+                        </Link>
+                      </div>
+                    ) : (
+                      <Select value={vendorId} onValueChange={setVendorId}>
+                        <SelectTrigger className="text-sm">
+                          <SelectValue placeholder="仕入先を選択してください" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">（指定なし）</SelectItem>
+                          {vendors.map((v) => (
+                            <SelectItem key={v.id} value={String(v.id)}>
+                              {v.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
+
+                  {/* 支払予定日 */}
+                  <div className="space-y-1">
+                    <Label className="text-xs text-slate-600">支払予定日</Label>
+                    <DateInput
+                      value={paymentDueDate}
+                      onChange={e => setPaymentDueDate(e.target.value)}
+                      className="text-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* ── 右カラム ── */}
+                <div className="space-y-3">
+                  {/* 工事選択 */}
+                  <div className="space-y-1">
+                    <Label className="text-xs text-slate-600">工事 <span className="text-red-500">*</span></Label>
+                    <Select value={selectedProject} onValueChange={setSelectedProject}>
+                      <SelectTrigger className="text-sm">
+                        <SelectValue placeholder="工事を選択してください" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {projects.map(p => (
+                          <SelectItem key={p.id} value={String(p.id)}>
+                            {p.projectCode} {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {currentProject && (
+                      <p className="text-[11px] text-teal-700">{currentProject.name}</p>
+                    )}
+                  </div>
+
+                  {/* 注文番号 */}
+                  <div className="space-y-1">
+                    <Label className="text-xs text-slate-600">注文番号</Label>
+                    <Input
+                      value={orderNumber}
+                      onChange={e => setOrderNumber(e.target.value)}
+                      placeholder="例: PO-20260401-001"
+                      className="text-sm"
+                    />
+                  </div>
+
+                  {/* 税計算方式 */}
+                  <div className="space-y-1">
+                    <Label className="text-xs text-slate-600">税計算方式</Label>
+                    <Select value={taxCalcType} onValueChange={setTaxCalcType}>
+                      <SelectTrigger className="text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="外税明細単位">外税明細単位</SelectItem>
+                        <SelectItem value="外税伝票単位">外税伝票単位</SelectItem>
+                        <SelectItem value="内税">内税</SelectItem>
+                        <SelectItem value="非課税">非課税</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* 仮伝票 */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <Checkbox
+                      id="isDraft"
+                      checked={isDraft}
+                      onCheckedChange={v => setIsDraft(!!v)}
+                      className="accent-teal-600"
+                    />
+                    <Label htmlFor="isDraft" className="text-sm text-slate-700 cursor-pointer">
+                      仮伝票として保存する
+                    </Label>
+                  </div>
+
+                  {/* 支払予定を作成する */}
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="createPayment"
+                      checked={createPayment}
+                      onCheckedChange={v => setCreatePayment(!!v)}
+                      className="accent-teal-600"
+                    />
+                    <Label htmlFor="createPayment" className="text-sm text-slate-700 cursor-pointer">
+                      支払予定も作成する
+                      <span className="ml-2 text-xs text-slate-400">※通常は支払査定から登録されます</span>
+                    </Label>
+                  </div>
+                </div>
+
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* ── 明細カード ── */}
+          <Card>
+            <CardHeader className="py-2 px-4 border-b bg-teal-700 flex flex-row items-center justify-between">
+              <CardTitle className="text-xs font-semibold text-white">明細</CardTitle>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-white hover:bg-teal-600 text-xs"
+                onClick={addRow}
+              >
+                <Plus className="w-3 h-3 mr-1" />行を追加
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-600 text-xs border-b border-slate-200">
+                      <th className="px-3 py-2 text-center w-8 font-medium">No</th>
+                      <th className="px-3 py-2 text-left w-28 font-medium">科目</th>
+                      <th className="px-3 py-2 text-left font-medium">品名・摘要</th>
+                      <th className="px-3 py-2 text-right w-24 font-medium">数量</th>
+                      <th className="px-3 py-2 text-center w-14 font-medium">単位</th>
+                      <th className="px-3 py-2 text-right w-28 font-medium">単価</th>
+                      <th className="px-3 py-2 text-right w-28 font-medium">金額</th>
+                      <th className="px-3 py-2 text-center w-24 font-medium">消費税率</th>
+                      <th className="px-3 py-2 text-left w-28 font-medium">工種</th>
+                      <th className="px-3 py-2 text-center w-10 font-medium"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row, idx) => {
+                      return (
+                        <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50/60 group">
+                          {/* No */}
+                          <td className="px-3 py-2 text-center text-xs text-slate-400 font-mono">
+                            {idx + 1}
+                          </td>
+                          {/* 科目 */}
+                          <td className="px-2 py-1.5">
+                            <Select
+                              value={row.categoryCode}
+                              onValueChange={v => handleRowChange(idx, "categoryCode", v)}
+                            >
+                              <SelectTrigger className="h-8 text-xs border-slate-200">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {CATEGORY_OPTIONS.map(c => (
+                                  <SelectItem key={c.code} value={c.code} className="text-xs">
+                                    {c.code} {c.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </td>
+                          {/* 品名・摘要 */}
+                          <td className="px-2 py-1.5">
+                            <Input
+                              value={row.productName}
+                              onChange={e => handleRowChange(idx, "productName", e.target.value)}
+                              placeholder="品名"
+                              className="h-8 text-xs mb-1"
+                            />
+                            <Input
+                              value={row.spec}
+                              onChange={e => handleRowChange(idx, "spec", e.target.value)}
+                              placeholder="仕様・摘要"
+                              className="h-7 text-xs text-slate-500"
+                            />
+                          </td>
+                          {/* 数量 */}
+                          <td className="px-2 py-1.5">
+                            <Input
+                              type="number"
+                              value={row.quantity}
+                              onChange={e => handleRowChange(idx, "quantity", e.target.value)}
+                              className="h-8 text-xs text-right"
+                            />
+                          </td>
+                          {/* 単位 */}
+                          <td className="px-2 py-1.5">
+                            <Input
+                              value={row.unit}
+                              onChange={e => handleRowChange(idx, "unit", e.target.value)}
+                              className="h-8 text-xs text-center"
+                            />
+                          </td>
+                          {/* 単価 */}
+                          <td className="px-2 py-1.5">
+                            <Input
+                              type="number"
+                              value={row.unitPrice}
+                              onChange={e => handleRowChange(idx, "unitPrice", e.target.value)}
+                              placeholder="0"
+                              className="h-8 text-xs text-right"
+                            />
+                          </td>
+                          {/* 金額 */}
+                          <td className="px-3 py-2 text-right text-sm font-mono text-slate-800">
+                            {row.amount > 0 ? row.amount.toLocaleString() : <span className="text-slate-300">—</span>}
+                          </td>
+                          {/* 消費税率 */}
+                          <td className="px-2 py-1.5">
+                            <Select
+                              value={String(row.taxRate)}
+                              onValueChange={v => handleRowChange(idx, "taxRate", Number(v))}
+                            >
+                              <SelectTrigger className="h-8 text-xs border-slate-200">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {TAX_RATE_OPTIONS.map(t => (
+                                  <SelectItem key={t.value} value={String(t.value)} className="text-xs">
+                                    {t.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </td>
+                          {/* 工種 */}
+                          <td className="px-2 py-1.5">
+                            <Select
+                              value={row.workTypeCode || "__none__"}
+                              onValueChange={v => handleRowChange(idx, "workTypeCode", v === "__none__" ? "" : v)}
+                            >
+                              <SelectTrigger className="h-8 text-xs border-slate-200 min-w-[110px]">
+                                <SelectValue placeholder="工種" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__" className="text-xs text-slate-400">— 未選択 —</SelectItem>
+                                {workTypes.map(wt => (
+                                  <SelectItem key={wt.id} value={wt.code} className="text-xs">
+                                    <span className="font-mono text-slate-500 mr-1">{wt.code}</span>
+                                    {wt.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </td>
+                          {/* 削除 */}
+                          <td className="px-2 py-1.5 text-center">
+                            <button
+                              type="button"
+                              onClick={() => deleteRow(idx)}
+                              title="行を削除"
+                              className="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* 行追加ボタン */}
+              <button
+                type="button"
+                onClick={addRow}
+                className="w-full py-2.5 text-xs text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition-colors border-t border-dashed border-slate-200"
+              >
+                <Plus className="w-3 h-3 inline mr-1" />
+                クリックして行を追加
+              </button>
+            </CardContent>
+          </Card>
+
+          {/* ── フッター ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+            {/* 左：備考 */}
+            <Card>
+              <CardHeader className="py-2 px-4 border-b bg-teal-700">
+                <CardTitle className="text-xs font-semibold text-white">備考</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-3 pb-3">
+                <Textarea
+                  value={memo}
+                  onChange={e => setMemo(e.target.value)}
+                  placeholder="備考・特記事項を入力"
+                  className="text-sm resize-none"
+                  rows={4}
+                />
+              </CardContent>
+            </Card>
+
+            {/* 右：合計金額 */}
+            <Card>
+              <CardHeader className="py-2 px-4 border-b bg-teal-700">
+                <CardTitle className="text-xs font-semibold text-white">合計金額</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-4 pb-4 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <span className="text-sm text-slate-500">税抜金額</span>
+                  <span className="text-xl font-bold font-mono text-slate-700">
+                    ¥{totalAmount.toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <span className="text-sm text-slate-500">消費税額</span>
+                  <span className="text-xl font-bold font-mono text-blue-500">
+                    ¥{totalTax.toLocaleString()}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-base font-semibold text-slate-700">合計金額</span>
+                  <span className="text-3xl font-bold font-mono text-teal-700">
+                    ¥{totalGross.toLocaleString()}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+
+          </div>
+
+          {/* ── アクションボタン ── */}
+          <div className="flex items-center justify-end gap-3 pb-6">
             <Button
               variant="outline"
-              size="sm"
-              onClick={() => setImportPOOpen(true)}
-              className="text-teal-700 border-teal-300 hover:bg-teal-50"
+              size="default"
+              onClick={() => editInvoiceIdNum ? navigate("/purchases?tab=list") : newSlip()}
+              className="px-6"
             >
-              <ClipboardList className="w-3.5 h-3.5 mr-1" />
-              発注書から取込
+              {editInvoiceIdNum ? "一覧に戻る" : "キャンセル"}
             </Button>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => editInvoiceIdNum ? navigate("/purchases") : newSlip()}
-          >
-            {editInvoiceIdNum ? "一覧に戻る" : "新規"}
-          </Button>
-          <Button
-            size="sm"
-            className="bg-teal-600 hover:bg-teal-700 text-white"
-            onClick={handleRegister}
-            disabled={saving}
-          >
-            {saving ? (
-              <span className="flex items-center gap-1.5"><span className="animate-spin">⏳</span>{editInvoiceIdNum ? "更新中..." : "登録中..."}</span>
-            ) : (
-              <span className="flex items-center gap-1.5"><Save className="w-3.5 h-3.5" />{editInvoiceIdNum ? "更新する" : "登録"}</span>
-            )}
-          </Button>
-        </div>
-      </div>
-
-      {/* ── 基本情報カード（2カラム） ── */}
-      <Card>
-        <CardHeader className="py-2 px-4 border-b bg-teal-700">
-          <CardTitle className="text-xs font-semibold text-white">基本情報</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-4 pb-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-3">
-
-            {/* ── 左カラム ── */}
-            <div className="space-y-3">
-              {/* 伝票番号 */}
-              <div className="space-y-1">
-                <Label className="text-xs text-slate-600">伝票番号</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    value={editInvoiceData?.voucherNumber ?? "（自動採番）"}
-                    readOnly
-                    className="text-sm font-mono bg-slate-50 text-slate-500 cursor-default"
-                  />
-                  {!editInvoiceIdNum && (
-                    <span className="text-[10px] text-slate-400 whitespace-nowrap">登録時に採番</span>
-                  )}
-                </div>
-              </div>
-
-              {/* 仕入日 */}
-              <div className="space-y-1">
-                <Label className="text-xs text-slate-600">仕入日 <span className="text-red-500">*</span></Label>
-                <DateInput
-                  value={purchaseDate}
-                  onChange={e => setPurchaseDate(e.target.value)}
-                  className="text-sm"
-                />
-              </div>
-
-              {/* 仕入先 */}
-              <div className="space-y-1">
-                <Label className="text-xs text-slate-600">仕入先</Label>
-                {vendors.length === 0 ? (
-                  <div className="flex items-center gap-2 py-1.5">
-                    <span className="text-xs text-slate-400">仕入先が未登録です。</span>
-                    <Link href="/vendors" className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 hover:underline font-medium">
-                      <ExternalLink className="w-3 h-3" />
-                      新規登録
-                    </Link>
-                  </div>
-                ) : (
-                  <Select value={vendorId} onValueChange={setVendorId}>
-                    <SelectTrigger className="text-sm">
-                      <SelectValue placeholder="仕入先を選択してください" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">（指定なし）</SelectItem>
-                      {vendors.map((v) => (
-                        <SelectItem key={v.id} value={String(v.id)}>
-                          {v.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-
-              {/* 支払予定日 */}
-              <div className="space-y-1">
-                <Label className="text-xs text-slate-600">支払予定日</Label>
-                <DateInput
-                  value={paymentDueDate}
-                  onChange={e => setPaymentDueDate(e.target.value)}
-                  className="text-sm"
-                />
-              </div>
-            </div>
-
-            {/* ── 右カラム ── */}
-            <div className="space-y-3">
-              {/* 工事選択 */}
-              <div className="space-y-1">
-                <Label className="text-xs text-slate-600">工事 <span className="text-red-500">*</span></Label>
-                <Select value={selectedProject} onValueChange={setSelectedProject}>
-                  <SelectTrigger className="text-sm">
-                    <SelectValue placeholder="工事を選択してください" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {projects.map(p => (
-                      <SelectItem key={p.id} value={String(p.id)}>
-                        {p.projectCode} {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {currentProject && (
-                  <p className="text-[11px] text-teal-700">{currentProject.name}</p>
-                )}
-              </div>
-
-              {/* 注文番号 */}
-              <div className="space-y-1">
-                <Label className="text-xs text-slate-600">注文番号</Label>
-                <Input
-                  value={orderNumber}
-                  onChange={e => setOrderNumber(e.target.value)}
-                  placeholder="例: PO-20260401-001"
-                  className="text-sm"
-                />
-              </div>
-
-              {/* 税計算方式 */}
-              <div className="space-y-1">
-                <Label className="text-xs text-slate-600">税計算方式</Label>
-                <Select value={taxCalcType} onValueChange={setTaxCalcType}>
-                  <SelectTrigger className="text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="外税明細単位">外税明細単位</SelectItem>
-                    <SelectItem value="外税伝票単位">外税伝票単位</SelectItem>
-                    <SelectItem value="内税">内税</SelectItem>
-                    <SelectItem value="非課税">非課税</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* 仮伝票 */}
-              <div className="flex items-center gap-2 pt-1">
-                <Checkbox
-                  id="isDraft"
-                  checked={isDraft}
-                  onCheckedChange={v => setIsDraft(!!v)}
-                  className="accent-teal-600"
-                />
-                <Label htmlFor="isDraft" className="text-sm text-slate-700 cursor-pointer">
-                  仮伝票として保存する
-                </Label>
-              </div>
-
-              {/* 支払予定を作成する */}
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="createPayment"
-                  checked={createPayment}
-                  onCheckedChange={v => setCreatePayment(!!v)}
-                  className="accent-teal-600"
-                />
-                <Label htmlFor="createPayment" className="text-sm text-slate-700 cursor-pointer">
-                  支払予定も作成する
-                  <span className="ml-2 text-xs text-slate-400">※通常は支払査定から登録されます</span>
-                </Label>
-              </div>
-            </div>
-
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ── 明細カード ── */}
-      <Card>
-        <CardHeader className="py-2 px-4 border-b bg-teal-700 flex flex-row items-center justify-between">
-          <CardTitle className="text-xs font-semibold text-white">明細</CardTitle>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            className="h-6 px-2 text-white hover:bg-teal-600 text-xs"
-            onClick={addRow}
-          >
-            <Plus className="w-3 h-3 mr-1" />行を追加
-          </Button>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm border-collapse">
-              <thead>
-                <tr className="bg-slate-50 text-slate-600 text-xs border-b border-slate-200">
-                  <th className="px-3 py-2 text-center w-8 font-medium">No</th>
-                  <th className="px-3 py-2 text-left w-28 font-medium">科目</th>
-                  <th className="px-3 py-2 text-left font-medium">品名・摘要</th>
-                  <th className="px-3 py-2 text-right w-24 font-medium">数量</th>
-                  <th className="px-3 py-2 text-center w-14 font-medium">単位</th>
-                  <th className="px-3 py-2 text-right w-28 font-medium">単価</th>
-                  <th className="px-3 py-2 text-right w-28 font-medium">金額</th>
-                  <th className="px-3 py-2 text-center w-24 font-medium">消費税率</th>
-                  <th className="px-3 py-2 text-left w-28 font-medium">工種</th>
-                  <th className="px-3 py-2 text-center w-10 font-medium"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, idx) => {
-                  const cat = CATEGORY_OPTIONS.find(c => c.code === row.categoryCode);
-                  return (
-                    <tr key={row.id} className="border-b border-slate-100 hover:bg-slate-50/60 group">
-                      {/* No */}
-                      <td className="px-3 py-2 text-center text-xs text-slate-400 font-mono">
-                        {idx + 1}
-                      </td>
-                      {/* 科目 */}
-                      <td className="px-2 py-1.5">
-                        <Select
-                          value={row.categoryCode}
-                          onValueChange={v => handleRowChange(idx, "categoryCode", v)}
-                        >
-                          <SelectTrigger className="h-8 text-xs border-slate-200">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {CATEGORY_OPTIONS.map(c => (
-                              <SelectItem key={c.code} value={c.code} className="text-xs">
-                                {c.code} {c.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </td>
-                      {/* 品名・摘要 */}
-                      <td className="px-2 py-1.5">
-                        <Input
-                          value={row.productName}
-                          onChange={e => handleRowChange(idx, "productName", e.target.value)}
-                          placeholder="品名"
-                          className="h-8 text-xs mb-1"
-                        />
-                        <Input
-                          value={row.spec}
-                          onChange={e => handleRowChange(idx, "spec", e.target.value)}
-                          placeholder="仕様・摘要"
-                          className="h-7 text-xs text-slate-500"
-                        />
-                      </td>
-                      {/* 数量 */}
-                      <td className="px-2 py-1.5">
-                        <Input
-                          type="number"
-                          value={row.quantity}
-                          onChange={e => handleRowChange(idx, "quantity", e.target.value)}
-                          className="h-8 text-xs text-right"
-                        />
-                      </td>
-                      {/* 単位 */}
-                      <td className="px-2 py-1.5">
-                        <Input
-                          value={row.unit}
-                          onChange={e => handleRowChange(idx, "unit", e.target.value)}
-                          className="h-8 text-xs text-center"
-                        />
-                      </td>
-                      {/* 単価 */}
-                      <td className="px-2 py-1.5">
-                        <Input
-                          type="number"
-                          value={row.unitPrice}
-                          onChange={e => handleRowChange(idx, "unitPrice", e.target.value)}
-                          placeholder="0"
-                          className="h-8 text-xs text-right"
-                        />
-                      </td>
-                      {/* 金額 */}
-                      <td className="px-3 py-2 text-right text-sm font-mono text-slate-800">
-                        {row.amount > 0 ? row.amount.toLocaleString() : <span className="text-slate-300">—</span>}
-                      </td>
-                      {/* 消費税率 */}
-                      <td className="px-2 py-1.5">
-                        <Select
-                          value={String(row.taxRate)}
-                          onValueChange={v => handleRowChange(idx, "taxRate", Number(v))}
-                        >
-                          <SelectTrigger className="h-8 text-xs border-slate-200">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {TAX_RATE_OPTIONS.map(t => (
-                              <SelectItem key={t.value} value={String(t.value)} className="text-xs">
-                                {t.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </td>
-                      {/* 工種 */}
-                      <td className="px-2 py-1.5">
-                        <Select
-                          value={row.workTypeCode || "__none__"}
-                          onValueChange={v => handleRowChange(idx, "workTypeCode", v === "__none__" ? "" : v)}
-                        >
-                          <SelectTrigger className="h-8 text-xs border-slate-200 min-w-[110px]">
-                            <SelectValue placeholder="工種" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__" className="text-xs text-slate-400">— 未選択 —</SelectItem>
-                            {workTypes.map(wt => (
-                              <SelectItem key={wt.id} value={wt.code} className="text-xs">
-                                <span className="font-mono text-slate-500 mr-1">{wt.code}</span>
-                                {wt.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </td>
-                      {/* 削除 */}
-                      <td className="px-2 py-1.5 text-center">
-                        <button
-                          type="button"
-                          onClick={() => deleteRow(idx)}
-                          title="行を削除"
-                          className="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* 行追加ボタン */}
-          <button
-            type="button"
-            onClick={addRow}
-            className="w-full py-2.5 text-xs text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition-colors border-t border-dashed border-slate-200"
-          >
-            <Plus className="w-3 h-3 inline mr-1" />
-            クリックして行を追加
-          </button>
-        </CardContent>
-      </Card>
-
-      {/* ── フッター ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-
-        {/* 左：備考 */}
-        <Card>
-          <CardHeader className="py-2 px-4 border-b bg-teal-700">
-            <CardTitle className="text-xs font-semibold text-white">備考</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-3 pb-3">
-            <Textarea
-              value={memo}
-              onChange={e => setMemo(e.target.value)}
-              placeholder="備考・特記事項を入力"
-              className="text-sm resize-none"
-              rows={4}
-            />
-          </CardContent>
-        </Card>
-
-        {/* 右：合計金額 */}
-        <Card>
-          <CardHeader className="py-2 px-4 border-b bg-teal-700">
-            <CardTitle className="text-xs font-semibold text-white">合計金額</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-4 pb-4 space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <span className="text-sm text-slate-500">税抜金額</span>
-              <span className="text-xl font-bold font-mono text-slate-700">
-                ¥{totalAmount.toLocaleString()}
-              </span>
-            </div>
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <span className="text-sm text-slate-500">消費税額</span>
-              <span className="text-xl font-bold font-mono text-blue-500">
-                ¥{totalTax.toLocaleString()}
-              </span>
-            </div>
-            <div className="flex items-center justify-between pt-1">
-              <span className="text-base font-semibold text-slate-700">合計金額</span>
-              <span className="text-3xl font-bold font-mono text-teal-700">
-                ¥{totalGross.toLocaleString()}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-
-      </div>
-
-      {/* ── アクションボタン ── */}
-      <div className="flex items-center justify-end gap-3 pb-6">
-        <Button
-          variant="outline"
-          size="default"
-          onClick={() => editInvoiceIdNum ? navigate("/purchases") : newSlip()}
-          className="px-6"
-        >
-          {editInvoiceIdNum ? "一覧に戻る" : "キャンセル"}
-        </Button>
-        <Button
-          size="default"
-          className="bg-orange-500 hover:bg-orange-600 text-white px-8"
-          onClick={handleRegister}
-          disabled={saving}
-        >
-          {saving ? (
-            <span className="flex items-center gap-1.5">
-              <span className="animate-spin inline-block">⏳</span>{editInvoiceIdNum ? "更新中..." : "登録中..."}
-            </span>
-          ) : (
-            <span className="flex items-center gap-1.5">
-              <Save className="w-4 h-4" />{editInvoiceIdNum ? "更新する" : "登録する"}
-            </span>
-          )}
-        </Button>
-      </div>
-
-      {/* ── 発注書取込モーダル ── */}
-      <Dialog open={importPOOpen} onOpenChange={setImportPOOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ClipboardList className="w-4 h-4" />
-              発注書から仕入伝票を作成
-            </DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-slate-500 mb-3">
-            発注済・一部納品の発注書から仕入伝票を作成します。未納品数量が自動的に取り込まれます。
-          </p>
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-slate-50 text-xs">
-                <TableHead className="font-medium">発注番号</TableHead>
-                <TableHead className="font-medium">工事</TableHead>
-                <TableHead className="font-medium">仕入先</TableHead>
-                <TableHead className="font-medium">発注日</TableHead>
-                <TableHead className="font-medium text-right">合計</TableHead>
-                <TableHead className="font-medium text-center w-20">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {!availablePOs || availablePOs.items.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center py-6 text-slate-400 text-sm">
-                    取込可能な発注書がありません（発注済または一部納品のものが対象です）
-                  </TableCell>
-                </TableRow>
+            <Button
+              size="default"
+              className="bg-orange-500 hover:bg-orange-600 text-white px-8"
+              onClick={handleRegister}
+              disabled={saving}
+            >
+              {saving ? (
+                <span className="flex items-center gap-1.5">
+                  <span className="animate-spin inline-block">⏳</span>{editInvoiceIdNum ? "更新中..." : "登録中..."}
+                </span>
               ) : (
-                availablePOs.items.map((po) => (
-                  <TableRow key={po.id} className="hover:bg-slate-50/60">
-                    <TableCell className="font-mono text-sm text-teal-700 font-medium">{po.orderNumber}</TableCell>
-                    <TableCell className="text-sm">
-                      <div>{po.projectCode}</div>
-                      <div className="text-xs text-slate-500">{po.projectName}</div>
-                    </TableCell>
-                    <TableCell className="text-sm">{po.vendorName}</TableCell>
-                    <TableCell className="text-sm text-slate-600">{po.orderDate}</TableCell>
-                    <TableCell className="text-right font-medium text-sm">
-                      ¥{po.totalAmount.toLocaleString()}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Button
-                        size="sm"
-                        className="h-7 px-3 text-xs bg-teal-600 hover:bg-teal-700 text-white"
-                        onClick={() => handleImportFromPO(po)}
-                        disabled={importingPO}
-                      >
-                        取込
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
+                <span className="flex items-center gap-1.5">
+                  <Save className="w-4 h-4" />{editInvoiceIdNum ? "更新する" : "登録する"}
+                </span>
               )}
-            </TableBody>
-          </Table>
-        </DialogContent>
-      </Dialog>
+            </Button>
+          </div>
+
+          {/* ── 発注書取込モーダル ── */}
+          <Dialog open={importPOOpen} onOpenChange={setImportPOOpen}>
+            <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <ClipboardList className="w-4 h-4" />
+                  発注書から仕入伝票を作成
+                </DialogTitle>
+              </DialogHeader>
+              <p className="text-sm text-slate-500 mb-3">
+                発注済・一部納品の発注書から仕入伝票を作成します。未納品数量が自動的に取り込まれます。
+              </p>
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-50 text-xs">
+                    <TableHead className="font-medium">発注番号</TableHead>
+                    <TableHead className="font-medium">工事</TableHead>
+                    <TableHead className="font-medium">仕入先</TableHead>
+                    <TableHead className="font-medium">発注日</TableHead>
+                    <TableHead className="font-medium text-right">合計</TableHead>
+                    <TableHead className="font-medium text-center w-20">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {!availablePOs || availablePOs.items.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center py-6 text-slate-400 text-sm">
+                        取込可能な発注書がありません（発注済または一部納品のものが対象です）
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    availablePOs.items.map((po) => (
+                      <TableRow key={po.id} className="hover:bg-slate-50/60">
+                        <TableCell className="font-mono text-sm text-teal-700 font-medium">{po.orderNumber}</TableCell>
+                        <TableCell className="text-sm">
+                          <div>{po.projectCode}</div>
+                          <div className="text-xs text-slate-500">{po.projectName}</div>
+                        </TableCell>
+                        <TableCell className="text-sm">{po.vendorName}</TableCell>
+                        <TableCell className="text-sm text-slate-600">{po.orderDate}</TableCell>
+                        <TableCell className="text-right font-medium text-sm">
+                          ¥{po.totalAmount.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Button
+                            size="sm"
+                            className="h-7 px-3 text-xs bg-teal-600 hover:bg-teal-700 text-white"
+                            onClick={() => handleImportFromPO(po)}
+                            disabled={importingPO}
+                          >
+                            取込
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </DialogContent>
+          </Dialog>
+
+        </TabsContent>
+
+        {/* ── 仕入伝票一覧タブ ── */}
+        <TabsContent value="list" className="mt-4">
+          <PurchaseInvoiceList />
+        </TabsContent>
+
+      </Tabs>
 
     </div>
   );
