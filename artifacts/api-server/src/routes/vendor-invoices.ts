@@ -88,7 +88,7 @@ router.get("/reconciliation", async (req, res) => {
       db
         .select({
           vendorId: vendorInvoicesTable.vendorId,
-          totalInvoice: sql<string>`COALESCE(SUM(${vendorInvoicesTable.totalAmount}), 0)`,
+          totalInvoice: sql<string>`COALESCE(SUM(${vendorInvoicesTable.amount}), 0)`,
         })
         .from(vendorInvoicesTable)
         .where(
