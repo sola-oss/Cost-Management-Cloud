@@ -137,6 +137,9 @@ export default function BudgetManagement() {
 
   const cellRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
+  const [estimateDialogOpen, setEstimateDialogOpen] = useState(false);
+  const [allEstimates, setAllEstimates] = useState<{ id: number; estimateNumber: string; subject: string; clientName: string; estimateDate: string; taxIncludedAmount: number }[]>([]);
+
   const [vendorSearch, setVendorSearch] = useState("");
   const [addVendorOpen, setAddVendorOpen] = useState(false);
   const [addVendorName, setAddVendorName] = useState("");
@@ -226,42 +229,13 @@ export default function BudgetManagement() {
     }
   }
 
-  async function handleImportFromEstimate() {
-    if (rows.length > 0) {
-      toast({ title: "当初予算は登録済みです", variant: "destructive" });
-      return;
-    }
+  async function doImport(estimateId: number | null) {
     setImporting(true);
     try {
-      const previewRes = await fetch(
-        `/api/projects/${projectId}/budget-items/import-from-estimate?dryRun=true`,
-        { method: "POST", headers: { "Content-Type": "application/json" } }
-      );
-      if (previewRes.status === 404) {
-        const body = await previewRes.json() as { message: string };
-        toast({ title: "取込みエラー", description: body.message, variant: "destructive" });
-        return;
-      }
-      if (previewRes.status === 409) {
-        toast({ title: "当初予算は登録済みです", variant: "destructive" });
-        return;
-      }
-      if (!previewRes.ok) {
-        toast({ title: "取込みエラー", description: "見積書情報の取得に失敗しました。", variant: "destructive" });
-        return;
-      }
-      const preview = await previewRes.json() as { estimateNumber: string; importableCount: number };
-
-      const confirmed = window.confirm(
-        `見積書 ${preview.estimateNumber} の明細 ${preview.importableCount} 件を当初予算として取込みます。よろしいですか？`
-      );
-      if (!confirmed) return;
-
-      const importRes = await fetch(`/api/projects/${projectId}/budget-items/import-from-estimate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-
+      const url = estimateId
+        ? `/api/projects/${projectId}/budget-items/import-from-estimate?estimateId=${estimateId}`
+        : `/api/projects/${projectId}/budget-items/import-from-estimate`;
+      const importRes = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" } });
       if (importRes.status === 409) {
         toast({ title: "当初予算は登録済みです", variant: "destructive" });
         return;
@@ -271,10 +245,50 @@ export default function BudgetManagement() {
         toast({ title: "取込みエラー", description: body.message ?? "取込みに失敗しました。", variant: "destructive" });
         return;
       }
-      const importData = await importRes.json() as { estimateNumber: string; importedCount: number };
+      const data = await importRes.json() as { estimateNumber: string; importedCount: number };
       queryClient.invalidateQueries({ queryKey: getListBudgetItemsQueryKey(projectId) });
       queryClient.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
-      toast({ title: `見積書 ${importData.estimateNumber} から ${importData.importedCount} 件を取込みました` });
+      toast({ title: `見積書 ${data.estimateNumber} から ${data.importedCount} 件を取込みました` });
+    } catch {
+      toast({ title: "取込みエラー", description: "予期しないエラーが発生しました。", variant: "destructive" });
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function handleImportFromEstimate() {
+    if (rows.length > 0) {
+      toast({ title: "当初予算は登録済みです", variant: "destructive" });
+      return;
+    }
+    setImporting(true);
+    try {
+      if (project?.estimateNumber) {
+        // 工事に見積番号が設定されている → dryRun で確認してそのまま取込み
+        const previewRes = await fetch(
+          `/api/projects/${projectId}/budget-items/import-from-estimate?dryRun=true`,
+          { method: "POST", headers: { "Content-Type": "application/json" } }
+        );
+        if (previewRes.ok) {
+          const preview = await previewRes.json() as { estimateNumber: string; importableCount: number };
+          const confirmed = window.confirm(
+            `見積書 ${preview.estimateNumber} の明細 ${preview.importableCount} 件を当初予算として取込みます。よろしいですか？`
+          );
+          if (!confirmed) return;
+          await doImport(null);
+          return;
+        }
+        // 見積番号で見つからなかった場合はダイアログへフォールスルー
+      }
+      // 見積番号未設定 or 見積書が見つからない → 一覧から選択
+      const res = await fetch("/api/estimates");
+      if (!res.ok) {
+        toast({ title: "エラー", description: "見積書一覧の取得に失敗しました。", variant: "destructive" });
+        return;
+      }
+      const data = await res.json() as { items: typeof allEstimates };
+      setAllEstimates(data.items ?? []);
+      setEstimateDialogOpen(true);
     } catch {
       toast({ title: "取込みエラー", description: "予期しないエラーが発生しました。", variant: "destructive" });
     } finally {
@@ -794,23 +808,20 @@ export default function BudgetManagement() {
                                 className={`border border-slate-100 p-0 ${col.align === "right" ? "text-right" : ""}`}>
                                 {col.key === "workTypeCode" ? (
                                   <Select
-                                    value={row.workTypeCode || "__none__"}
-                                    onValueChange={code => {
-                                      if (code === "__none__") {
+                                    value={row.workTypeName || "__none__"}
+                                    onValueChange={name => {
+                                      if (name === "__none__") {
                                         handleSelectWorkType(rowIdx, { id: 0, code: "", name: "" });
                                         return;
                                       }
-                                      const wt = workTypes.find(w => w.code === code);
+                                      const wt = workTypes.find(w => w.name === name);
                                       if (wt) handleSelectWorkType(rowIdx, wt);
                                     }}
                                   >
                                     <SelectTrigger className="h-7 w-full border-0 rounded-none text-xs focus:ring-1 focus:ring-teal-400 focus:ring-inset" style={{ minHeight: "28px" }}>
                                       <SelectValue placeholder="工種を選択">
-                                        {row.workTypeCode ? (
-                                          <span>
-                                            <span className="font-mono text-slate-500 mr-1">{row.workTypeCode}</span>
-                                            {row.workTypeName}
-                                          </span>
+                                        {row.workTypeName ? (
+                                          <span>{row.workTypeName}</span>
                                         ) : (
                                           <span className="text-slate-400">工種を選択</span>
                                         )}
@@ -819,8 +830,7 @@ export default function BudgetManagement() {
                                     <SelectContent>
                                       <SelectItem value="__none__" className="text-xs text-slate-400">— 未選択 —</SelectItem>
                                       {workTypes.map(wt => (
-                                        <SelectItem key={wt.id} value={wt.code} className="text-xs">
-                                          <span className="font-mono text-slate-500 mr-1">{wt.code}</span>
+                                        <SelectItem key={wt.id} value={wt.name} className="text-xs">
                                           {wt.name}
                                         </SelectItem>
                                       ))}
@@ -1121,6 +1131,63 @@ export default function BudgetManagement() {
               {bulkSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShoppingCart className="w-4 h-4" />}
               発注書を作成する
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── 見積書選択ダイアログ ── */}
+      <Dialog open={estimateDialogOpen} onOpenChange={setEstimateDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>取込む見積書を選択</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-96 overflow-y-auto border rounded">
+            <table className="w-full text-sm border-collapse">
+              <thead className="sticky top-0 bg-slate-50">
+                <tr className="border-b text-xs text-slate-500">
+                  <th className="px-3 py-2 text-left">見積番号</th>
+                  <th className="px-3 py-2 text-left">工事名</th>
+                  <th className="px-3 py-2 text-left">得意先</th>
+                  <th className="px-3 py-2 text-left">見積日</th>
+                  <th className="px-3 py-2 text-right">金額（税込）</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {allEstimates.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-6 text-center text-slate-400">見積書がありません</td>
+                  </tr>
+                ) : allEstimates.map(e => (
+                  <tr key={e.id} className="border-b hover:bg-teal-50">
+                    <td className="px-3 py-2 font-mono text-xs text-slate-600">{e.estimateNumber}</td>
+                    <td className="px-3 py-2 max-w-[180px] truncate">{e.subject || "—"}</td>
+                    <td className="px-3 py-2 text-slate-600">{e.clientName || "—"}</td>
+                    <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{e.estimateDate}</td>
+                    <td className="px-3 py-2 text-right font-medium">{formatCurrency(e.taxIncludedAmount)}</td>
+                    <td className="px-3 py-2">
+                      <Button
+                        size="sm"
+                        className="h-6 text-xs bg-teal-600 hover:bg-teal-700"
+                        onClick={async () => {
+                          const confirmed = window.confirm(
+                            `見積書 ${e.estimateNumber} の明細を当初予算として取込みます。よろしいですか？`
+                          );
+                          if (!confirmed) return;
+                          setEstimateDialogOpen(false);
+                          await doImport(e.id);
+                        }}
+                      >
+                        取込む
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEstimateDialogOpen(false)}>キャンセル</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

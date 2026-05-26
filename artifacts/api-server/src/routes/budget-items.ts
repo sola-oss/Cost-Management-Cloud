@@ -91,6 +91,7 @@ router.post("/import-from-estimate", async (req, res) => {
     const p = req.params as Record<string, string>;
     const projectId = parseInt(p.id);
     const dryRun = req.query.dryRun === "true";
+    const estimateIdParam = req.query.estimateId ? parseInt(req.query.estimateId as string) : null;
 
     const existingItems = await db
       .select({ id: budgetItemsTable.id })
@@ -111,20 +112,36 @@ router.post("/import-from-estimate", async (req, res) => {
       return res.status(404).json({ message: "工事が見つかりません" });
     }
 
-    const estimates = await db
-      .select()
-      .from(estimatesTable)
-      .where(eq(estimatesTable.projectId, projectId))
-      .orderBy(desc(estimatesTable.createdAt));
+    let estimate: typeof estimatesTable.$inferSelect | undefined;
 
-    if (estimates.length === 0) {
-      return res.status(404).json({ message: "この工事に紐付いた見積書が見つかりません" });
+    if (estimateIdParam) {
+      // 1. 指定された見積書IDを直接使用
+      const [found] = await db
+        .select()
+        .from(estimatesTable)
+        .where(eq(estimatesTable.id, estimateIdParam));
+      estimate = found;
+    } else if (project.estimateNumber) {
+      // 2. 工事に見積番号が設定されている場合、番号で検索（関連工事フィルタなし）
+      const [found] = await db
+        .select()
+        .from(estimatesTable)
+        .where(eq(estimatesTable.estimateNumber, project.estimateNumber));
+      estimate = found;
+    } else {
+      // 3. フォールバック：関連工事で紐付いた見積書を検索
+      const linked = await db
+        .select()
+        .from(estimatesTable)
+        .where(eq(estimatesTable.projectId, projectId))
+        .orderBy(desc(estimatesTable.createdAt))
+        .limit(1);
+      estimate = linked[0];
     }
 
-    const preferred = project.estimateNumber
-      ? estimates.find(e => e.estimateNumber === project.estimateNumber)
-      : undefined;
-    const estimate = preferred ?? estimates[0];
+    if (!estimate) {
+      return res.status(404).json({ message: "取込み対象の見積書が見つかりません。工事登録で見積番号を設定するか、見積書の「関連工事」を設定してください。" });
+    }
 
     const estimateItems = await db
       .select()
@@ -155,11 +172,11 @@ router.post("/import-from-estimate", async (req, res) => {
       .values(
         normalItems.map((item, idx) => ({
           projectId,
-          workTypeCode: item.workType || "—",
-          workTypeName: item.itemName || "—",
+          workTypeCode: "",
+          workTypeName: item.workType || item.itemName || "—",
           supplierCode: "",
           supplierName: "",
-          contractAmount: "0",
+          contractAmount: String(item.amount),
           initialBudget: String(item.amount),
           revisedBudget: String(item.amount),
           sortOrder: idx,
