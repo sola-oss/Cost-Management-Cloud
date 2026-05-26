@@ -34,7 +34,7 @@ import ProjectLedger from "@/pages/projects/ledger";
 import PurchaseOrders from "@/pages/purchase-orders/index";
 import PurchaseOrderDetail from "@/pages/purchase-orders/detail";
 import PurchaseOrderPrint from "@/pages/purchase-orders/print";
-import PurchaseInvoices from "@/pages/purchase-invoices";
+import { Redirect } from "wouter";
 
 const queryClient = new QueryClient();
 
@@ -105,7 +105,7 @@ function Router() {
         <Route path="/purchase-orders/:id">
           {(params) => <PurchaseOrderDetail id={parseInt(params.id)} />}
         </Route>
-        <Route path="/purchase-invoices" component={PurchaseInvoices} />
+        <Route path="/purchase-invoices"><Redirect to="/purchases" /></Route>
         <Route component={NotFound} />
       </Switch>
     </AppLayout>

@@ -13,7 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, Save, FileText, ExternalLink, ClipboardList } from "lucide-react";
+import { Plus, Trash2, Save, FileText, ExternalLink, ClipboardList, Pencil } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface WorkTypeItem {
@@ -61,6 +61,52 @@ interface AvailablePurchaseOrder {
     taxRate: number;
     deliveredQuantity: number;
   }>;
+}
+
+// ── 仕入伝票一覧用 ─────────────────────────────────────────────────────────────
+interface PurchaseInvoiceSummary {
+  id: number;
+  voucherNumber: string;
+  projectId: number;
+  vendorId: number;
+  purchaseDate: string;
+  paymentDueDate: string | null;
+  status: string;
+  isProvisional: boolean;
+  totalAmount: number;
+  vendorName: string;
+  projectCode: string;
+  projectName: string;
+}
+
+const INVOICE_STATUS_LABELS: Record<string, string> = {
+  provisional: "仮確定",
+  confirmed:   "確定",
+  assessed:    "査定済",
+  paid:        "支払済",
+  cancelled:   "キャンセル",
+};
+
+const INVOICE_STATUS_COLORS: Record<string, string> = {
+  provisional: "bg-amber-100 text-amber-700 border-amber-200",
+  confirmed:   "bg-blue-100 text-blue-700 border-blue-200",
+  assessed:    "bg-purple-100 text-purple-700 border-purple-200",
+  paid:        "bg-emerald-100 text-emerald-700 border-emerald-200",
+  cancelled:   "bg-red-100 text-red-700 border-red-200",
+};
+
+function usePurchaseInvoiceList(projectId: string, status: string) {
+  const params = new URLSearchParams();
+  if (projectId !== "__all__") params.set("projectId", projectId);
+  if (status !== "__all__") params.set("status", status);
+  return useQuery({
+    queryKey: ["/api/purchase-invoices", projectId, status],
+    queryFn: async () => {
+      const res = await fetch(`/api/purchase-invoices?${params.toString()}`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json() as Promise<{ items: PurchaseInvoiceSummary[]; total: number }>;
+    },
+  });
 }
 
 const CATEGORY_OPTIONS = [
@@ -193,6 +239,13 @@ export default function Purchases() {
   useEffect(() => {
     setEditInitialized(false);
   }, [editInvoiceIdNum]);
+
+  // ── 仕入伝票一覧フィルター ────────────────────────────────────────────────
+  const [filterInvoiceProject, setFilterInvoiceProject] = useState("__all__");
+  const [filterInvoiceStatus, setFilterInvoiceStatus] = useState("__all__");
+  const { data: invoiceListData, isLoading: invoiceListLoading } =
+    usePurchaseInvoiceList(filterInvoiceProject, filterInvoiceStatus);
+  const invoiceList = invoiceListData?.items ?? [];
 
   // ── 発注書取込モーダル状態 ──────────────────────────────────────────────
   const [importPOOpen, setImportPOOpen] = useState(false);
@@ -895,6 +948,113 @@ export default function Purchases() {
             </span>
           )}
         </Button>
+      </div>
+
+      {/* ── 仕入伝票一覧 ── */}
+      <div className="mt-8 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <FileText className="w-4 h-4 text-teal-700" />
+            <h2 className="text-base font-bold text-slate-800">仕入伝票一覧</h2>
+            {invoiceListData && (
+              <span className="text-xs text-slate-500">{invoiceListData.total}件</span>
+            )}
+          </div>
+        </div>
+
+        {/* フィルター */}
+        <div className="flex flex-wrap gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs text-slate-500">工事</Label>
+            <Select value={filterInvoiceProject} onValueChange={setFilterInvoiceProject}>
+              <SelectTrigger className="w-56 text-sm h-8">
+                <SelectValue placeholder="すべての工事" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">すべての工事</SelectItem>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={String(p.id)}>
+                    {p.projectCode} {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-slate-500">ステータス</Label>
+            <Select value={filterInvoiceStatus} onValueChange={setFilterInvoiceStatus}>
+              <SelectTrigger className="w-36 text-sm h-8">
+                <SelectValue placeholder="すべて" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__">すべて</SelectItem>
+                {Object.entries(INVOICE_STATUS_LABELS).map(([k, v]) => (
+                  <SelectItem key={k} value={k}>{v}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {/* テーブル */}
+        <div className="border rounded-lg overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-slate-50 text-xs">
+                <TableHead className="font-medium">伝票番号</TableHead>
+                <TableHead className="font-medium">工事</TableHead>
+                <TableHead className="font-medium">仕入先</TableHead>
+                <TableHead className="font-medium">仕入日</TableHead>
+                <TableHead className="font-medium">支払予定日</TableHead>
+                <TableHead className="font-medium">状態</TableHead>
+                <TableHead className="font-medium text-right">合計金額</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {invoiceListLoading ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8 text-slate-400">読み込み中...</TableCell>
+                </TableRow>
+              ) : invoiceList.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-8 text-slate-400">
+                    仕入伝票がありません。上のフォームから登録してください。
+                  </TableCell>
+                </TableRow>
+              ) : invoiceList.map((inv) => (
+                <TableRow key={inv.id} className="hover:bg-slate-50/60">
+                  <TableCell className="font-mono text-sm font-medium">
+                    <Link
+                      href={`/purchases?id=${inv.id}`}
+                      className="text-teal-700 hover:text-teal-900 hover:underline flex items-center gap-1"
+                    >
+                      {inv.voucherNumber}
+                      <Pencil className="w-3 h-3 opacity-50" />
+                    </Link>
+                    {inv.isProvisional && (
+                      <Badge variant="outline" className="mt-1 text-[10px] text-amber-600 border-amber-400 bg-amber-50">仮</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    <div className="font-medium">{inv.projectCode}</div>
+                    <div className="text-xs text-slate-500 truncate max-w-[160px]">{inv.projectName}</div>
+                  </TableCell>
+                  <TableCell className="text-sm">{inv.vendorName}</TableCell>
+                  <TableCell className="text-sm text-slate-600">{inv.purchaseDate}</TableCell>
+                  <TableCell className="text-sm text-slate-500">{inv.paymentDueDate ?? "—"}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline" className={`text-xs ${INVOICE_STATUS_COLORS[inv.status] ?? ""}`}>
+                      {INVOICE_STATUS_LABELS[inv.status] ?? inv.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right font-medium text-sm">
+                    {inv.totalAmount.toLocaleString("ja-JP", { style: "currency", currency: "JPY" })}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       </div>
 
       {/* ── 発注書取込モーダル ── */}
