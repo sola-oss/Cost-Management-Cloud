@@ -902,7 +902,7 @@ export default function BudgetManagement() {
                                   <input
                                     ref={el => { cellRefs.current[`${rowIdx}-${col.key}`] = el; }}
                                     type={col.numeric ? "number" : "text"}
-                                    value={row[col.key] as string}
+                                    value={col.numeric && (row[col.key] === "0" || row[col.key] === 0) ? "" : row[col.key] as string}
                                     onChange={e => handleCellChange(rowIdx, col.key, e.target.value)}
                                     onKeyDown={e => handleKeyDown(e, rowIdx, col.key)}
                                     className={`w-full h-full px-2 py-1 bg-transparent outline-none focus:bg-teal-50 focus:ring-1 focus:ring-teal-400 text-xs

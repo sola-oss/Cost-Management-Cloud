@@ -177,11 +177,11 @@ router.post("/import-from-estimate", async (req, res) => {
           supplierCode: "",
           supplierName: "",
           contractAmount: String(item.amount),
-          initialBudget: String(item.amount),
-          revisedBudget: String(item.amount),
+          initialBudget: "0",
+          revisedBudget: "0",
           sortOrder: idx,
           isOriginalLocked: false,
-          originalBudgetAmount: String(item.amount),
+          originalBudgetAmount: "0",
         }))
       )
       .returning();
