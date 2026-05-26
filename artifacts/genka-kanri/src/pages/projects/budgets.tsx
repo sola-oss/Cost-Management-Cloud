@@ -175,7 +175,6 @@ export default function BudgetManagement() {
   function handleCellChange(rowIdx: number, col: keyof RowState, value: string) {
     setRows(prev => prev.map((r, i) => {
       if (i !== rowIdx) return r;
-      if (col === "initialBudget" && r.isOriginalLocked) return r;
       return { ...r, [col]: value, isDirty: true };
     }));
   }
@@ -486,9 +485,7 @@ export default function BudgetManagement() {
         revisedBudget: parseN(row.revisedBudget),
         sortOrder: i,
       };
-      if (!row.isOriginalLocked) {
-        data.initialBudget = parseN(row.initialBudget);
-      }
+      data.initialBudget = parseN(row.initialBudget);
       try {
         if (row.id) {
           await updateItem.mutateAsync({ id: projectId, itemId: row.id, data });
@@ -901,11 +898,6 @@ export default function BudgetManagement() {
                                     </SelectContent>
                                   </Select>
                                   )
-                                ) : col.key === "initialBudget" && row.isOriginalLocked ? (
-                                  <div className="w-full h-full px-2 py-1 bg-slate-100 text-right text-xs text-slate-500 flex items-center justify-end gap-1" style={{ minHeight: "28px" }}>
-                                    <span>{parseN(row.initialBudget).toLocaleString("ja-JP")}</span>
-                                    <Lock className="w-3 h-3 text-slate-400 shrink-0" />
-                                  </div>
                                 ) : (
                                   <input
                                     ref={el => { cellRefs.current[`${rowIdx}-${col.key}`] = el; }}

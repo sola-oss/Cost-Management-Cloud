@@ -180,7 +180,7 @@ router.post("/import-from-estimate", async (req, res) => {
           initialBudget: String(item.amount),
           revisedBudget: String(item.amount),
           sortOrder: idx,
-          isOriginalLocked: true,
+          isOriginalLocked: false,
           originalBudgetAmount: String(item.amount),
         }))
       )
@@ -421,10 +421,6 @@ router.put("/:itemId", async (req, res) => {
 
     if (!existing) {
       return res.status(404).json({ message: "予算明細が見つかりません" });
-    }
-
-    if (existing.isOriginalLocked && initialBudget !== undefined) {
-      return res.status(422).json({ message: "当初予算はロックされています。変更できません。" });
     }
 
     const updateData: Partial<typeof budgetItemsTable.$inferInsert> = {};
