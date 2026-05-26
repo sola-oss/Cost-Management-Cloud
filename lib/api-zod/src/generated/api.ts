@@ -1178,3 +1178,119 @@ export const UpdateClientResponse = zod.object({
 export const DeleteClientParams = zod.object({
   id: zod.coerce.number(),
 });
+
+/**
+ * @summary 仕入先請求書一覧
+ */
+export const ListVendorInvoicesQueryParams = zod.object({
+  vendorId: zod.coerce.number().optional(),
+  year: zod.coerce.number().optional(),
+  month: zod.coerce.number().optional(),
+});
+
+export const ListVendorInvoicesResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      vendorId: zod.number(),
+      vendorName: zod.string().optional(),
+      projectId: zod.number().nullish(),
+      invoiceNumber: zod.string().nullish(),
+      invoiceDate: zod.coerce.date(),
+      periodYear: zod.number(),
+      periodMonth: zod.number(),
+      amount: zod.number(),
+      taxAmount: zod.number(),
+      totalAmount: zod.number(),
+      notes: zod.string().nullish(),
+      status: zod.enum(["pending", "confirmed"]),
+      createdAt: zod.coerce.date().optional(),
+      updatedAt: zod.coerce.date().optional(),
+    }),
+  ),
+  total: zod.number(),
+});
+
+/**
+ * @summary 仕入先請求書登録
+ */
+export const createVendorInvoiceBodyTaxRateDefault = 10;
+
+export const CreateVendorInvoiceBody = zod.object({
+  vendorId: zod.number(),
+  projectId: zod.number().nullish(),
+  invoiceNumber: zod.string().nullish(),
+  invoiceDate: zod.coerce.date(),
+  periodYear: zod.number(),
+  periodMonth: zod.number(),
+  amount: zod.number(),
+  taxRate: zod.number().default(createVendorInvoiceBodyTaxRateDefault),
+  notes: zod.string().nullish(),
+});
+
+/**
+ * @summary 突合確認表（仕入入力合計 vs 請求金額）
+ */
+export const GetVendorInvoiceReconciliationQueryParams = zod.object({
+  year: zod.coerce.number(),
+  month: zod.coerce.number(),
+});
+
+export const GetVendorInvoiceReconciliationResponse = zod.object({
+  year: zod.number(),
+  month: zod.number(),
+  items: zod.array(
+    zod.object({
+      vendorId: zod.number(),
+      vendorName: zod.string(),
+      purchaseInputTotal: zod.number(),
+      invoiceTotal: zod.number(),
+      difference: zod.number(),
+    }),
+  ),
+});
+
+/**
+ * @summary 仕入先請求書更新
+ */
+export const UpdateVendorInvoiceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateVendorInvoiceBody = zod.object({
+  vendorId: zod.number().optional(),
+  projectId: zod.number().nullish(),
+  invoiceNumber: zod.string().nullish(),
+  invoiceDate: zod.coerce.date().optional(),
+  periodYear: zod.number().optional(),
+  periodMonth: zod.number().optional(),
+  amount: zod.number().optional(),
+  taxRate: zod.number().optional(),
+  notes: zod.string().nullish(),
+  status: zod.enum(["pending", "confirmed"]).optional(),
+});
+
+export const UpdateVendorInvoiceResponse = zod.object({
+  id: zod.number(),
+  vendorId: zod.number(),
+  vendorName: zod.string().optional(),
+  projectId: zod.number().nullish(),
+  invoiceNumber: zod.string().nullish(),
+  invoiceDate: zod.coerce.date(),
+  periodYear: zod.number(),
+  periodMonth: zod.number(),
+  amount: zod.number(),
+  taxAmount: zod.number(),
+  totalAmount: zod.number(),
+  notes: zod.string().nullish(),
+  status: zod.enum(["pending", "confirmed"]),
+  createdAt: zod.coerce.date().optional(),
+  updatedAt: zod.coerce.date().optional(),
+});
+
+/**
+ * @summary 仕入先請求書削除
+ */
+export const DeleteVendorInvoiceParams = zod.object({
+  id: zod.coerce.number(),
+});
