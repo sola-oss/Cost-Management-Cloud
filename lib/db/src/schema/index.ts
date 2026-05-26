@@ -12,3 +12,4 @@ export * from "./invoices";
 export * from "./construction-histories";
 export * from "./purchase-orders";
 export * from "./purchase-invoices";
+export * from "./vendor-invoices";
