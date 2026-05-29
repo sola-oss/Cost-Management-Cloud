@@ -78,6 +78,28 @@ function useWorkTypes() {
   return workTypes;
 }
 
+type MonitorRow = {
+  workTypeCode: string;
+  workTypeName: string;
+  revisedBudget: number;
+  orderedAmount: number;
+  actualCost: number;
+  budgetRemaining: number;
+  consumptionRate: number | null;
+};
+
+function useMonitorData(projectId: number) {
+  return useQuery<{ items: MonitorRow[] }>({
+    queryKey: ["/api/projects", projectId, "budget-items", "monitor"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/budget-items/monitor`);
+      if (!res.ok) return { items: [] };
+      return res.json();
+    },
+    enabled: !!projectId,
+  });
+}
+
 function useVendors() {
   const { data } = useQuery<VendorItem[]>({
     queryKey: ["/api/vendors"],
@@ -513,8 +535,10 @@ export default function BudgetManagement() {
   const totalInitialBudget  = rows.reduce((s, r) => s + parseN(r.initialBudget), 0);
   const totalContractAmount = rows.reduce((s, r) => s + parseN(r.contractAmount), 0);
   const totalExpectedProfit = contractAmountFromProject - totalRevisedBudget;
-  const orderAmount = summary?.totalActualCost ?? 0;
-  const actualCost  = summary?.totalActualCost ?? 0;
+  const { data: monitorData } = useMonitorData(projectId);
+  const monitorItems = monitorData?.items ?? [];
+  const orderAmount  = monitorItems.reduce((s, r) => s + r.orderedAmount, 0);
+  const actualCost   = monitorItems.reduce((s, r) => s + r.actualCost, 0);
   const actualProfit = contractAmountFromProject - actualCost;
 
   const hasDirty = rows.some(r => r.isDirty || r.isNew);
@@ -981,33 +1005,66 @@ export default function BudgetManagement() {
                         <th className="border border-slate-500 px-3 py-2 text-left">工種コード</th>
                         <th className="border border-slate-500 px-3 py-2 text-left">工種名</th>
                         <th className="border border-slate-500 px-3 py-2 text-right">実行予算</th>
+                        <th className="border border-slate-500 px-3 py-2 text-right">発注済金額</th>
+                        <th className="border border-slate-500 px-3 py-2 text-right">実績原価（仕入）</th>
+                        <th className="border border-slate-500 px-3 py-2 text-right">予算残</th>
+                        <th className="border border-slate-500 px-3 py-2 text-right">予算消化率</th>
                         <th className="border border-slate-500 px-3 py-2 text-right">予定利益</th>
                         <th className="border border-slate-500 px-3 py-2 text-right">予定利益率</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {rows.length === 0 ? (
+                      {monitorItems.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="py-6 text-center text-slate-400">
+                          <td colSpan={9} className="py-6 text-center text-slate-400">
                             実行予算明細がありません
                           </td>
                         </tr>
-                      ) : rows.map((row, i) => {
-                        const rb = parseN(row.revisedBudget);
-                        const ca = parseN(row.contractAmount);
-                        const profit = ca - rb;
-                        const rate = ca > 0 ? (profit / ca * 100).toFixed(1) + "%" : "—";
+                      ) : monitorItems.map((row, i) => {
+                        const budgetRow = rows.find(r => r.workTypeCode === row.workTypeCode);
+                        const ca = budgetRow ? parseN(budgetRow.contractAmount) : 0;
+                        const profit = ca - row.revisedBudget;
+                        const profitRate = ca > 0 ? (profit / ca * 100).toFixed(1) + "%" : "—";
                         return (
                           <tr key={i} className={`border-b border-slate-100 ${i % 2 === 0 ? "bg-white" : "bg-slate-50"}`}>
                             <td className="border border-slate-100 px-3 py-1.5">{row.workTypeCode}</td>
                             <td className="border border-slate-100 px-3 py-1.5">{row.workTypeName}</td>
-                            <td className="border border-slate-100 px-3 py-1.5 text-right text-indigo-700">{rb.toLocaleString("ja-JP")}</td>
+                            <td className="border border-slate-100 px-3 py-1.5 text-right text-indigo-700">{row.revisedBudget.toLocaleString("ja-JP")}</td>
+                            <td className="border border-slate-100 px-3 py-1.5 text-right text-blue-700">{row.orderedAmount > 0 ? row.orderedAmount.toLocaleString("ja-JP") : "—"}</td>
+                            <td className="border border-slate-100 px-3 py-1.5 text-right text-orange-700">{row.actualCost > 0 ? row.actualCost.toLocaleString("ja-JP") : "—"}</td>
+                            <td className={`border border-slate-100 px-3 py-1.5 text-right font-medium ${row.budgetRemaining < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                              {row.budgetRemaining.toLocaleString("ja-JP")}
+                            </td>
+                            <td className={`border border-slate-100 px-3 py-1.5 text-right font-medium ${(row.consumptionRate ?? 0) > 100 ? "text-red-600" : "text-slate-700"}`}>
+                              {row.consumptionRate !== null ? row.consumptionRate.toFixed(1) + "%" : "—"}
+                            </td>
                             <td className="border border-slate-100 px-3 py-1.5 text-right">{profit.toLocaleString("ja-JP")}</td>
-                            <td className={`border border-slate-100 px-3 py-1.5 text-right font-medium ${profit < 0 ? "text-red-600" : "text-emerald-600"}`}>{rate}</td>
+                            <td className={`border border-slate-100 px-3 py-1.5 text-right font-medium ${profit < 0 ? "text-red-600" : "text-emerald-600"}`}>{profitRate}</td>
                           </tr>
                         );
                       })}
                     </tbody>
+                    {monitorItems.length > 0 && (
+                      <tfoot>
+                        <tr className="bg-slate-100 font-semibold">
+                          <td className="border border-slate-300 px-3 py-1.5" colSpan={2}>合計</td>
+                          <td className="border border-slate-300 px-3 py-1.5 text-right text-indigo-700">
+                            {monitorItems.reduce((s, r) => s + r.revisedBudget, 0).toLocaleString("ja-JP")}
+                          </td>
+                          <td className="border border-slate-300 px-3 py-1.5 text-right text-blue-700">
+                            {monitorItems.reduce((s, r) => s + r.orderedAmount, 0).toLocaleString("ja-JP")}
+                          </td>
+                          <td className="border border-slate-300 px-3 py-1.5 text-right text-orange-700">
+                            {monitorItems.reduce((s, r) => s + r.actualCost, 0).toLocaleString("ja-JP")}
+                          </td>
+                          <td className={`border border-slate-300 px-3 py-1.5 text-right ${monitorItems.reduce((s, r) => s + r.budgetRemaining, 0) < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                            {monitorItems.reduce((s, r) => s + r.budgetRemaining, 0).toLocaleString("ja-JP")}
+                          </td>
+                          <td className="border border-slate-300 px-3 py-1.5 text-right text-slate-500">—</td>
+                          <td className="border border-slate-300 px-3 py-1.5" colSpan={2}></td>
+                        </tr>
+                      </tfoot>
+                    )}
                   </table>
                 </div>
               </div>

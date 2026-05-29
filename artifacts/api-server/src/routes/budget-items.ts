@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, asc, and, desc, inArray } from "drizzle-orm";
+import { eq, asc, and, desc, inArray, sql } from "drizzle-orm";
 import {
   db,
   budgetItemsTable,
@@ -10,6 +10,8 @@ import {
   purchaseOrdersTable,
   purchaseOrderItemsTable,
   vendorsTable,
+  workTypesTable,
+  costItemsTable,
 } from "@workspace/db";
 
 const router: IRouter = Router({ mergeParams: true });
@@ -374,6 +376,72 @@ router.post("/bulk-create-purchase-orders", async (req, res) => {
       return res.status(404).json({ message: e.message });
     }
     req.log.error({ err }, "Failed to bulk create purchase orders");
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+router.get("/monitor", async (req, res) => {
+  try {
+    const p = req.params as Record<string, string>;
+    const projectId = parseInt(p.id);
+
+    const [budgetRows, costRows, orderRows] = await Promise.all([
+      db
+        .select({
+          workTypeCode: budgetItemsTable.workTypeCode,
+          workTypeName: sql<string>`min(${budgetItemsTable.workTypeName})`,
+          revisedBudget: sql<string>`sum(${budgetItemsTable.revisedBudget})`,
+        })
+        .from(budgetItemsTable)
+        .where(eq(budgetItemsTable.projectId, projectId))
+        .groupBy(budgetItemsTable.workTypeCode),
+
+      db
+        .select({
+          workTypeCode: workTypesTable.code,
+          actualCost: sql<string>`sum(${costItemsTable.amount})`,
+        })
+        .from(costItemsTable)
+        .leftJoin(workTypesTable, eq(costItemsTable.workTypeId, workTypesTable.id))
+        .where(eq(costItemsTable.projectId, projectId))
+        .groupBy(workTypesTable.code),
+
+      db
+        .select({
+          workTypeCode: workTypesTable.code,
+          orderedAmount: sql<string>`sum(${purchaseOrderItemsTable.amount})`,
+        })
+        .from(purchaseOrderItemsTable)
+        .innerJoin(purchaseOrdersTable, eq(purchaseOrderItemsTable.purchaseOrderId, purchaseOrdersTable.id))
+        .leftJoin(workTypesTable, eq(purchaseOrderItemsTable.workTypeId, workTypesTable.id))
+        .where(eq(purchaseOrdersTable.projectId, projectId))
+        .groupBy(workTypesTable.code),
+    ]);
+
+    const costMap = new Map<string, number>();
+    for (const r of costRows) {
+      costMap.set(r.workTypeCode ?? "", parseNumeric(r.actualCost));
+    }
+    const orderMap = new Map<string, number>();
+    for (const r of orderRows) {
+      orderMap.set(r.workTypeCode ?? "", parseNumeric(r.orderedAmount));
+    }
+
+    const items = budgetRows.map(b => {
+      const code = b.workTypeCode ?? "";
+      const revisedBudget = parseNumeric(b.revisedBudget);
+      const actualCost = costMap.get(code) ?? 0;
+      const orderedAmount = orderMap.get(code) ?? 0;
+      const budgetRemaining = revisedBudget - actualCost;
+      const consumptionRate = revisedBudget > 0
+        ? Math.round(actualCost / revisedBudget * 1000) / 10
+        : null;
+      return { workTypeCode: code, workTypeName: b.workTypeName, revisedBudget, orderedAmount, actualCost, budgetRemaining, consumptionRate };
+    });
+
+    return res.json({ items });
+  } catch (err) {
+    req.log.error({ err }, "Failed to get budget monitor");
     return res.status(500).json({ message: "Internal server error" });
   }
 });
