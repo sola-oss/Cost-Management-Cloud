@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, CreditCard, Calculator, Users, Layers, FileText, Wrench, Settings, Receipt, ClipboardList } from "lucide-react";
+import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, CreditCard, Calculator, Users, Layers, FileText, Wrench, Settings, Receipt, ClipboardList, DollarSign } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarProvider, SidebarRail, SidebarTrigger, SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from "./ui/sidebar";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -41,6 +41,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const masterNav = [
     { title: "得意先マスタ", icon: Users, url: "/master/clients" },
     { title: "工種マスタ", icon: Wrench, url: "/master/work-types" },
+    { title: "単価マスタ", icon: DollarSign, url: "/master/unit-prices" },
     { title: "仕入先マスタ", icon: Building2, url: "/master/suppliers" },
     { title: "仕入先グループ", icon: Layers, url: "/master/vendor-groups" },
     { title: "会社設定", icon: Settings, url: "/settings" },
@@ -121,23 +122,28 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </SidebarGroupContent>
             </SidebarGroup>
 
-            {/* マスタ管理 */}
+            {/* マスタ管理（デフォルト折りたたみ、マスタ画面表示中は開く） */}
             <SidebarGroup>
-              <SidebarGroupLabel className="text-xs text-slate-400 px-2 py-1">マスタ管理</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {masterNav.map((item) => (
-                    <SidebarMenuItem key={item.url}>
-                      <SidebarMenuButton asChild isActive={isActive(item.url)}>
-                        <Link href={item.url} className="flex items-center gap-3">
-                          <item.icon className="w-4 h-4" />
-                          <span>{item.title}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
+              <details open={masterNav.some((item) => isActive(item.url))} className="group/master">
+                <summary className="flex items-center gap-1 text-xs text-slate-400 px-2 py-1 cursor-pointer select-none hover:text-slate-600 list-none [&::-webkit-details-marker]:hidden">
+                  <svg className="w-3 h-3 transition-transform group-open/master:rotate-90" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+                  マスタ管理
+                </summary>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {masterNav.map((item) => (
+                      <SidebarMenuItem key={item.url}>
+                        <SidebarMenuButton asChild isActive={isActive(item.url)}>
+                          <Link href={item.url} className="flex items-center gap-3">
+                            <item.icon className="w-4 h-4" />
+                            <span>{item.title}</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </details>
             </SidebarGroup>
           </SidebarContent>
 

@@ -1,9 +1,10 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Link, useSearch, useLocation } from "wouter";
 import { useListProjects, getListProjectsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { DateInput } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,8 +14,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, Save, FileText, ExternalLink, ClipboardList, Pencil } from "lucide-react";
+import { Plus, Trash2, Save, FileText, ExternalLink, ClipboardList, Pencil, ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { UnitPricePicker, type UnitPriceSelection } from "@/components/unit-price-picker";
 
 interface WorkTypeItem {
   id: number;
@@ -205,6 +207,7 @@ export default function Purchases() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, navigate] = useLocation();
+  const quantityRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   // 編集モード：URLパラメータ ?id= を読み取る
   const searchStr = useSearch();
@@ -547,16 +550,80 @@ export default function Purchases() {
         </div>
       </div>
 
-      {/* ── 基本情報カード（2カラム） ── */}
+      {/* ── 基本情報カード ── */}
       <Card>
         <CardHeader className="py-2 px-4 border-b bg-teal-700">
           <CardTitle className="text-xs font-semibold text-white">基本情報</CardTitle>
         </CardHeader>
         <CardContent className="pt-4 pb-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-3">
+          {/* ── 主要項目（常時表示）── */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-3">
+            {/* 工事（最重要・先頭） */}
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-600 font-medium">工事 <span className="text-red-500">*</span></Label>
+              <Select value={selectedProject} onValueChange={setSelectedProject}>
+                <SelectTrigger className="text-sm">
+                  <SelectValue placeholder="工事を選択してください" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projects.map(p => (
+                    <SelectItem key={p.id} value={String(p.id)}>
+                      {p.projectCode} {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-            {/* ── 左カラム ── */}
-            <div className="space-y-3">
+            {/* 仕入先 */}
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-600 font-medium">仕入先</Label>
+              {vendors.length === 0 ? (
+                <div className="flex items-center gap-2 py-1.5">
+                  <span className="text-xs text-slate-400">仕入先が未登録です。</span>
+                  <Link href="/vendors" className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 hover:underline font-medium">
+                    <ExternalLink className="w-3 h-3" />
+                    新規登録
+                  </Link>
+                </div>
+              ) : (
+                <Select value={vendorId} onValueChange={setVendorId}>
+                  <SelectTrigger className="text-sm">
+                    <SelectValue placeholder="仕入先を選択してください" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">（指定なし）</SelectItem>
+                    {vendors.map((v) => (
+                      <SelectItem key={v.id} value={String(v.id)}>
+                        {v.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            {/* 仕入日 */}
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-600 font-medium">仕入日 <span className="text-red-500">*</span></Label>
+              <DateInput
+                value={purchaseDate}
+                onChange={e => setPurchaseDate(e.target.value)}
+                className="text-sm"
+              />
+            </div>
+          </div>
+
+          {/* ── 詳細設定（折りたたみ）── */}
+          <details className="mt-3 group">
+            <summary className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-400 hover:text-slate-600 select-none py-1">
+              <ChevronRight className="w-3.5 h-3.5 transition-transform group-open:rotate-90" />
+              詳細設定
+              {(orderNumber || paymentDueDate || isDraft || taxCalcType !== "外税明細単位") && (
+                <span className="ml-1 text-[10px] bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded-full">設定あり</span>
+              )}
+            </summary>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-3 mt-3 pt-3 border-t border-slate-100">
               {/* 伝票番号 */}
               <div className="space-y-1">
                 <Label className="text-xs text-slate-600">伝票番号</Label>
@@ -572,42 +639,15 @@ export default function Purchases() {
                 </div>
               </div>
 
-              {/* 仕入日 */}
+              {/* 注文番号 */}
               <div className="space-y-1">
-                <Label className="text-xs text-slate-600">仕入日 <span className="text-red-500">*</span></Label>
-                <DateInput
-                  value={purchaseDate}
-                  onChange={e => setPurchaseDate(e.target.value)}
+                <Label className="text-xs text-slate-600">注文番号</Label>
+                <Input
+                  value={orderNumber}
+                  onChange={e => setOrderNumber(e.target.value)}
+                  placeholder="例: PO-20260401-001"
                   className="text-sm"
                 />
-              </div>
-
-              {/* 仕入先 */}
-              <div className="space-y-1">
-                <Label className="text-xs text-slate-600">仕入先</Label>
-                {vendors.length === 0 ? (
-                  <div className="flex items-center gap-2 py-1.5">
-                    <span className="text-xs text-slate-400">仕入先が未登録です。</span>
-                    <Link href="/vendors" className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 hover:underline font-medium">
-                      <ExternalLink className="w-3 h-3" />
-                      新規登録
-                    </Link>
-                  </div>
-                ) : (
-                  <Select value={vendorId} onValueChange={setVendorId}>
-                    <SelectTrigger className="text-sm">
-                      <SelectValue placeholder="仕入先を選択してください" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">（指定なし）</SelectItem>
-                      {vendors.map((v) => (
-                        <SelectItem key={v.id} value={String(v.id)}>
-                          {v.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
               </div>
 
               {/* 支払予定日 */}
@@ -616,40 +656,6 @@ export default function Purchases() {
                 <DateInput
                   value={paymentDueDate}
                   onChange={e => setPaymentDueDate(e.target.value)}
-                  className="text-sm"
-                />
-              </div>
-            </div>
-
-            {/* ── 右カラム ── */}
-            <div className="space-y-3">
-              {/* 工事選択 */}
-              <div className="space-y-1">
-                <Label className="text-xs text-slate-600">工事 <span className="text-red-500">*</span></Label>
-                <Select value={selectedProject} onValueChange={setSelectedProject}>
-                  <SelectTrigger className="text-sm">
-                    <SelectValue placeholder="工事を選択してください" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {projects.map(p => (
-                      <SelectItem key={p.id} value={String(p.id)}>
-                        {p.projectCode} {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {currentProject && (
-                  <p className="text-[11px] text-teal-700">{currentProject.name}</p>
-                )}
-              </div>
-
-              {/* 注文番号 */}
-              <div className="space-y-1">
-                <Label className="text-xs text-slate-600">注文番号</Label>
-                <Input
-                  value={orderNumber}
-                  onChange={e => setOrderNumber(e.target.value)}
-                  placeholder="例: PO-20260401-001"
                   className="text-sm"
                 />
               </div>
@@ -670,35 +676,34 @@ export default function Purchases() {
                 </Select>
               </div>
 
-              {/* 仮伝票 */}
-              <div className="flex items-center gap-2 pt-1">
-                <Checkbox
-                  id="isDraft"
-                  checked={isDraft}
-                  onCheckedChange={v => setIsDraft(!!v)}
-                  className="accent-teal-600"
-                />
-                <Label htmlFor="isDraft" className="text-sm text-slate-700 cursor-pointer">
-                  仮伝票として保存する
-                </Label>
-              </div>
-
-              {/* 支払予定を作成する */}
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="createPayment"
-                  checked={createPayment}
-                  onCheckedChange={v => setCreatePayment(!!v)}
-                  className="accent-teal-600"
-                />
-                <Label htmlFor="createPayment" className="text-sm text-slate-700 cursor-pointer">
-                  支払予定も作成する
-                  <span className="ml-2 text-xs text-slate-400">※通常は支払査定から登録されます</span>
-                </Label>
+              {/* チェックボックス群 */}
+              <div className="space-y-2 md:col-span-2">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="isDraft"
+                    checked={isDraft}
+                    onCheckedChange={v => setIsDraft(!!v)}
+                    className="accent-teal-600"
+                  />
+                  <Label htmlFor="isDraft" className="text-sm text-slate-700 cursor-pointer">
+                    仮伝票として保存する
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="createPayment"
+                    checked={createPayment}
+                    onCheckedChange={v => setCreatePayment(!!v)}
+                    className="accent-teal-600"
+                  />
+                  <Label htmlFor="createPayment" className="text-sm text-slate-700 cursor-pointer">
+                    支払予定も作成する
+                    <span className="ml-2 text-xs text-slate-400">※通常は支払査定から登録されます</span>
+                  </Label>
+                </div>
               </div>
             </div>
-
-          </div>
+          </details>
         </CardContent>
       </Card>
 
@@ -754,7 +759,7 @@ export default function Purchases() {
                           <SelectContent>
                             {CATEGORY_OPTIONS.map(c => (
                               <SelectItem key={c.code} value={c.code} className="text-xs">
-                                {c.code} {c.name}
+                                {c.name}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -762,12 +767,34 @@ export default function Purchases() {
                       </td>
                       {/* 品名・摘要 */}
                       <td className="px-2 py-1.5">
-                        <Input
-                          value={row.productName}
-                          onChange={e => handleRowChange(idx, "productName", e.target.value)}
-                          placeholder="品名"
-                          className="h-8 text-xs mb-1"
-                        />
+                        <div className="flex items-center gap-1 mb-1">
+                          <Input
+                            value={row.productName}
+                            onChange={e => handleRowChange(idx, "productName", e.target.value)}
+                            placeholder="品名"
+                            className="h-8 text-xs flex-1"
+                          />
+                          {vendorId && vendorId !== "none" && (
+                          <UnitPricePicker
+                            vendorId={vendorId}
+                            onSelect={(sel: UnitPriceSelection) => {
+                              setRows(prev => {
+                                const next = [...prev];
+                                let r = { ...next[idx] };
+                                r.productName = sel.itemName;
+                                r.unit = sel.unit;
+                                r.unitPrice = sel.unitPrice;
+                                if (sel.workTypeCode) r.workTypeCode = sel.workTypeCode;
+                                r = recalc(r);
+                                next[idx] = r;
+                                return next;
+                              });
+                              // 選択後に数量フィールドへフォーカス
+                              setTimeout(() => quantityRefs.current[idx]?.focus(), 50);
+                            }}
+                          />
+                          )}
+                        </div>
                         <Input
                           value={row.spec}
                           onChange={e => handleRowChange(idx, "spec", e.target.value)}
@@ -777,10 +804,10 @@ export default function Purchases() {
                       </td>
                       {/* 数量 */}
                       <td className="px-2 py-1.5">
-                        <Input
-                          type="number"
+                        <NumberInput
+                          ref={el => { quantityRefs.current[idx] = el; }}
                           value={row.quantity}
-                          onChange={e => handleRowChange(idx, "quantity", e.target.value)}
+                          onChange={v => handleRowChange(idx, "quantity", v)}
                           className="h-8 text-xs text-right"
                         />
                       </td>
@@ -794,10 +821,9 @@ export default function Purchases() {
                       </td>
                       {/* 単価 */}
                       <td className="px-2 py-1.5">
-                        <Input
-                          type="number"
+                        <NumberInput
                           value={row.unitPrice}
-                          onChange={e => handleRowChange(idx, "unitPrice", e.target.value)}
+                          onChange={v => handleRowChange(idx, "unitPrice", v)}
                           placeholder="0"
                           className="h-8 text-xs text-right"
                         />
@@ -844,16 +870,26 @@ export default function Purchases() {
                           </SelectContent>
                         </Select>
                       </td>
-                      {/* 削除 */}
-                      <td className="px-2 py-1.5 text-center">
-                        <button
-                          type="button"
-                          onClick={() => deleteRow(idx)}
-                          title="行を削除"
-                          className="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                      {/* 複製・削除 */}
+                      <td className="px-1 py-1.5 text-center">
+                        <div className="flex items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => duplicateRow(idx)}
+                            title="行を複製"
+                            className="p-1 rounded text-slate-300 hover:text-teal-600 hover:bg-teal-50 transition-colors"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteRow(idx)}
+                            title="行を削除"
+                            className="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

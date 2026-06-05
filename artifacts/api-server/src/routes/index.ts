@@ -18,6 +18,7 @@ import invoicePaymentsRouter from "./invoice-payments";
 import constructionHistoriesRouter from "./construction-histories";
 import purchaseOrdersRouter from "./purchase-orders";
 import purchaseInvoicesRouter from "./purchase-invoices";
+import unitPricesRouter from "./unit-prices";
 
 const router: IRouter = Router();
 
@@ -40,5 +41,6 @@ router.use("/invoices/:id/payments", invoicePaymentsRouter);
 router.use("/projects/:projectId/construction-history", constructionHistoriesRouter);
 router.use("/purchase-orders", purchaseOrdersRouter);
 router.use("/purchase-invoices", purchaseInvoicesRouter);
+router.use("/unit-prices", unitPricesRouter);
 
 export default router;

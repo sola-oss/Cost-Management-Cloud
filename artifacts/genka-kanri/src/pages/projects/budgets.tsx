@@ -24,6 +24,7 @@ import {
 import { formatCurrency } from "@/lib/utils";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { UnitPricePicker, type UnitPriceSelection } from "@/components/unit-price-picker";
 
 type WorkType = { id: number; code: string; name: string; constructionType?: string };
 type VendorItem = { id: number; name: string; code: string | null; groupName?: string | null };
@@ -868,6 +869,7 @@ export default function BudgetManagement() {
                                       </Link>
                                     </div>
                                   ) : (
+                                  <div className="flex items-center gap-0.5">
                                   <Select
                                     value={row.vendorId || "__none__"}
                                     onValueChange={val => {
@@ -880,7 +882,7 @@ export default function BudgetManagement() {
                                       }
                                     }}
                                   >
-                                    <SelectTrigger className="h-7 w-full border-0 rounded-none text-xs focus:ring-1 focus:ring-teal-400 focus:ring-inset" style={{ minHeight: "28px" }}>
+                                    <SelectTrigger className="h-7 flex-1 min-w-0 border-0 rounded-none text-xs focus:ring-1 focus:ring-teal-400 focus:ring-inset" style={{ minHeight: "28px" }}>
                                       <SelectValue placeholder="仕入先を選択">
                                         {row.vendorId ? (
                                           <span>{row.supplierName || vendors.find(v => String(v.id) === row.vendorId)?.name || ""}</span>
@@ -921,6 +923,30 @@ export default function BudgetManagement() {
                                       </div>
                                     </SelectContent>
                                   </Select>
+                                  {/* 単価参照ボタン（仕入先選択済み時のみ表示） */}
+                                  {row.vendorId && (
+                                    <UnitPricePicker
+                                      vendorId={row.vendorId}
+                                      onSelect={(sel: UnitPriceSelection) => {
+                                        setRows(prev => prev.map((r, i) => {
+                                          if (i !== rowIdx) return r;
+                                          const updated = { ...r, isDirty: true };
+                                          // 工種が未選択なら単価マスタの工種をセット
+                                          if (!r.workTypeCode && sel.workTypeCode) {
+                                            const wt = workTypes.find(w => w.code === sel.workTypeCode);
+                                            if (wt) {
+                                              updated.workTypeCode = wt.code;
+                                              updated.workTypeName = wt.name;
+                                            }
+                                          }
+                                          // 実行予算に単価をセット
+                                          updated.revisedBudget = sel.unitPrice;
+                                          return updated;
+                                        }));
+                                      }}
+                                    />
+                                  )}
+                                  </div>
                                   )
                                 ) : (
                                   <input

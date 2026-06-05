@@ -23,6 +23,7 @@ import NewEstimate from "@/pages/estimates/new";
 import EstimateDetail from "@/pages/estimates/detail";
 import EstimatePrint from "@/pages/estimates/print";
 import WorkTypeMaster from "@/pages/master/work-types";
+import UnitPriceMaster from "@/pages/master/unit-prices";
 import ClientMaster from "@/pages/master/clients";
 import CompanySettings from "@/pages/settings/index";
 import InvoiceList from "@/pages/invoices/index";
@@ -96,6 +97,7 @@ function Router() {
         <Route path="/vendor-groups" component={VendorGroups} />
         <Route path="/master/vendor-groups" component={VendorGroups} />
         <Route path="/master/work-types" component={WorkTypeMaster} />
+        <Route path="/master/unit-prices" component={UnitPriceMaster} />
         <Route path="/master/clients" component={ClientMaster} />
         <Route path="/settings" component={CompanySettings} />
         <Route path="/invoices" component={InvoiceList} />

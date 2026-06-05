@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { ClipboardList, Plus, Trash2, Save, FileText, ChevronRight } from "lucide-react";
+import { UnitPricePicker, type UnitPriceSelection } from "@/components/unit-price-picker";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -518,12 +519,29 @@ export default function PurchaseOrders() {
                           </Select>
                         </td>
                         <td className="px-1 py-1">
-                          <Input
-                            value={row.description}
-                            onChange={(e) => handleRowChange(idx, "description", e.target.value)}
-                            placeholder="品名"
-                            className="h-7 text-xs mb-0.5"
-                          />
+                          <div className="flex items-center gap-1 mb-0.5">
+                            <Input
+                              value={row.description}
+                              onChange={(e) => handleRowChange(idx, "description", e.target.value)}
+                              placeholder="品名"
+                              className="h-7 text-xs flex-1"
+                            />
+                            <UnitPricePicker
+                              vendorId={formVendorId}
+                              onSelect={(sel: UnitPriceSelection) => {
+                                setFormRows(prev => {
+                                  const next = [...prev];
+                                  let r = { ...next[idx] };
+                                  r.description = sel.itemName;
+                                  r.unit = sel.unit;
+                                  r.unitPrice = sel.unitPrice;
+                                  r = recalcItem(r);
+                                  next[idx] = r;
+                                  return next;
+                                });
+                              }}
+                            />
+                          </div>
                           <Input
                             value={row.specification}
                             onChange={(e) => handleRowChange(idx, "specification", e.target.value)}
