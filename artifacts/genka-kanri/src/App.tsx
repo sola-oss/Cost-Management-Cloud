@@ -10,7 +10,6 @@ import Dashboard from "@/pages/dashboard";
 import Projects from "@/pages/projects";
 import NewProject from "@/pages/projects/new";
 import ProjectDetail from "@/pages/projects/detail";
-import NewCostEntry from "@/pages/projects/costs/new";
 import BudgetManagement from "@/pages/projects/budgets";
 import Reports from "@/pages/reports";
 import Purchases from "@/pages/purchases";
@@ -81,7 +80,6 @@ function Router() {
         <Route path="/projects" component={Projects} />
         <Route path="/projects/new" component={NewProject} />
         <Route path="/projects/:id" component={ProjectDetail} />
-        <Route path="/projects/:id/costs/new" component={NewCostEntry} />
         <Route path="/projects/:id/budgets" component={BudgetManagement} />
         <Route path="/projects/:id/history" component={ConstructionHistory} />
         <Route path="/projects/:id/ledger" component={ProjectLedger} />

@@ -304,6 +304,10 @@ router.post("/bulk-create-purchase-orders", async (req, res) => {
 
       const createdPurchaseOrders: Array<{ id: number; orderNo: string; vendorId: number }> = [];
 
+      // 工種名 → 工種ID のマップ（発注明細に工種を紐づけるため）
+      const allWorkTypes = await tx.select({ id: workTypesTable.id, name: workTypesTable.name }).from(workTypesTable);
+      const workTypeIdByName = new Map(allWorkTypes.map(w => [w.name, w.id]));
+
       for (let gi = 0; gi < typedGroups.length; gi++) {
         const group = typedGroups[gi];
         const { vendorId, budgetItemIds, deliveryDate, notes } = group;
@@ -351,7 +355,7 @@ router.post("/bulk-create-purchase-orders", async (req, res) => {
               unitPrice: String(parseNumeric(bi.revisedBudget)),
               amount: String(parseNumeric(bi.revisedBudget)),
               taxRate: "10",
-              workTypeId: null,
+              workTypeId: workTypeIdByName.get(bi.workTypeName) ?? null,
             }))
           )
           .returning();

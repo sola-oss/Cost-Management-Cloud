@@ -29,7 +29,7 @@ import {
 } from "recharts";
 import {
   ArrowLeft, Plus, Save, X, AlertTriangle, CheckCircle, TrendingUp,
-  FileText, Calculator, BarChart2, ClipboardList, Loader2, Trash2, Search, ExternalLink, Edit,
+  FileText, Calculator, BarChart2, ClipboardList, Loader2, Trash2, Search, ExternalLink, Edit, ShoppingCart,
 } from "lucide-react";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { useForm } from "react-hook-form";
@@ -336,156 +336,13 @@ function CostItemsTab({ projectId }: { projectId: number }) {
               </div>
             ))}
           </div>
-          <Dialog open={addOpen} onOpenChange={setAddOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm">
-              <Plus className="w-4 h-4 mr-1" />
-              明細追加
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>原価明細の追加</DialogTitle>
-            </DialogHeader>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onAddSubmit)} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="incurredDate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>発生日 <span className="text-destructive">*</span></FormLabel>
-                        <FormControl><Input type="date" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="category"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>区分 <span className="text-destructive">*</span></FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                          <FormControl>
-                            <SelectTrigger><SelectValue /></SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="material">材料費</SelectItem>
-                            <SelectItem value="labor">労務費</SelectItem>
-                            <SelectItem value="subcontract">外注費</SelectItem>
-                            <SelectItem value="expense">経費</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="description"
-                    render={({ field }) => (
-                      <FormItem className="col-span-2">
-                        <FormLabel>摘要 <span className="text-destructive">*</span></FormLabel>
-                        <FormControl><Input placeholder="例: 生コンクリート 21-18-20" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="vendor"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>取引先</FormLabel>
-                        <FormControl><Input placeholder="例: 東京生コン株式会社" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="invoiceNumber"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>伝票番号</FormLabel>
-                        <FormControl><Input placeholder="例: INV-2024-001" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="quantity"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>数量</FormLabel>
-                        <FormControl>
-                          <NumberInput placeholder="0"
-                            value={String(field.value ?? "")}
-                            onChange={(v) => { field.onChange(v); }}
-                            onBlur={() => { field.onBlur(); updateAmount(); }} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="unit"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>単位</FormLabel>
-                        <FormControl><Input placeholder="m3, 式, 人工" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="unitPrice"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>単価</FormLabel>
-                        <FormControl>
-                          <NumberInput placeholder="0"
-                            value={String(field.value ?? "")}
-                            onChange={(v) => { field.onChange(v); }}
-                            onBlur={() => { field.onBlur(); updateAmount(); }} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="amount"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>金額（円） <span className="text-destructive">*</span></FormLabel>
-                        <FormControl>
-                          <NumberInput placeholder="0" className="font-bold"
-                            value={String(field.value ?? "")}
-                            onChange={(v) => { field.onChange(v); }} />
-                        </FormControl>
-                        <FormDescription className="text-xs">数量×単価で自動計算</FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>キャンセル</Button>
-                  <Button type="submit" disabled={createCostItem.isPending}>
-                    {createCostItem.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-                    計上する
-                  </Button>
-                </DialogFooter>
-              </form>
-            </Form>
-          </DialogContent>
-        </Dialog>
+          {/* 原価の登録は仕入入力に一本化（このタブは閲覧専用） */}
+          <Button size="sm" variant="outline" asChild className="text-teal-700 border-teal-300 hover:bg-teal-50">
+            <Link href="/purchases">
+              <ShoppingCart className="w-4 h-4 mr-1" />
+              仕入入力で登録
+            </Link>
+          </Button>
         </div>
 
         {/* フィルタ + 検索バー */}

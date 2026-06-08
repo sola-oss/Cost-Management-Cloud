@@ -488,6 +488,9 @@ export default function BudgetManagement() {
       setBulkOrderOpen(false);
       setSelectedRows(new Set());
       queryClient.invalidateQueries({ queryKey: getListBudgetItemsQueryKey(projectId) });
+      // 原価モニターの発注済・KPIも更新する
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "budget-items", "monitor"] });
+      queryClient.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
       toast({ title: "発注書を作成しました", description: `${computedVendorGroups.length} 社向けの発注書を作成しました。` });
     } catch {
       toast({ title: "発注書の作成に失敗しました", variant: "destructive" });
