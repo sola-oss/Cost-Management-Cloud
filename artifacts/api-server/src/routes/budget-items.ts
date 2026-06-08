@@ -169,22 +169,39 @@ router.post("/import-from-estimate", async (req, res) => {
       });
     }
 
+    // 工種名 → { 工種コード, 標準仕入先 } のマップ（取込時に標準仕入先を自動セットするため）
+    const workTypeRows = await db
+      .select({
+        name: workTypesTable.name,
+        code: workTypesTable.code,
+        defaultVendorId: workTypesTable.defaultVendorId,
+        defaultVendorName: vendorsTable.name,
+      })
+      .from(workTypesTable)
+      .leftJoin(vendorsTable, eq(workTypesTable.defaultVendorId, vendorsTable.id));
+    const workTypeMap = new Map(workTypeRows.map((w) => [w.name, w]));
+
     const inserted = await db
       .insert(budgetItemsTable)
       .values(
-        normalItems.map((item, idx) => ({
-          projectId,
-          workTypeCode: "",
-          workTypeName: item.workType || item.itemName || "—",
-          supplierCode: "",
-          supplierName: "",
-          contractAmount: String(item.amount),
-          initialBudget: "0",
-          revisedBudget: "0",
-          sortOrder: idx,
-          isOriginalLocked: false,
-          originalBudgetAmount: "0",
-        }))
+        normalItems.map((item, idx) => {
+          const wtName = item.workType || item.itemName || "—";
+          const wt = workTypeMap.get(wtName);
+          return {
+            projectId,
+            workTypeCode: wt?.code ?? "",
+            workTypeName: wtName,
+            supplierCode: "",
+            supplierName: wt?.defaultVendorName ?? "",
+            vendorId: wt?.defaultVendorId ?? null,
+            contractAmount: String(item.amount),
+            initialBudget: "0",
+            revisedBudget: "0",
+            sortOrder: idx,
+            isOriginalLocked: false,
+            originalBudgetAmount: "0",
+          };
+        })
       )
       .returning();
 
@@ -385,61 +402,103 @@ router.get("/monitor", async (req, res) => {
     const p = req.params as Record<string, string>;
     const projectId = parseInt(p.id);
 
+    // 予算・実績・発注を「工種名」で突合する。
+    // budget_items は工種コードが空のことがあるため、コードではなく工種名をキーにする。
     const [budgetRows, costRows, orderRows] = await Promise.all([
       db
         .select({
-          workTypeCode: budgetItemsTable.workTypeCode,
-          workTypeName: sql<string>`min(${budgetItemsTable.workTypeName})`,
+          workTypeName: budgetItemsTable.workTypeName,
+          workTypeCode: sql<string>`min(${budgetItemsTable.workTypeCode})`,
           revisedBudget: sql<string>`sum(${budgetItemsTable.revisedBudget})`,
         })
         .from(budgetItemsTable)
         .where(eq(budgetItemsTable.projectId, projectId))
-        .groupBy(budgetItemsTable.workTypeCode),
+        .groupBy(budgetItemsTable.workTypeName),
 
       db
         .select({
-          workTypeCode: workTypesTable.code,
+          workTypeName: sql<string>`coalesce(${workTypesTable.name}, '未分類')`,
           actualCost: sql<string>`sum(${costItemsTable.amount})`,
         })
         .from(costItemsTable)
         .leftJoin(workTypesTable, eq(costItemsTable.workTypeId, workTypesTable.id))
         .where(eq(costItemsTable.projectId, projectId))
-        .groupBy(workTypesTable.code),
+        .groupBy(sql`coalesce(${workTypesTable.name}, '未分類')`),
 
       db
         .select({
-          workTypeCode: workTypesTable.code,
+          workTypeName: sql<string>`coalesce(${workTypesTable.name}, '未分類')`,
           orderedAmount: sql<string>`sum(${purchaseOrderItemsTable.amount})`,
         })
         .from(purchaseOrderItemsTable)
         .innerJoin(purchaseOrdersTable, eq(purchaseOrderItemsTable.purchaseOrderId, purchaseOrdersTable.id))
         .leftJoin(workTypesTable, eq(purchaseOrderItemsTable.workTypeId, workTypesTable.id))
         .where(eq(purchaseOrdersTable.projectId, projectId))
-        .groupBy(workTypesTable.code),
+        .groupBy(sql`coalesce(${workTypesTable.name}, '未分類')`),
     ]);
+
+    // 工種×仕入先 の実績内訳（実行予算の行単位の消化率計算に使う）
+    const costByVendorRows = await db
+      .select({
+        workTypeName: sql<string>`coalesce(${workTypesTable.name}, '未分類')`,
+        vendorId: costItemsTable.vendorId,
+        actualCost: sql<string>`sum(${costItemsTable.amount})`,
+      })
+      .from(costItemsTable)
+      .leftJoin(workTypesTable, eq(costItemsTable.workTypeId, workTypesTable.id))
+      .where(eq(costItemsTable.projectId, projectId))
+      .groupBy(sql`coalesce(${workTypesTable.name}, '未分類')`, costItemsTable.vendorId);
+
+    const costByWorkTypeVendor = costByVendorRows.map((r) => ({
+      workTypeName: r.workTypeName,
+      vendorId: r.vendorId,
+      actualCost: parseNumeric(r.actualCost),
+    }));
 
     const costMap = new Map<string, number>();
     for (const r of costRows) {
-      costMap.set(r.workTypeCode ?? "", parseNumeric(r.actualCost));
+      costMap.set(r.workTypeName ?? "", parseNumeric(r.actualCost));
     }
     const orderMap = new Map<string, number>();
     for (const r of orderRows) {
-      orderMap.set(r.workTypeCode ?? "", parseNumeric(r.orderedAmount));
+      orderMap.set(r.workTypeName ?? "", parseNumeric(r.orderedAmount));
     }
 
+    // 予算行を工種名で集計
+    const usedNames = new Set<string>();
     const items = budgetRows.map(b => {
-      const code = b.workTypeCode ?? "";
+      const name = b.workTypeName ?? "";
+      usedNames.add(name);
       const revisedBudget = parseNumeric(b.revisedBudget);
-      const actualCost = costMap.get(code) ?? 0;
-      const orderedAmount = orderMap.get(code) ?? 0;
+      const actualCost = costMap.get(name) ?? 0;
+      const orderedAmount = orderMap.get(name) ?? 0;
       const budgetRemaining = revisedBudget - actualCost;
       const consumptionRate = revisedBudget > 0
         ? Math.round(actualCost / revisedBudget * 1000) / 10
         : null;
-      return { workTypeCode: code, workTypeName: b.workTypeName, revisedBudget, orderedAmount, actualCost, budgetRemaining, consumptionRate };
+      return { workTypeCode: b.workTypeCode ?? "", workTypeName: name, revisedBudget, orderedAmount, actualCost, budgetRemaining, consumptionRate };
     });
 
-    return res.json({ items });
+    // 予算に無い工種に計上された実績・発注を「未割当（予算なし）」として必ず含める
+    // （合計の実績原価から漏れないようにするため）
+    const orphanNames = new Set<string>();
+    for (const n of costMap.keys()) if (!usedNames.has(n)) orphanNames.add(n);
+    for (const n of orderMap.keys()) if (!usedNames.has(n)) orphanNames.add(n);
+    for (const name of orphanNames) {
+      const actualCost = costMap.get(name) ?? 0;
+      const orderedAmount = orderMap.get(name) ?? 0;
+      items.push({
+        workTypeCode: "",
+        workTypeName: `${name}（予算なし）`,
+        revisedBudget: 0,
+        orderedAmount,
+        actualCost,
+        budgetRemaining: -actualCost,
+        consumptionRate: null,
+      });
+    }
+
+    return res.json({ items, costByWorkTypeVendor });
   } catch (err) {
     req.log.error({ err }, "Failed to get budget monitor");
     return res.status(500).json({ message: "Internal server error" });

@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -421,8 +422,10 @@ function CostItemsTab({ projectId }: { projectId: number }) {
                       <FormItem>
                         <FormLabel>数量</FormLabel>
                         <FormControl>
-                          <Input type="number" placeholder="0" {...field}
-                            onBlur={(e) => { field.onBlur(); updateAmount(); }} />
+                          <NumberInput placeholder="0"
+                            value={String(field.value ?? "")}
+                            onChange={(v) => { field.onChange(v); }}
+                            onBlur={() => { field.onBlur(); updateAmount(); }} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -446,8 +449,10 @@ function CostItemsTab({ projectId }: { projectId: number }) {
                       <FormItem>
                         <FormLabel>単価</FormLabel>
                         <FormControl>
-                          <Input type="number" placeholder="0" {...field}
-                            onBlur={(e) => { field.onBlur(); updateAmount(); }} />
+                          <NumberInput placeholder="0"
+                            value={String(field.value ?? "")}
+                            onChange={(v) => { field.onChange(v); }}
+                            onBlur={() => { field.onBlur(); updateAmount(); }} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -460,7 +465,9 @@ function CostItemsTab({ projectId }: { projectId: number }) {
                       <FormItem>
                         <FormLabel>金額（円） <span className="text-destructive">*</span></FormLabel>
                         <FormControl>
-                          <Input type="number" placeholder="0" className="font-bold" {...field} />
+                          <NumberInput placeholder="0" className="font-bold"
+                            value={String(field.value ?? "")}
+                            onChange={(v) => { field.onChange(v); }} />
                         </FormControl>
                         <FormDescription className="text-xs">数量×単価で自動計算</FormDescription>
                         <FormMessage />
@@ -1562,6 +1569,7 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
   const projectId = parseInt(id || "0", 10);
+  const [, setLocation] = useLocation();
 
   const { data: project, isLoading: projectLoading } = useGetProject(projectId, {
     query: { enabled: !!projectId, queryKey: getGetProjectQueryKey(projectId) },
@@ -1688,13 +1696,21 @@ export default function ProjectDetail() {
       </div>
 
       {/* ── タブ ── */}
-      <Tabs defaultValue="budget" className="w-full">
+      {/* 「実行予算」タブはクリックで編集画面へ直接遷移（タブ表示は持たない） */}
+      <Tabs defaultValue="financial" className="w-full">
         <TabsList className="grid w-full grid-cols-4 mb-2">
           <TabsTrigger value="basic" className="text-xs sm:text-sm gap-1">
             <FileText className="w-3.5 h-3.5 hidden sm:block" />
             基本情報
           </TabsTrigger>
-          <TabsTrigger value="budget" className="text-xs sm:text-sm gap-1">
+          <TabsTrigger
+            value="budget"
+            className="text-xs sm:text-sm gap-1"
+            onClick={(e) => {
+              e.preventDefault();
+              setLocation(`/projects/${projectId}/budgets`);
+            }}
+          >
             <Calculator className="w-3.5 h-3.5 hidden sm:block" />
             実行予算
             {!hasBudgetItems && (
@@ -1713,10 +1729,6 @@ export default function ProjectDetail() {
 
         <TabsContent value="basic">
           <BasicInfoTab project={project} projectId={projectId} />
-        </TabsContent>
-
-        <TabsContent value="budget">
-          <BudgetTab projectId={projectId} />
         </TabsContent>
 
         <TabsContent value="costs">

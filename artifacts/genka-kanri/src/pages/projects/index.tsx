@@ -7,7 +7,7 @@ import { Link } from "wouter";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Plus, Search, FolderKanban } from "lucide-react";
+import { Plus, Search, FolderKanban, Calculator } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatPercent } from "@/lib/utils";
@@ -154,9 +154,22 @@ export default function Projects() {
                         </span>
                       </TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="sm" asChild>
-                          <Link href={`/projects/${project.id}`}>詳細</Link>
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            asChild
+                            className="gap-1 text-teal-700 border-teal-300 hover:bg-teal-50"
+                          >
+                            <Link href={`/projects/${project.id}/budgets`}>
+                              <Calculator className="w-3.5 h-3.5" />
+                              実行予算
+                            </Link>
+                          </Button>
+                          <Button variant="ghost" size="sm" asChild>
+                            <Link href={`/projects/${project.id}`}>詳細</Link>
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))

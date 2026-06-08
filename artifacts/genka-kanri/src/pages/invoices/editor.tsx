@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -621,12 +622,10 @@ export default function InvoiceEditor({ id }: Props) {
                       />
                     </TableCell>
                     <TableCell>
-                      <Input
-                        type="number"
-                        value={it.quantity}
-                        onChange={(e) => updateItem(idx, "quantity", parseFloat(e.target.value) || 0)}
+                      <NumberInput
+                        value={String(it.quantity)}
+                        onChange={(v) => updateItem(idx, "quantity", parseFloat(v) || 0)}
                         className="h-8 text-right"
-                        min="0"
                       />
                     </TableCell>
                     <TableCell>
@@ -638,12 +637,10 @@ export default function InvoiceEditor({ id }: Props) {
                       />
                     </TableCell>
                     <TableCell>
-                      <Input
-                        type="number"
-                        value={it.unitPrice}
-                        onChange={(e) => updateItem(idx, "unitPrice", parseFloat(e.target.value) || 0)}
+                      <NumberInput
+                        value={String(it.unitPrice)}
+                        onChange={(v) => updateItem(idx, "unitPrice", parseFloat(v) || 0)}
                         className="h-8 text-right"
-                        min="0"
                       />
                     </TableCell>
                     <TableCell>
@@ -744,13 +741,11 @@ export default function InvoiceEditor({ id }: Props) {
                 </Label>
                 <div className="mt-2 flex items-center gap-2">
                   <span className="text-slate-500 text-sm">¥</span>
-                  <Input
-                    type="number"
+                  <NumberInput
                     value={progressAmount}
-                    onChange={(e) => setProgressAmount(e.target.value)}
+                    onChange={(v) => setProgressAmount(v)}
                     placeholder="0"
                     className="max-w-[200px]"
-                    min="0"
                   />
                 </div>
                 <p className="text-xs text-slate-500 mt-1">税込金額を直接入力してください（10%税率として計算されます）</p>

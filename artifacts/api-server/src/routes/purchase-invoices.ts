@@ -568,6 +568,13 @@ router.delete("/:id", async (req, res) => {
       .where(eq(purchaseInvoicesTable.id, id));
     if (!existing) return res.status(404).json({ message: "仕入伝票が見つかりません" });
 
+    // 支払済・査定済は整合性保護のため削除不可
+    if (existing.status === "paid" || existing.status === "assessed") {
+      return res.status(409).json({
+        message: "支払済・査定済の仕入伝票は削除できません。先に支払・査定を取り消してください。",
+      });
+    }
+
     const orderId = existing.purchaseOrderId;
 
     // 1. 対応 cost_items を先に削除

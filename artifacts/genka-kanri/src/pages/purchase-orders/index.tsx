@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useListProjects, getListProjectsQueryKey } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { DateInput } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { ClipboardList, Plus, Trash2, Save, FileText, ChevronRight } from "lucide-react";
+import { ClipboardList, Plus, Trash2, Save, FileText, ChevronRight, Copy } from "lucide-react";
 import { UnitPricePicker, type UnitPriceSelection } from "@/components/unit-price-picker";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -512,7 +513,7 @@ export default function PurchaseOrders() {
                             <SelectContent>
                               {CATEGORY_OPTIONS.map((c) => (
                                 <SelectItem key={c.value} value={c.value} className="text-xs">
-                                  {c.code} {c.name}
+                                  {c.name}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -550,10 +551,9 @@ export default function PurchaseOrders() {
                           />
                         </td>
                         <td className="px-1 py-1">
-                          <Input
-                            type="number"
+                          <NumberInput
                             value={row.quantity}
-                            onChange={(e) => handleRowChange(idx, "quantity", e.target.value)}
+                            onChange={(v) => handleRowChange(idx, "quantity", v)}
                             className="h-7 text-xs text-right"
                           />
                         </td>
@@ -565,10 +565,9 @@ export default function PurchaseOrders() {
                           />
                         </td>
                         <td className="px-1 py-1">
-                          <Input
-                            type="number"
+                          <NumberInput
                             value={row.unitPrice}
-                            onChange={(e) => handleRowChange(idx, "unitPrice", e.target.value)}
+                            onChange={(v) => handleRowChange(idx, "unitPrice", v)}
                             className="h-7 text-xs text-right"
                           />
                         </td>
@@ -576,6 +575,21 @@ export default function PurchaseOrders() {
                           {row.amount.toLocaleString()}
                         </td>
                         <td className="px-1 py-1 text-center">
+                          <div className="flex items-center gap-0.5 justify-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 text-slate-400 hover:text-teal-600"
+                            onClick={() => {
+                              setFormRows(p => {
+                                const next = [...p];
+                                next.splice(idx + 1, 0, { ...p[idx], id: crypto.randomUUID() });
+                                return next;
+                              });
+                            }}
+                          >
+                            <Copy className="w-3 h-3" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -584,6 +598,7 @@ export default function PurchaseOrders() {
                           >
                             <Trash2 className="w-3 h-3" />
                           </Button>
+                          </div>
                         </td>
                       </tr>
                     ))}

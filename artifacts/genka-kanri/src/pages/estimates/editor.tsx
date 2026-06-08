@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, ArrowLeft, Copy, Printer, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -867,9 +868,14 @@ export default function EstimateEditor({ id }: { id?: number }) {
           </div>
         </section>
 
-        {/* ─── 自社情報 ──────────────────────────────────────────────────── */}
+        {/* ─── 自社情報（折りたたみ） ──────────────────────────────────── */}
         <section className="bg-white rounded-xl border p-6">
-          <h2 className="text-base font-semibold text-slate-700 border-b pb-2 mb-4">自社情報</h2>
+          <details className="group">
+            <summary className="text-base font-semibold text-slate-700 border-b pb-2 mb-4 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center gap-2">
+              <svg className="w-4 h-4 transition-transform group-open:rotate-90 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+              自社情報
+              <span className="text-xs font-normal text-slate-400">（会社設定から自動取得）</span>
+            </summary>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>会社名</Label>
@@ -957,6 +963,7 @@ export default function EstimateEditor({ id }: { id?: number }) {
               className="mt-1"
             />
           </div>
+          </details>
         </section>
 
         {/* ─── 明細 ──────────────────────────────────────────────────────── */}
@@ -1053,10 +1060,9 @@ export default function EstimateEditor({ id }: { id?: number }) {
                       </TableCell>
                       <TableCell>
                         {!isSpecial && (
-                          <input
-                            type="number"
-                            value={item.quantity ?? ""}
-                            onChange={(e) => updateRow(item._key, { quantity: e.target.value === "" ? null : parseFloat(e.target.value) })}
+                          <NumberInput
+                            value={item.quantity != null ? String(item.quantity) : ""}
+                            onChange={(v) => updateRow(item._key, { quantity: v === "" ? null : parseFloat(v) })}
                             className="w-full h-8 border border-input bg-background rounded-md px-2 text-xs text-right focus:outline-none focus:ring-1 focus:ring-ring"
                           />
                         )}
@@ -1073,10 +1079,9 @@ export default function EstimateEditor({ id }: { id?: number }) {
                       </TableCell>
                       <TableCell>
                         {!isSpecial && (
-                          <input
-                            type="number"
-                            value={item.unitPrice ?? ""}
-                            onChange={(e) => updateRow(item._key, { unitPrice: e.target.value === "" ? null : parseFloat(e.target.value) })}
+                          <NumberInput
+                            value={item.unitPrice != null ? String(item.unitPrice) : ""}
+                            onChange={(v) => updateRow(item._key, { unitPrice: v === "" ? null : parseFloat(v) })}
                             className="w-full h-8 border border-input bg-background rounded-md px-2 text-xs text-right focus:outline-none focus:ring-1 focus:ring-ring"
                           />
                         )}
@@ -1161,14 +1166,10 @@ export default function EstimateEditor({ id }: { id?: number }) {
                 <div className="flex items-center gap-3">
                   <Label className="w-28 text-sm shrink-0">諸経費率（%）</Label>
                   <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      value={form.miscExpensesRate || ""}
-                      onChange={(e) => sf({ miscExpensesRate: parseFloat(e.target.value) || 0 })}
+                    <NumberInput
+                      value={form.miscExpensesRate ? String(form.miscExpensesRate) : ""}
+                      onChange={(v) => sf({ miscExpensesRate: parseFloat(v) || 0 })}
                       placeholder="0"
-                      min="0"
-                      max="100"
-                      step="0.1"
                       className="w-24 text-right h-8"
                     />
                     <span className="text-xs text-slate-500">%</span>
@@ -1181,12 +1182,10 @@ export default function EstimateEditor({ id }: { id?: number }) {
                   <Label className="w-28 text-sm shrink-0">お値引き（円）</Label>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-slate-500">▲</span>
-                    <Input
-                      type="number"
-                      value={form.discountAmount || ""}
-                      onChange={(e) => sf({ discountAmount: parseFloat(e.target.value) || 0 })}
+                    <NumberInput
+                      value={form.discountAmount ? String(form.discountAmount) : ""}
+                      onChange={(v) => sf({ discountAmount: parseFloat(v) || 0 })}
                       placeholder="0"
-                      min="0"
                       className="w-32 text-right h-8"
                     />
                     <span className="text-xs text-slate-500">円</span>

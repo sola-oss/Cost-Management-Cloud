@@ -7,6 +7,7 @@ import { useCreateProject } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -16,7 +17,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Save, Calculator, FolderSearch, ClipboardList } from "lucide-react";
+import { ArrowLeft, Save, Calculator, FolderSearch, ClipboardList, Plus, Trash2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -93,10 +94,7 @@ function useNextProjectCode(): string {
 
 type ContractLineLocal = { contractDate: string; taxExcluded: string };
 
-const EMPTY_LINES: ContractLineLocal[] = Array.from({ length: 8 }, () => ({
-  contractDate: "",
-  taxExcluded: "",
-}));
+const EMPTY_LINES: ContractLineLocal[] = [{ contractDate: "", taxExcluded: "" }];
 
 const formSchema = z.object({
   projectCodeMain: z.string().min(1, "工事番号は必須です"),
@@ -220,6 +218,14 @@ export default function NewProject() {
       next[index] = { ...next[index], [field]: value };
       return next;
     });
+  }
+
+  function addLine() {
+    setContractLines((prev) => [...prev, { contractDate: "", taxExcluded: "" }]);
+  }
+
+  function removeLine(index: number) {
+    setContractLines((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
   }
 
   function handleAutoCalc() {
@@ -634,6 +640,7 @@ export default function NewProject() {
                           <th className="border border-teal-500 px-2 py-1.5 text-right w-28">税抜金額</th>
                           <th className="border border-teal-500 px-2 py-1.5 text-right w-24">消費税<br />10%</th>
                           <th className="border border-teal-500 px-2 py-1.5 text-right w-28">税込金額</th>
+                          <th className="border border-teal-500 px-1 py-1.5 w-8"></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -651,11 +658,10 @@ export default function NewProject() {
                                 />
                               </td>
                               <td className="border border-slate-200 px-1 py-0.5">
-                                <input
-                                  type="text"
+                                <NumberInput
                                   value={line.taxExcluded}
-                                  onChange={(e) => updateLine(i, "taxExcluded", e.target.value)}
-                                  className="w-full text-xs text-right border-none outline-none bg-transparent"
+                                  onChange={(v) => updateLine(i, "taxExcluded", v)}
+                                  className="w-full text-xs text-right border-none outline-none bg-transparent h-7"
                                   placeholder="0"
                                 />
                               </td>
@@ -664,6 +670,18 @@ export default function NewProject() {
                               </td>
                               <td className="border border-slate-200 px-2 py-0.5 text-right font-medium text-slate-700 bg-slate-50/50">
                                 {calc.included > 0 ? calc.included.toLocaleString("ja-JP") : ""}
+                              </td>
+                              <td className="border border-slate-200 px-1 py-0.5 text-center">
+                                {contractLines.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeLine(i)}
+                                    title="行を削除"
+                                    className="p-0.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           );
@@ -681,10 +699,19 @@ export default function NewProject() {
                           <td className="border border-slate-200 px-2 py-1.5 text-right text-xs font-bold text-teal-700">
                             {totalIncluded > 0 ? totalIncluded.toLocaleString("ja-JP") : ""}
                           </td>
+                          <td className="border border-slate-200"></td>
                         </tr>
                       </tfoot>
                     </table>
                   </div>
+                  <button
+                    type="button"
+                    onClick={addLine}
+                    className="w-full py-2 text-xs text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition-colors border-t border-dashed border-slate-200"
+                  >
+                    <Plus className="w-3 h-3 inline mr-1" />
+                    契約行を追加
+                  </button>
                 </CardContent>
               </Card>
 

@@ -25,6 +25,58 @@ interface WorkTypeItem {
   constructionType: string;
 }
 
+/** 検索できる工種セレクト（全工種をスクロール表示＋名前/コードで絞り込み） */
+function WorkTypeSelect({
+  value, onChange, workTypes,
+}: { value: string; onChange: (code: string) => void; workTypes: WorkTypeItem[] }) {
+  const [search, setSearch] = useState("");
+  const filtered = workTypes.filter(wt => {
+    const q = search.trim().toLowerCase();
+    return !q || wt.name.toLowerCase().includes(q) || wt.code.toLowerCase().includes(q);
+  });
+  const selected = workTypes.find(wt => wt.code === value);
+  return (
+    <Select
+      value={value || "__none__"}
+      onValueChange={v => onChange(v === "__none__" ? "" : v)}
+      onOpenChange={open => { if (!open) setSearch(""); }}
+    >
+      <SelectTrigger className="h-8 text-xs border-slate-200 min-w-[130px]">
+        <SelectValue placeholder="工種を選択">
+          {selected ? (
+            <span><span className="font-mono text-slate-400 mr-1">{selected.code}</span>{selected.name}</span>
+          ) : (
+            <span className="text-slate-400">工種を選択</span>
+          )}
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent className="max-h-[320px]">
+        <div className="px-2 py-1.5 border-b border-slate-100 sticky top-0 bg-white z-10">
+          <input
+            autoFocus
+            className="w-full text-xs outline-none bg-transparent placeholder:text-slate-400"
+            placeholder="工種名・コードで検索..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            onKeyDown={e => e.stopPropagation()}
+          />
+        </div>
+        <SelectItem value="__none__" className="text-xs text-slate-400">— 未選択 —</SelectItem>
+        {filtered.length === 0 ? (
+          <div className="px-2 py-3 text-xs text-slate-400 text-center">該当する工種がありません</div>
+        ) : (
+          filtered.map(wt => (
+            <SelectItem key={wt.id} value={wt.code} className="text-xs">
+              <span className="font-mono text-slate-500 mr-1">{wt.code}</span>
+              {wt.name}
+            </SelectItem>
+          ))
+        )}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function useWorkTypes() {
   return useQuery({
     queryKey: ["/api/work-types"],
@@ -493,6 +545,36 @@ export default function Purchases() {
     }
   };
 
+  // ── 仕入伝票の削除 ─────────────────────────────────────────────────────────
+  const [deletingInvoiceId, setDeletingInvoiceId] = useState<number | null>(null);
+  const handleDeleteInvoice = async (inv: PurchaseInvoiceSummary) => {
+    if (inv.status === "paid" || inv.status === "assessed") {
+      toast({ title: "削除できません", description: "支払済・査定済の伝票は削除できません。", variant: "destructive" });
+      return;
+    }
+    if (!window.confirm(`仕入伝票 ${inv.voucherNumber} を削除しますか？\nこの伝票に紐づく原価明細も削除され、実績原価に反映されます。`)) return;
+    setDeletingInvoiceId(inv.id);
+    try {
+      const res = await fetch(`/api/purchase-invoices/${inv.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message ?? "削除に失敗しました");
+      }
+      toast({ title: "削除しました", description: `仕入伝票 ${inv.voucherNumber} を削除しました。` });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cost-items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      // 編集中の伝票を消したらフォームを新規に戻す
+      if (editInvoiceIdNum === inv.id) navigate("/purchases");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "削除に失敗しました";
+      toast({ title: "削除エラー", description: message, variant: "destructive" });
+    } finally {
+      setDeletingInvoiceId(null);
+    }
+  };
+
   // ── 合計 ─────────────────────────────────────────────────────────────────
   const totalAmount = rows.reduce((s, r) => s + r.amount, 0);
   const totalTax    = rows.reduce((s, r) => s + r.tax, 0);
@@ -728,13 +810,13 @@ export default function Purchases() {
                 <tr className="bg-slate-50 text-slate-600 text-xs border-b border-slate-200">
                   <th className="px-3 py-2 text-center w-8 font-medium">No</th>
                   <th className="px-3 py-2 text-left w-28 font-medium">科目</th>
+                  <th className="px-3 py-2 text-left w-32 font-medium">工種</th>
                   <th className="px-3 py-2 text-left font-medium">品名・摘要</th>
                   <th className="px-3 py-2 text-right w-24 font-medium">数量</th>
                   <th className="px-3 py-2 text-center w-14 font-medium">単位</th>
                   <th className="px-3 py-2 text-right w-28 font-medium">単価</th>
                   <th className="px-3 py-2 text-right w-28 font-medium">金額</th>
                   <th className="px-3 py-2 text-center w-24 font-medium">消費税率</th>
-                  <th className="px-3 py-2 text-left w-28 font-medium">工種</th>
                   <th className="px-3 py-2 text-center w-10 font-medium"></th>
                 </tr>
               </thead>
@@ -765,6 +847,14 @@ export default function Purchases() {
                           </SelectContent>
                         </Select>
                       </td>
+                      {/* 工種（科目の隣・検索可） */}
+                      <td className="px-2 py-1.5">
+                        <WorkTypeSelect
+                          value={row.workTypeCode}
+                          onChange={code => handleRowChange(idx, "workTypeCode", code)}
+                          workTypes={workTypes}
+                        />
+                      </td>
                       {/* 品名・摘要 */}
                       <td className="px-2 py-1.5">
                         <div className="flex items-center gap-1 mb-1">
@@ -777,6 +867,7 @@ export default function Purchases() {
                           {vendorId && vendorId !== "none" && (
                           <UnitPricePicker
                             vendorId={vendorId}
+                            initialWorkTypeCode={row.workTypeCode}
                             onSelect={(sel: UnitPriceSelection) => {
                               setRows(prev => {
                                 const next = [...prev];
@@ -784,6 +875,7 @@ export default function Purchases() {
                                 r.productName = sel.itemName;
                                 r.unit = sel.unit;
                                 r.unitPrice = sel.unitPrice;
+                                // 商品の工種を自動セット（単価マスタで決まっている工種を反映）
                                 if (sel.workTypeCode) r.workTypeCode = sel.workTypeCode;
                                 r = recalc(r);
                                 next[idx] = r;
@@ -845,26 +937,6 @@ export default function Purchases() {
                             {TAX_RATE_OPTIONS.map(t => (
                               <SelectItem key={t.value} value={String(t.value)} className="text-xs">
                                 {t.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </td>
-                      {/* 工種 */}
-                      <td className="px-2 py-1.5">
-                        <Select
-                          value={row.workTypeCode || "__none__"}
-                          onValueChange={v => handleRowChange(idx, "workTypeCode", v === "__none__" ? "" : v)}
-                        >
-                          <SelectTrigger className="h-8 text-xs border-slate-200 min-w-[110px]">
-                            <SelectValue placeholder="工種" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__none__" className="text-xs text-slate-400">— 未選択 —</SelectItem>
-                            {workTypes.map(wt => (
-                              <SelectItem key={wt.id} value={wt.code} className="text-xs">
-                                <span className="font-mono text-slate-500 mr-1">{wt.code}</span>
-                                {wt.name}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -1044,16 +1116,17 @@ export default function Purchases() {
                 <TableHead className="font-medium">支払予定日</TableHead>
                 <TableHead className="font-medium">状態</TableHead>
                 <TableHead className="font-medium text-right">合計金額</TableHead>
+                <TableHead className="font-medium text-center w-16">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {invoiceListLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-slate-400">読み込み中...</TableCell>
+                  <TableCell colSpan={8} className="text-center py-8 text-slate-400">読み込み中...</TableCell>
                 </TableRow>
               ) : invoiceList.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-slate-400">
+                  <TableCell colSpan={8} className="text-center py-8 text-slate-400">
                     仕入伝票がありません。上のフォームから登録してください。
                   </TableCell>
                 </TableRow>
@@ -1085,6 +1158,25 @@ export default function Purchases() {
                   </TableCell>
                   <TableCell className="text-right font-medium text-sm">
                     {inv.totalAmount.toLocaleString("ja-JP", { style: "currency", currency: "JPY" })}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    {(inv.status === "paid" || inv.status === "assessed") ? (
+                      <span title="支払済・査定済は削除できません" className="inline-flex">
+                        <Trash2 className="w-4 h-4 text-slate-200 cursor-not-allowed" />
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteInvoice(inv)}
+                        disabled={deletingInvoiceId === inv.id}
+                        title="この仕入伝票を削除"
+                        className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50"
+                      >
+                        {deletingInvoiceId === inv.id
+                          ? <span className="inline-block w-4 h-4 animate-spin">⏳</span>
+                          : <Trash2 className="w-4 h-4" />}
+                      </button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

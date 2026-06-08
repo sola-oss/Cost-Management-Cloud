@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, forwardRef } from "react";
 import { useParams, Link } from "wouter";
 import {
   useGetProject, useGetProjectSummary, useListBudgetItems,
@@ -66,6 +66,42 @@ const COLS: { key: keyof RowState; label: string; width: string; align: "left" |
   { key: "revisedBudget",  label: "実行予算", width: "110px", align: "right", numeric: true },
 ];
 
+/** カンマ区切り表示付き数値セル（実行予算テーブル用）
+ *  - 編集可能だと分かるよう、常時うっすら背景色＋ホバー/フォーカスで枠を表示
+ *  - emphasis=true（実行予算列）は主入力として強めの色で目立たせる
+ */
+const BudgetNumberCell = forwardRef<HTMLInputElement, {
+  value: string;
+  onChange: (v: string) => void;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void;
+  className?: string;
+  emphasis?: boolean;
+}>(({ value, onChange, onKeyDown, className, emphasis }, ref) => {
+  const [focused, setFocused] = useState(false);
+  const display = focused || value === "0" || value === ""
+    ? (value === "0" ? "" : value)
+    : parseFloat(value) ? parseFloat(value).toLocaleString("ja-JP") : value;
+  // 編集可能アフォーダンス：常時うっすら背景＋枠、ホバー/フォーカスで強調
+  const affordance = emphasis
+    ? "bg-amber-50 border border-amber-200 hover:border-amber-400 hover:bg-amber-100/70 focus:bg-white focus:border-amber-500 focus:ring-1 focus:ring-amber-400 font-semibold text-slate-800"
+    : "bg-slate-50/80 border border-slate-200/80 hover:border-teal-400 hover:bg-teal-50 focus:bg-white focus:border-teal-500 focus:ring-1 focus:ring-teal-400";
+  return (
+    <input
+      ref={ref}
+      type={focused ? "number" : "text"}
+      value={display}
+      onChange={e => onChange(e.target.value)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onKeyDown={onKeyDown}
+      placeholder="0"
+      className={`w-[calc(100%-4px)] mx-0.5 my-0.5 px-2 py-1 rounded-[3px] outline-none text-xs text-right transition-colors placeholder:text-slate-300 ${affordance} ${className ?? ""}`}
+      style={{ minHeight: "26px" }}
+    />
+  );
+});
+BudgetNumberCell.displayName = "BudgetNumberCell";
+
 function useWorkTypes() {
   const [workTypes, setWorkTypes] = useState<WorkType[]>([]);
   useEffect(() => {
@@ -89,8 +125,14 @@ type MonitorRow = {
   consumptionRate: number | null;
 };
 
+type CostByWorkTypeVendor = {
+  workTypeName: string;
+  vendorId: number | null;
+  actualCost: number;
+};
+
 function useMonitorData(projectId: number) {
-  return useQuery<{ items: MonitorRow[] }>({
+  return useQuery<{ items: MonitorRow[]; costByWorkTypeVendor?: CostByWorkTypeVendor[] }>({
     queryKey: ["/api/projects", projectId, "budget-items", "monitor"],
     queryFn: async () => {
       const res = await fetch(`/api/projects/${projectId}/budget-items/monitor`);
@@ -149,7 +191,6 @@ export default function BudgetManagement() {
   const [vendorGroupSettings, setVendorGroupSettings] = useState<Map<number, { deliveryDate: string; notes: string }>>(new Map());
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
 
-  const [displayMode, setDisplayMode] = useState<"contract" | "progress">("contract");
   const [profitMode, setProfitMode] = useState<"profit" | "remaining">("profit");
   const [showExpectedProfit, setShowExpectedProfit] = useState(true);
   const [regForm, setRegForm] = useState("工種別仕入先毎");
@@ -200,6 +241,19 @@ export default function BudgetManagement() {
       if (i !== rowIdx) return r;
       return { ...r, [col]: value, isDirty: true };
     }));
+  }
+
+  // 選択中の行にまとめて仕入先を設定（発注済の行はスキップ）
+  function handleBulkSetVendor(vendorId: string) {
+    const vd = vendors.find(v => String(v.id) === vendorId);
+    if (!vd) return;
+    setRows(prev => prev.map((r, i) =>
+      selectedRows.has(i) && !r.purchaseOrderId
+        ? { ...r, vendorId, supplierName: vd.name, isDirty: true }
+        : r
+    ));
+    const applied = Array.from(selectedRows).filter(i => rows[i] && !rows[i].purchaseOrderId).length;
+    toast({ title: `${applied}行に「${vd.name}」を設定しました` });
   }
 
   function handleSelectWorkType(rowIdx: number, wt: WorkType) {
@@ -542,6 +596,22 @@ export default function BudgetManagement() {
   const actualCost   = monitorItems.reduce((s, r) => s + r.actualCost, 0);
   const actualProfit = contractAmountFromProject - actualCost;
 
+  // 工種名 → 実績原価（フォールバック用：仕入先なしの集計）
+  const actualCostByWorkType = new Map<string, number>();
+  for (const m of monitorItems) {
+    actualCostByWorkType.set(m.workTypeName ?? "", m.actualCost);
+  }
+
+  // 「工種名|仕入先ID」→ 実績原価（予算残モードの行単位の消化率計算に使用）
+  const actualCostByWorkTypeVendor = new Map<string, number>();
+  for (const c of (monitorData?.costByWorkTypeVendor ?? [])) {
+    const key = `${c.workTypeName}|${c.vendorId ?? ""}`;
+    actualCostByWorkTypeVendor.set(key, (actualCostByWorkTypeVendor.get(key) ?? 0) + c.actualCost);
+  }
+
+  // 仕入先未設定の行数（警告表示用）
+  const rowsMissingVendor = rows.filter(r => !r.vendorId && !r.purchaseOrderId).length;
+
   const hasDirty = rows.some(r => r.isDirty || r.isNew);
 
   return (
@@ -585,19 +655,10 @@ export default function BudgetManagement() {
           <div className="bg-white border border-slate-200 rounded p-2 flex flex-wrap gap-4 items-center text-sm">
             <span className="text-xs font-medium text-slate-500">表示設定</span>
             <div className="flex items-center gap-1">
-              <button onClick={() => setDisplayMode("contract")}
-                className={`px-3 py-1 text-xs border rounded-l ${displayMode === "contract" ? "bg-slate-700 text-white border-slate-700" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
-                請負金額
-              </button>
-              <button onClick={() => setDisplayMode("progress")}
-                className={`px-3 py-1 text-xs border rounded-r -ml-px ${displayMode === "progress" ? "bg-slate-700 text-white border-slate-700" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
-                出来高
-              </button>
-            </div>
-            <div className="flex items-center gap-1">
+              <span className="text-xs text-slate-400 mr-1">右端の列：</span>
               <button onClick={() => setProfitMode("profit")}
                 className={`px-3 py-1 text-xs border rounded-l ${profitMode === "profit" ? "bg-slate-700 text-white border-slate-700" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
-                利益
+                予定利益
               </button>
               <button onClick={() => setProfitMode("remaining")}
                 className={`px-3 py-1 text-xs border rounded-r -ml-px ${profitMode === "remaining" ? "bg-slate-700 text-white border-slate-700" : "bg-white border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
@@ -627,25 +688,40 @@ export default function BudgetManagement() {
             )}
           </div>
 
-          {/* ── サマリーKPIバー ── */}
-          <div className="grid grid-cols-6 border border-slate-300 rounded overflow-hidden text-sm">
-            {[
-              { label: "請負金額", value: contractAmountFromProject, pct: null, color: "bg-slate-600" },
-              { label: "実行予算", value: totalRevisedBudget,       pct: pct(totalRevisedBudget, contractAmountFromProject), color: "bg-teal-700" },
-              { label: "予定利益", value: totalExpectedProfit,      pct: pct(totalExpectedProfit, contractAmountFromProject), color: "bg-teal-600" },
-              { label: "発注",     value: orderAmount,              pct: pct(orderAmount, contractAmountFromProject), color: "bg-blue-600" },
-              { label: "原価",     value: actualCost,               pct: pct(actualCost, contractAmountFromProject), color: "bg-orange-600" },
-              { label: "利益",     value: actualProfit,             pct: pct(actualProfit, contractAmountFromProject), color: "bg-emerald-600" },
-            ].map(({ label, value, pct: p, color }) => (
-              <div key={label} className={`${color} text-white text-center py-2`}>
-                <div className="text-xs opacity-80 mb-0.5">{label}</div>
-                <div className="font-bold text-sm leading-tight">
-                  {formatCurrency(value)}
-                  {p && <span className="text-xs font-normal ml-1 opacity-90">{p}</span>}
-                </div>
+          {/* ── サマリーKPIバー ──
+               「予定」（実行予算ベース）と「実績」（実績原価ベース）を明確に分離。
+               実績原価がまだ無い段階では実績利益を「—」にして誤解（利益100%）を防ぐ。 */}
+          {(() => {
+            const hasActual = actualCost > 0 || orderAmount > 0;
+            const kpis: { label: string; value: number; pct: string | null; color: string; muted?: boolean }[] = [
+              { label: "請負金額",   value: contractAmountFromProject, pct: null, color: "bg-slate-600" },
+              { label: "実行予算",   value: totalRevisedBudget,        pct: pct(totalRevisedBudget, contractAmountFromProject), color: "bg-teal-700" },
+              { label: "予定利益",   value: totalExpectedProfit,       pct: pct(totalExpectedProfit, contractAmountFromProject), color: "bg-teal-600" },
+              { label: "発注済",     value: orderAmount,               pct: pct(orderAmount, contractAmountFromProject), color: "bg-blue-600", muted: orderAmount === 0 },
+              { label: "実績原価",   value: actualCost,                pct: pct(actualCost, contractAmountFromProject), color: "bg-orange-600", muted: actualCost === 0 },
+              // 実績利益は実績原価が計上されて初めて意味を持つ。未計上時は「—」表示にする。
+              { label: "実績利益",   value: actualProfit,              pct: hasActual ? pct(actualProfit, contractAmountFromProject) : null, color: "bg-emerald-600", muted: !hasActual },
+            ];
+            return (
+              <div className="grid grid-cols-6 border border-slate-300 rounded overflow-hidden text-sm">
+                {kpis.map(({ label, value, pct: p, color, muted }) => (
+                  <div key={label} className={`${color} text-white text-center py-2 ${muted ? "opacity-50" : ""}`}>
+                    <div className="text-xs opacity-80 mb-0.5">{label}</div>
+                    <div className="font-bold text-sm leading-tight">
+                      {muted && label === "実績利益" ? (
+                        <span title="実績原価の計上後に表示されます">—</span>
+                      ) : (
+                        <>
+                          {formatCurrency(value)}
+                          {p && <span className="text-xs font-normal ml-1 opacity-90">{p}</span>}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            );
+          })()}
 
           {/* ── タブ ── */}
           <Tabs defaultValue="budget" className="bg-white border border-slate-200 rounded">
@@ -749,6 +825,22 @@ export default function BudgetManagement() {
                     onClick={handleDeleteSelected}>
                     <Trash2 className="w-3.5 h-3.5 mr-1" /> 行削除
                   </Button>
+                  {/* 選択行に仕入先を一括設定 */}
+                  <Select value="" onValueChange={handleBulkSetVendor} disabled={selectedRows.size === 0}>
+                    <SelectTrigger className="h-7 text-xs px-2 w-[200px] disabled:opacity-50" title={selectedRows.size === 0 ? "先に行を選択してください" : "選択行にまとめて仕入先を設定"}>
+                      <span className="truncate text-slate-600">
+                        {selectedRows.size > 0 ? `選択${selectedRows.size}行に仕入先を一括設定` : "仕入先を一括設定"}
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {vendors.map(v => (
+                        <SelectItem key={v.id} value={String(v.id)} className="text-xs">
+                          {v.code && <span className="font-mono text-slate-400 mr-1">{v.code}</span>}
+                          {v.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Button
                     size="sm"
                     className="h-7 text-xs px-3 bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
@@ -763,6 +855,17 @@ export default function BudgetManagement() {
                   </Button>
                 </div>
               </div>
+
+              {/* 仕入先未設定の警告バナー */}
+              {rowsMissingVendor > 0 && (
+                <div className="mx-3 mt-2 flex items-center gap-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  <span className="text-base leading-none">⚠</span>
+                  <span>
+                    <strong>{rowsMissingVendor}件</strong>の行に仕入先が未設定です。
+                    仕入先を入れると、仕入入力の実績がその行に正しく紐づき、消化率が計算されます（未設定の行は消化率0%になります）。
+                  </span>
+                </div>
+              )}
 
               {/* 明細テーブル */}
               <div className="overflow-x-auto">
@@ -784,8 +887,12 @@ export default function BudgetManagement() {
                       ))}
                       {showExpectedProfit && (
                         <>
-                          <th className="border border-teal-600 px-2 py-1.5 text-right font-semibold" style={{ width: "110px" }}>予定利益</th>
-                          <th className="border border-teal-600 px-2 py-1.5 text-right font-semibold" style={{ width: "80px" }}>予定利益率</th>
+                          <th className="border border-teal-600 px-2 py-1.5 text-right font-semibold" style={{ width: "110px" }}>
+                            {profitMode === "profit" ? "予定利益" : "予算残"}
+                          </th>
+                          <th className="border border-teal-600 px-2 py-1.5 text-right font-semibold" style={{ width: "80px" }}>
+                            {profitMode === "profit" ? "予定利益率" : "消化率"}
+                          </th>
                         </>
                       )}
                       <th className="border border-teal-600 px-1 py-1.5 text-center" style={{ width: "36px" }} title="上の行を複写">複写</th>
@@ -811,6 +918,14 @@ export default function BudgetManagement() {
                         const profit = parseN(row.contractAmount) - parseN(row.revisedBudget);
                         const ca = parseN(row.contractAmount);
                         const profitRate = ca > 0 ? ((profit / ca) * 100).toFixed(1) + "%" : "—";
+                        // 予算残モード用：予算残 = 実行予算 − 実績原価、消化率 = 実績原価 / 実行予算
+                        // 実績は「工種＋仕入先」で突合（仕入先未設定の行は突合できないため 0）
+                        const rb = parseN(row.revisedBudget);
+                        const rowActualCost = row.vendorId
+                          ? (actualCostByWorkTypeVendor.get(`${row.workTypeName}|${row.vendorId}`) ?? 0)
+                          : 0;
+                        const remaining = rb - rowActualCost;
+                        const consumptionRate = rb > 0 ? ((rowActualCost / rb) * 100).toFixed(1) + "%" : "—";
                         const isSelected = selectedRows.has(rowIdx);
                         const isDirty = row.isDirty || row.isNew;
                         const isOrdered = !!row.purchaseOrderId;
@@ -825,9 +940,11 @@ export default function BudgetManagement() {
                                 
                                 onCheckedChange={() => handleToggleRow(rowIdx)} />
                             </td>
-                            {COLS.filter(col => !col.hidden).map(col => (
+                            {COLS.filter(col => !col.hidden).map(col => {
+                              const vendorMissing = col.key === "vendorId" && !row.vendorId && !isOrdered;
+                              return (
                               <td key={col.key}
-                                className={`border border-slate-100 p-0 ${col.align === "right" ? "text-right" : ""}`}>
+                                className={`border p-0 ${col.align === "right" ? "text-right" : ""} ${vendorMissing ? "border-amber-300 bg-amber-50" : "border-slate-100"}`}>
                                 {col.key === "workTypeCode" ? (
                                   <Select
                                     value={row.workTypeName || "__none__"}
@@ -927,6 +1044,7 @@ export default function BudgetManagement() {
                                   {row.vendorId && (
                                     <UnitPricePicker
                                       vendorId={row.vendorId}
+                                      initialWorkTypeCode={row.workTypeCode}
                                       onSelect={(sel: UnitPriceSelection) => {
                                         setRows(prev => prev.map((r, i) => {
                                           if (i !== rowIdx) return r;
@@ -948,30 +1066,49 @@ export default function BudgetManagement() {
                                   )}
                                   </div>
                                   )
+                                ) : col.numeric ? (
+                                  <BudgetNumberCell
+                                    ref={el => { cellRefs.current[`${rowIdx}-${col.key}`] = el; }}
+                                    value={row[col.key] as string}
+                                    onChange={v => handleCellChange(rowIdx, col.key, v)}
+                                    onKeyDown={e => handleKeyDown(e, rowIdx, col.key)}
+                                    emphasis={col.key === "revisedBudget"}
+                                    className={col.key === "contractAmount" ? "text-slate-600" : ""}
+                                  />
                                 ) : (
                                   <input
                                     ref={el => { cellRefs.current[`${rowIdx}-${col.key}`] = el; }}
-                                    type={col.numeric ? "number" : "text"}
-                                    value={col.numeric && (row[col.key] === "0" || row[col.key] === 0) ? "" : row[col.key] as string}
+                                    type="text"
+                                    value={row[col.key] as string}
                                     onChange={e => handleCellChange(rowIdx, col.key, e.target.value)}
                                     onKeyDown={e => handleKeyDown(e, rowIdx, col.key)}
-                                    className={`w-full h-full px-2 py-1 bg-transparent outline-none focus:bg-teal-50 focus:ring-1 focus:ring-teal-400 text-xs
-                                      ${col.numeric ? "text-right" : ""}
-                                      ${col.key === "contractAmount" ? "text-slate-600" : ""}`}
+                                    className="w-full h-full px-2 py-1 bg-transparent outline-none focus:bg-teal-50 focus:ring-1 focus:ring-teal-400 text-xs"
                                     style={{ minHeight: "28px" }}
                                   />
                                 )}
                               </td>
-                            ))}
+                              );
+                            })}
                             {showExpectedProfit && (
-                              <>
-                                <td className="border border-slate-100 px-2 py-1 text-right text-slate-700">
-                                  {profit !== 0 ? profit.toLocaleString("ja-JP") : ""}
-                                </td>
-                                <td className={`border border-slate-100 px-2 py-1 text-right font-medium ${profit < 0 ? "text-red-600" : "text-slate-700"}`}>
-                                  {profitRate}
-                                </td>
-                              </>
+                              profitMode === "profit" ? (
+                                <>
+                                  <td className="border border-slate-100 px-2 py-1 text-right text-slate-700">
+                                    {profit !== 0 ? profit.toLocaleString("ja-JP") : ""}
+                                  </td>
+                                  <td className={`border border-slate-100 px-2 py-1 text-right font-medium ${profit < 0 ? "text-red-600" : "text-slate-700"}`}>
+                                    {profitRate}
+                                  </td>
+                                </>
+                              ) : (
+                                <>
+                                  <td className={`border border-slate-100 px-2 py-1 text-right ${remaining < 0 ? "text-red-600" : "text-slate-700"}`}>
+                                    {rb !== 0 ? remaining.toLocaleString("ja-JP") : ""}
+                                  </td>
+                                  <td className={`border border-slate-100 px-2 py-1 text-right font-medium ${rowActualCost > rb ? "text-red-600" : "text-slate-700"}`}>
+                                    {consumptionRate}
+                                  </td>
+                                </>
+                              )
                             )}
                             <td className="border border-slate-100 px-1 py-0.5 text-center">
                               <button
@@ -1004,14 +1141,25 @@ export default function BudgetManagement() {
                           {fmt(totalRevisedBudget)}
                         </td>
                         {showExpectedProfit && (
-                          <>
-                            <td className="border border-slate-200 px-2 py-1.5 text-right text-slate-700">
-                              {fmt(totalExpectedProfit)}
-                            </td>
-                            <td className={`border border-slate-200 px-2 py-1.5 text-right ${totalExpectedProfit < 0 ? "text-red-600" : "text-slate-700"}`}>
-                              {pct(totalExpectedProfit, contractAmountFromProject)}
-                            </td>
-                          </>
+                          profitMode === "profit" ? (
+                            <>
+                              <td className="border border-slate-200 px-2 py-1.5 text-right text-slate-700">
+                                {fmt(totalExpectedProfit)}
+                              </td>
+                              <td className={`border border-slate-200 px-2 py-1.5 text-right ${totalExpectedProfit < 0 ? "text-red-600" : "text-slate-700"}`}>
+                                {pct(totalExpectedProfit, contractAmountFromProject)}
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className={`border border-slate-200 px-2 py-1.5 text-right ${(totalRevisedBudget - actualCost) < 0 ? "text-red-600" : "text-slate-700"}`}>
+                                {fmt(totalRevisedBudget - actualCost)}
+                              </td>
+                              <td className={`border border-slate-200 px-2 py-1.5 text-right ${actualCost > totalRevisedBudget ? "text-red-600" : "text-slate-700"}`}>
+                                {pct(actualCost, totalRevisedBudget)}
+                              </td>
+                            </>
+                          )
                         )}
                         <td className="border border-slate-200 px-1 py-1.5" />
                       </tr>
@@ -1047,8 +1195,10 @@ export default function BudgetManagement() {
                           </td>
                         </tr>
                       ) : monitorItems.map((row, i) => {
-                        const budgetRow = rows.find(r => r.workTypeCode === row.workTypeCode);
-                        const ca = budgetRow ? parseN(budgetRow.contractAmount) : 0;
+                        // 請負金額は同じ工種名の予算行を合計（工種コードは空のことがあるため名前で集計）
+                        const ca = rows
+                          .filter(r => r.workTypeName === row.workTypeName)
+                          .reduce((s, r) => s + parseN(r.contractAmount), 0);
                         const profit = ca - row.revisedBudget;
                         const profitRate = ca > 0 ? (profit / ca * 100).toFixed(1) + "%" : "—";
                         return (

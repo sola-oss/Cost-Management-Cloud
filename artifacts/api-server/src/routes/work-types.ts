@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, workTypesTable } from "@workspace/db";
+import { db, workTypesTable, vendorsTable } from "@workspace/db";
 import { asc, eq, max, sql } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -11,11 +11,15 @@ function parseId(raw: string): number | null {
 
 router.get("/", async (req, res) => {
   try {
-    const items = await db
-      .select()
+    const rows = await db
+      .select({
+        wt: workTypesTable,
+        defaultVendorName: vendorsTable.name,
+      })
       .from(workTypesTable)
+      .leftJoin(vendorsTable, eq(workTypesTable.defaultVendorId, vendorsTable.id))
       .orderBy(asc(workTypesTable.code));
-    res.json(items);
+    res.json(rows.map((r) => ({ ...r.wt, defaultVendorName: r.defaultVendorName ?? null })));
   } catch (err) {
     req.log.error({ err }, "Failed to list work types");
     res.status(500).json({ message: "Internal server error" });
@@ -46,7 +50,7 @@ router.get("/:id", async (req, res) => {
 
 router.post("/", async (req, res) => {
   try {
-    const { name, constructionType, notes } = req.body;
+    const { name, constructionType, notes, defaultVendorId } = req.body;
     if (!name) {
       res.status(400).json({ message: "name は必須です" });
       return;
@@ -58,7 +62,12 @@ router.post("/", async (req, res) => {
     const code = String(nextNumeric).padStart(4, "0");
     const [item] = await db
       .insert(workTypesTable)
-      .values({ code, name, constructionType: constructionType ?? "その他", notes: notes ?? null })
+      .values({
+        code, name,
+        constructionType: constructionType ?? "その他",
+        notes: notes ?? null,
+        defaultVendorId: defaultVendorId != null ? Number(defaultVendorId) : null,
+      })
       .returning();
     res.status(201).json(item);
   } catch (err) {
@@ -78,12 +87,13 @@ router.patch("/:id", async (req, res) => {
     return;
   }
   try {
-    const { code, name, constructionType, notes } = req.body;
-    const updates: Partial<{ code: string; name: string; constructionType: string; notes: string | null }> = {};
+    const { code, name, constructionType, notes, defaultVendorId } = req.body;
+    const updates: Partial<{ code: string; name: string; constructionType: string; notes: string | null; defaultVendorId: number | null }> = {};
     if (code !== undefined) updates.code = code;
     if (name !== undefined) updates.name = name;
     if (constructionType !== undefined) updates.constructionType = constructionType;
     if (notes !== undefined) updates.notes = notes;
+    if (defaultVendorId !== undefined) updates.defaultVendorId = defaultVendorId != null ? Number(defaultVendorId) : null;
     const [item] = await db
       .update(workTypesTable)
       .set(updates)

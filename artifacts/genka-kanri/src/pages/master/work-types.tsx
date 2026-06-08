@@ -17,8 +17,17 @@ interface WorkType {
   name: string;
   constructionType: string;
   notes: string | null;
+  defaultVendorId: number | null;
+  defaultVendorName: string | null;
   createdAt: string;
 }
+
+interface VendorLite {
+  id: number;
+  name: string;
+}
+
+const NONE_VENDOR = "__none__";
 
 const CONSTRUCTION_TYPES = ["建築", "土木", "設備", "その他"] as const;
 
@@ -37,16 +46,25 @@ async function fetchWorkTypes(): Promise<WorkType[]> {
   return res.json();
 }
 
+async function fetchVendors(): Promise<VendorLite[]> {
+  const res = await fetch("/api/vendors");
+  if (!res.ok) throw new Error("Failed to fetch vendors");
+  const data = await res.json();
+  return Array.isArray(data) ? data : (data.items ?? []);
+}
+
 type FormValues = {
   name: string;
   constructionType: string;
   notes: string;
+  defaultVendorId: string;
 };
 
 const defaultForm: FormValues = {
   name: "",
   constructionType: "建築",
   notes: "",
+  defaultVendorId: NONE_VENDOR,
 };
 
 export default function WorkTypeMaster() {
@@ -56,6 +74,10 @@ export default function WorkTypeMaster() {
   const { data: workTypes = [], isLoading } = useQuery({
     queryKey: QUERY_KEY,
     queryFn: fetchWorkTypes,
+  });
+  const { data: vendors = [] } = useQuery({
+    queryKey: ["/api/vendors"],
+    queryFn: fetchVendors,
   });
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -76,6 +98,7 @@ export default function WorkTypeMaster() {
       name: item.name,
       constructionType: item.constructionType,
       notes: item.notes ?? "",
+      defaultVendorId: item.defaultVendorId ? String(item.defaultVendorId) : NONE_VENDOR,
     });
     setDialogOpen(true);
   }
@@ -101,6 +124,7 @@ export default function WorkTypeMaster() {
             name: form.name.trim(),
             constructionType: form.constructionType,
             notes: form.notes.trim() || null,
+            defaultVendorId: form.defaultVendorId === NONE_VENDOR ? null : Number(form.defaultVendorId),
           }),
         });
         if (!res.ok) {
@@ -116,6 +140,7 @@ export default function WorkTypeMaster() {
             name: form.name.trim(),
             constructionType: form.constructionType,
             notes: form.notes.trim() || null,
+            defaultVendorId: form.defaultVendorId === NONE_VENDOR ? null : Number(form.defaultVendorId),
           }),
         });
         if (!res.ok) {
@@ -188,6 +213,7 @@ export default function WorkTypeMaster() {
                 <TableHead className="w-[100px] font-semibold text-slate-600">工種コード</TableHead>
                 <TableHead className="font-semibold text-slate-600">工種名</TableHead>
                 <TableHead className="w-[120px] font-semibold text-slate-600">工事区分</TableHead>
+                <TableHead className="w-[160px] font-semibold text-slate-600">標準仕入先</TableHead>
                 <TableHead className="font-semibold text-slate-600">備考</TableHead>
                 <TableHead className="w-[100px]"></TableHead>
               </TableRow>
@@ -196,14 +222,14 @@ export default function WorkTypeMaster() {
               {isLoading ? (
                 [1, 2, 3, 4, 5].map((i) => (
                   <TableRow key={i}>
-                    <TableCell colSpan={5}>
+                    <TableCell colSpan={6}>
                       <div className="h-8 bg-slate-100 rounded animate-pulse" />
                     </TableCell>
                   </TableRow>
                 ))
               ) : workTypes.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-12 text-slate-400 text-sm">
+                  <TableCell colSpan={6} className="text-center py-12 text-slate-400 text-sm">
                     工種が登録されていません。「新規登録」から追加してください。
                   </TableCell>
                 </TableRow>
@@ -223,6 +249,9 @@ export default function WorkTypeMaster() {
                       >
                         {item.constructionType}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-slate-700">
+                      {item.defaultVendorName || <span className="text-slate-300">未設定</span>}
                     </TableCell>
                     <TableCell className="text-xs text-slate-500 max-w-xs truncate">
                       {item.notes || <span className="text-slate-300">—</span>}
@@ -297,6 +326,26 @@ export default function WorkTypeMaster() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium text-slate-700">標準仕入先</Label>
+              <Select
+                value={form.defaultVendorId}
+                onValueChange={(v) => setForm((f) => ({ ...f, defaultVendorId: v }))}
+              >
+                <SelectTrigger className="text-sm">
+                  <SelectValue placeholder="仕入先を選択（任意）" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE_VENDOR} className="text-sm text-slate-400">未設定</SelectItem>
+                  {vendors.map((v) => (
+                    <SelectItem key={v.id} value={String(v.id)} className="text-sm">
+                      {v.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-slate-400">見積取込時にこの工種の予算行へ自動で入ります（後から変更可）</p>
             </div>
             <div className="space-y-1.5">
               <Label className="text-sm font-medium text-slate-700">備考</Label>
