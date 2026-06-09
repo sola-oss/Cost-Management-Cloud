@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useListProjects, getListProjectsQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,8 @@ import { Link } from "wouter";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Plus, Search, FolderKanban, Calculator } from "lucide-react";
+import { Plus, Search, FolderKanban, Calculator, Info } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatPercent } from "@/lib/utils";
@@ -28,8 +29,21 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function Projects() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  const params = statusFilter !== "all" ? { status: statusFilter as "planning" | "active" | "completed" | "suspended" } : undefined;
+  // 入力から300ms後に検索を確定（打つたびにAPIを叩かない）
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const params = (statusFilter !== "all" || debouncedSearch)
+    ? {
+        ...(statusFilter !== "all" ? { status: statusFilter as "planning" | "active" | "completed" | "suspended" } : {}),
+        ...(debouncedSearch ? { search: debouncedSearch } : {}),
+      }
+    : undefined;
 
   const { data, isLoading, isError } = useListProjects(params, {
     query: { queryKey: getListProjectsQueryKey(params) },
@@ -60,7 +74,12 @@ export default function Projects() {
           <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
             <div className="relative flex-1 max-w-md w-full">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <Input placeholder="工事名や番号で検索..." className="pl-9 bg-slate-50" />
+              <Input
+                placeholder="工事名・番号・得意先で検索..."
+                className="pl-9 bg-slate-50"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-[180px]">
@@ -88,7 +107,20 @@ export default function Projects() {
                   <TableHead className="text-right">請負金額</TableHead>
                   <TableHead className="text-right">実績原価</TableHead>
                   <TableHead className="text-center w-[180px]">予算消化率</TableHead>
-                  <TableHead className="text-right">粗利率</TableHead>
+                  <TableHead className="text-right">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className="inline-flex items-center gap-1 cursor-help">
+                          粗利率
+                          <Info className="w-3.5 h-3.5 text-slate-400" />
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-xs text-xs">
+                        <p className="font-medium">予定粗利率 ＝（請負金額 − 実行予算）÷ 請負金額</p>
+                        <p className="mt-1 text-slate-300">計画段階の採算（実績原価ではなく実行予算で計算）。実行予算が未設定の工事は「—」表示。</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TableHead>
                   <TableHead className="w-[80px]"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -149,9 +181,13 @@ export default function Projects() {
                         </div>
                       </TableCell>
                       <TableCell className="text-right font-medium">
-                        <span className={project.grossProfitRate < 10 ? "text-destructive" : "text-emerald-600"}>
-                          {formatPercent(project.grossProfitRate)}
-                        </span>
+                        {project.grossProfitRate == null ? (
+                          <span className="text-slate-300" title="実行予算が未設定のため算定できません">—</span>
+                        ) : (
+                          <span className={project.grossProfitRate < 10 ? "text-destructive" : "text-emerald-600"}>
+                            {formatPercent(project.grossProfitRate)}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1">

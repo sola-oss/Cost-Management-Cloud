@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, sql, and, inArray } from "drizzle-orm";
-import { db, projectsTable, costItemsTable, budgetsTable, invoicesTable, invoicePaymentsTable, companySettingsTable, constructionHistoriesTable } from "@workspace/db";
+import { eq, sql, and, or, ilike, inArray } from "drizzle-orm";
+import { db, projectsTable, costItemsTable, budgetsTable, budgetItemsTable, invoicesTable, invoicePaymentsTable, companySettingsTable, constructionHistoriesTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -22,8 +22,11 @@ function toDateString(val: unknown): string | null {
 
 function buildProjectListItem(project: typeof projectsTable.$inferSelect, totalBudget: number, totalActualCost: number) {
   const contractAmount = parseNumeric(project.contractAmount);
-  const grossProfit = contractAmount - totalActualCost;
-  const grossProfitRate = contractAmount > 0 ? (grossProfit / contractAmount) * 100 : 0;
+  // 粗利率は「予定」ベース：（請負金額 − 実行予算）÷ 請負金額。実行予算が未設定なら算定不可（null）
+  const plannedGrossProfit = contractAmount - totalBudget;
+  const grossProfitRate = (contractAmount > 0 && totalBudget > 0)
+    ? Math.round((plannedGrossProfit / contractAmount) * 1000) / 10
+    : null;
   const budgetUsageRate = totalBudget > 0 ? (totalActualCost / totalBudget) * 100 : 0;
 
   return {
@@ -38,18 +41,29 @@ function buildProjectListItem(project: typeof projectsTable.$inferSelect, totalB
     totalBudget,
     totalActualCost,
     budgetUsageRate: Math.round(budgetUsageRate * 10) / 10,
-    grossProfitRate: Math.round(grossProfitRate * 10) / 10,
+    grossProfitRate,
   };
 }
 
 router.get("/", async (req, res) => {
   try {
-    const { status, page = "1", limit = "20" } = req.query as Record<string, string>;
+    const { status, search, page = "1", limit = "20" } = req.query as Record<string, string>;
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
     const offset = (pageNum - 1) * limitNum;
 
-    const whereConditions = status ? eq(projectsTable.status, status as any) : undefined;
+    const conditions = [];
+    if (status) conditions.push(eq(projectsTable.status, status as any));
+    if (search && search.trim()) {
+      const q = `%${search.trim()}%`;
+      // 工事名・工事番号・得意先名で検索
+      conditions.push(or(
+        ilike(projectsTable.name, q),
+        ilike(projectsTable.projectCode, q),
+        ilike(projectsTable.clientName, q),
+      ));
+    }
+    const whereConditions = conditions.length > 0 ? and(...conditions) : undefined;
 
     const [projects, countResult] = await Promise.all([
       db.select().from(projectsTable)
@@ -65,10 +79,10 @@ router.get("/", async (req, res) => {
     const [budgetTotals, costTotals] = await Promise.all([
       projectIds.length > 0
         ? db.select({
-            projectId: budgetsTable.projectId,
-            total: sql<string>`SUM(${budgetsTable.budgetAmount})`,
-          }).from(budgetsTable).where(inArray(budgetsTable.projectId, projectIds))
-          .groupBy(budgetsTable.projectId)
+            projectId: budgetItemsTable.projectId,
+            total: sql<string>`SUM(${budgetItemsTable.revisedBudget})`,
+          }).from(budgetItemsTable).where(inArray(budgetItemsTable.projectId, projectIds))
+          .groupBy(budgetItemsTable.projectId)
         : [],
       projectIds.length > 0
         ? db.select({
@@ -172,12 +186,15 @@ router.get("/:id", async (req, res) => {
     const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, id));
     if (!project) return res.status(404).json({ message: "工事が見つかりません" });
 
-    const [costItems, budgets] = await Promise.all([
+    const [costItems, budgets, budgetItemRows] = await Promise.all([
       db.select().from(costItemsTable).where(eq(costItemsTable.projectId, id)).orderBy(costItemsTable.incurredDate),
       db.select().from(budgetsTable).where(eq(budgetsTable.projectId, id)),
+      db.select({ total: sql<string>`COALESCE(SUM(${budgetItemsTable.revisedBudget}),0)` })
+        .from(budgetItemsTable).where(eq(budgetItemsTable.projectId, id)),
     ]);
 
-    const totalBudget = budgets.reduce((sum, b) => sum + parseNumeric(b.budgetAmount), 0);
+    // 実行予算（budget_items）の合計を予算とする（旧budgetsは下の区分別表示でのみ使用）
+    const totalBudget = parseNumeric(budgetItemRows[0]?.total ?? "0");
     const totalActualCost = costItems.reduce((sum, c) => sum + parseNumeric(c.amount), 0);
     const contractAmount = parseNumeric(project.contractAmount);
     const grossProfit = contractAmount - totalActualCost;
@@ -318,9 +335,10 @@ router.get("/:id/summary", async (req, res) => {
     const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, id));
     if (!project) return res.status(404).json({ message: "工事が見つかりません" });
 
-    const [costItems, budgets] = await Promise.all([
+    const [costItems, budgetItemRows] = await Promise.all([
       db.select().from(costItemsTable).where(eq(costItemsTable.projectId, id)),
-      db.select().from(budgetsTable).where(eq(budgetsTable.projectId, id)),
+      db.select({ total: sql<string>`COALESCE(SUM(${budgetItemsTable.revisedBudget}),0)` })
+        .from(budgetItemsTable).where(eq(budgetItemsTable.projectId, id)),
     ]);
 
     const costByCategory = { material: 0, labor: 0, subcontract: 0, expense: 0 };
@@ -328,11 +346,18 @@ router.get("/:id/summary", async (req, res) => {
       costByCategory[ci.category as keyof typeof costByCategory] += parseNumeric(ci.amount);
     }
 
-    const totalBudget = budgets.reduce((sum, b) => sum + parseNumeric(b.budgetAmount), 0);
+    // 実行予算（budget_items）の合計を予算とする
+    const totalBudget = parseNumeric(budgetItemRows[0]?.total ?? "0");
     const totalActualCost = Object.values(costByCategory).reduce((s, v) => s + v, 0);
     const contractAmount = parseNumeric(project.contractAmount);
+    // 実績粗利：請負 − 実績原価（進捗にあわせた実態）
     const grossProfit = contractAmount - totalActualCost;
     const grossProfitRate = contractAmount > 0 ? (grossProfit / contractAmount) * 100 : 0;
+    // 予定粗利：請負 − 実行予算（計画段階の採算）。実行予算未設定なら算定不可（null）
+    const plannedGrossProfit = contractAmount - totalBudget;
+    const plannedGrossProfitRate = (contractAmount > 0 && totalBudget > 0)
+      ? Math.round((plannedGrossProfit / contractAmount) * 1000) / 10
+      : null;
     const budgetUsageRate = totalBudget > 0 ? (totalActualCost / totalBudget) * 100 : 0;
 
     return res.json({
@@ -342,6 +367,8 @@ router.get("/:id/summary", async (req, res) => {
       totalActualCost,
       grossProfit,
       grossProfitRate: Math.round(grossProfitRate * 10) / 10,
+      plannedGrossProfit,
+      plannedGrossProfitRate,
       budgetUsageRate: Math.round(budgetUsageRate * 10) / 10,
       costBreakdown: costByCategory,
     });

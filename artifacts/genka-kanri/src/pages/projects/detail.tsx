@@ -553,16 +553,28 @@ function FinancialTab({ projectId, contractAmount }: { projectId: number; contra
             )}
           </CardContent>
         </Card>
-        <Card className={`border-none ${(summary?.grossProfit ?? 0) < 0 ? "bg-red-50" : "bg-emerald-50"}`}>
+        <Card className="border-none bg-emerald-50">
           <CardHeader className="py-3 pb-1">
-            <CardTitle className="text-xs text-slate-500 font-medium">予想粗利</CardTitle>
+            <CardTitle className="text-xs text-slate-500 font-medium">粗利（予定／実績）</CardTitle>
           </CardHeader>
-          <CardContent className="pb-4">
-            <div className={`text-lg font-bold ${(summary?.grossProfit ?? 0) < 0 ? "text-destructive" : "text-emerald-600"}`}>
-              {formatCurrency(summary?.grossProfit ?? 0)}
+          <CardContent className="pb-4 space-y-1.5">
+            <div>
+              <span className="text-[11px] text-slate-500 mr-1.5">予定</span>
+              {((summary as any)?.plannedGrossProfitRate ?? null) === null ? (
+                <span className="text-sm text-slate-300">—（実行予算 未設定）</span>
+              ) : (
+                <span className="text-sm font-bold text-emerald-700">
+                  {formatCurrency((summary as any)?.plannedGrossProfit ?? 0)}
+                  <span className="text-xs font-medium ml-1">（{formatPercent((summary as any)?.plannedGrossProfitRate ?? 0)}）</span>
+                </span>
+              )}
             </div>
-            <div className={`text-xs font-medium ${(summary?.grossProfitRate ?? 0) < 10 ? "text-destructive" : "text-emerald-600"}`}>
-              粗利率 {formatPercent(summary?.grossProfitRate ?? 0)}
+            <div>
+              <span className="text-[11px] text-slate-500 mr-1.5">実績</span>
+              <span className={`text-sm font-bold ${(summary?.grossProfit ?? 0) < 0 ? "text-destructive" : "text-slate-700"}`}>
+                {formatCurrency(summary?.grossProfit ?? 0)}
+                <span className="text-xs font-medium ml-1">（{formatPercent(summary?.grossProfitRate ?? 0)}）</span>
+              </span>
             </div>
           </CardContent>
         </Card>
@@ -1535,16 +1547,28 @@ export default function ProjectDetail() {
                 </div>
               </CardContent>
             </Card>
-            <Card className={`border-none shadow-sm ${summary.grossProfit < 0 ? "bg-red-50" : ""}`}>
+            <Card className="border-none shadow-sm">
               <CardHeader className="py-3 pb-1">
-                <CardTitle className="text-xs text-slate-500 font-medium">予想粗利</CardTitle>
+                <CardTitle className="text-xs text-slate-500 font-medium">粗利（予定／実績）</CardTitle>
               </CardHeader>
-              <CardContent className="pb-3">
-                <div className={`text-lg font-bold ${summary.grossProfit < 0 ? "text-destructive" : "text-emerald-600"}`}>
-                  {formatCurrency(summary.grossProfit)}
+              <CardContent className="pb-3 space-y-1.5">
+                <div>
+                  <span className="text-[11px] text-slate-500 mr-1.5">予定</span>
+                  {((summary as any).plannedGrossProfitRate ?? null) === null ? (
+                    <span className="text-sm text-slate-300">—（実行予算 未設定）</span>
+                  ) : (
+                    <span className="text-sm font-bold text-emerald-700">
+                      {formatCurrency((summary as any).plannedGrossProfit ?? 0)}
+                      <span className="text-xs font-medium ml-1">（{formatPercent((summary as any).plannedGrossProfitRate ?? 0)}）</span>
+                    </span>
+                  )}
                 </div>
-                <div className={`text-xs font-medium ${summary.grossProfitRate < 10 ? "text-destructive" : "text-emerald-600"}`}>
-                  粗利率 {formatPercent(summary.grossProfitRate)}
+                <div>
+                  <span className="text-[11px] text-slate-500 mr-1.5">実績</span>
+                  <span className={`text-sm font-bold ${summary.grossProfit < 0 ? "text-destructive" : "text-slate-700"}`}>
+                    {formatCurrency(summary.grossProfit)}
+                    <span className="text-xs font-medium ml-1">（{formatPercent(summary.grossProfitRate)}）</span>
+                  </span>
                 </div>
               </CardContent>
             </Card>

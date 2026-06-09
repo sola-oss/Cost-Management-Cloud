@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, sql, desc, inArray } from "drizzle-orm";
-import { db, projectsTable, costItemsTable, budgetsTable } from "@workspace/db";
+import { db, projectsTable, costItemsTable, budgetsTable, budgetItemsTable } from "@workspace/db";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -29,9 +29,9 @@ router.get("/overview", async (_req, res) => {
     const [budgetTotals, costTotals] = await Promise.all([
       projectIds.length > 0
         ? db.select({
-            projectId: budgetsTable.projectId,
-            total: sql<string>`SUM(${budgetsTable.budgetAmount})`,
-          }).from(budgetsTable).where(inArray(budgetsTable.projectId, projectIds)).groupBy(budgetsTable.projectId)
+            projectId: budgetItemsTable.projectId,
+            total: sql<string>`SUM(${budgetItemsTable.revisedBudget})`,
+          }).from(budgetItemsTable).where(inArray(budgetItemsTable.projectId, projectIds)).groupBy(budgetItemsTable.projectId)
         : [],
       projectIds.length > 0
         ? db.select({
@@ -47,21 +47,26 @@ router.get("/overview", async (_req, res) => {
     const totalContractAmount = projects.reduce((sum, p) => sum + parseNumeric(p.contractAmount), 0);
     const totalActualCost = Array.from(costMap.values()).reduce((s, v) => s + v, 0);
 
-    const profitRates = projects.map(p => {
-      const contractAmount = parseNumeric(p.contractAmount);
-      const actualCost = costMap.get(p.id) ?? 0;
-      return contractAmount > 0 ? ((contractAmount - actualCost) / contractAmount) * 100 : 0;
-    });
-    const averageGrossProfitRate = profitRates.length > 0
-      ? Math.round((profitRates.reduce((s, r) => s + r, 0) / profitRates.length) * 10) / 10
+    // 平均粗利率は「予定」ベース：（請負 − 実行予算）÷ 請負。実行予算が設定された工事だけで平均する
+    const plannedRates = projects
+      .filter(p => (budgetMap.get(p.id) ?? 0) > 0 && parseNumeric(p.contractAmount) > 0)
+      .map(p => {
+        const contractAmount = parseNumeric(p.contractAmount);
+        const budget = budgetMap.get(p.id) ?? 0;
+        return ((contractAmount - budget) / contractAmount) * 100;
+      });
+    const averageGrossProfitRate = plannedRates.length > 0
+      ? Math.round((plannedRates.reduce((s, r) => s + r, 0) / plannedRates.length) * 10) / 10
       : 0;
 
     function buildItem(p: typeof projectsTable.$inferSelect) {
       const contractAmount = parseNumeric(p.contractAmount);
       const totalBudget = budgetMap.get(p.id) ?? 0;
       const totalActualCost = costMap.get(p.id) ?? 0;
-      const grossProfit = contractAmount - totalActualCost;
-      const grossProfitRate = contractAmount > 0 ? (grossProfit / contractAmount) * 100 : 0;
+      // 予定粗利率（請負 − 実行予算）に統一
+      const grossProfitRate = (contractAmount > 0 && totalBudget > 0)
+        ? Math.round(((contractAmount - totalBudget) / contractAmount) * 1000) / 10
+        : 0;
       const budgetUsageRate = totalBudget > 0 ? (totalActualCost / totalBudget) * 100 : 0;
       return {
         id: p.id, projectCode: p.projectCode, name: p.name, clientName: p.clientName,
