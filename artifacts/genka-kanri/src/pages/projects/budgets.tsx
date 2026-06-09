@@ -593,6 +593,10 @@ export default function BudgetManagement() {
   const totalInitialBudget  = rows.reduce((s, r) => s + parseN(r.initialBudget), 0);
   const totalContractAmount = rows.reduce((s, r) => s + parseN(r.contractAmount), 0);
   const totalExpectedProfit = contractAmountFromProject - totalRevisedBudget;
+  // 工事の請負金額と、予算行の請負合計のズレ（入力ミス検知用。両方>0で値が違うときだけ警告）
+  const contractMismatch =
+    contractAmountFromProject > 0 && totalContractAmount > 0 &&
+    contractAmountFromProject !== totalContractAmount;
   const { data: monitorData } = useMonitorData(projectId);
   const monitorItems = monitorData?.items ?? [];
   const orderAmount  = monitorItems.reduce((s, r) => s + r.orderedAmount, 0);
@@ -866,6 +870,18 @@ export default function BudgetManagement() {
                   <span>
                     <strong>{rowsMissingVendor}件</strong>の行に仕入先が未設定です。
                     仕入先を入れると、仕入入力の実績がその行に正しく紐づき、消化率が計算されます（未設定の行は消化率0%になります）。
+                  </span>
+                </div>
+              )}
+
+              {/* 請負金額の不一致 警告バナー */}
+              {contractMismatch && (
+                <div className="mx-3 mt-2 flex items-center gap-2 rounded border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  <span className="text-base leading-none">⚠</span>
+                  <span>
+                    予算行の請負合計（<strong>{totalContractAmount.toLocaleString("ja-JP")}</strong>）が、
+                    工事の請負金額（<strong>{contractAmountFromProject.toLocaleString("ja-JP")}</strong>）と一致しません。
+                    各行の請負金額を見直してください（一致するまで予定利益の数字が画面によって食い違います）。
                   </span>
                 </div>
               )}

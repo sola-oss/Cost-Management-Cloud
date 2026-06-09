@@ -333,7 +333,7 @@ router.post("/bulk-create-purchase-orders", async (req, res) => {
             vendorId,
             orderDate,
             expectedDeliveryDate: deliveryDate ?? null,
-            status: "draft",
+            status: "ordered",
             subtotal: String(subtotal),
             taxAmount: String(taxAmount),
             totalAmount: String(totalAmount),
@@ -437,7 +437,11 @@ router.get("/monitor", async (req, res) => {
         .from(purchaseOrderItemsTable)
         .innerJoin(purchaseOrdersTable, eq(purchaseOrderItemsTable.purchaseOrderId, purchaseOrdersTable.id))
         .leftJoin(workTypesTable, eq(purchaseOrderItemsTable.workTypeId, workTypesTable.id))
-        .where(eq(purchaseOrdersTable.projectId, projectId))
+        // 発注済として数えるのは「発注済・一部納品・完納」のみ（下書き・キャンセルは除外）
+        .where(and(
+          eq(purchaseOrdersTable.projectId, projectId),
+          inArray(purchaseOrdersTable.status, ["ordered", "partial", "completed"]),
+        ))
         .groupBy(sql`coalesce(${workTypesTable.name}, '未分類')`),
     ]);
 
