@@ -201,6 +201,28 @@ router.post("/zengin", async (req, res) => {
     const vendors = await db.select().from(vendorsTable);
     const vendorMap = new Map(vendors.map((v) => [v.name, v]));
 
+    // 振込先（仕入先）の口座情報チェック。1社でも欠けていれば中止（無効な振込ファイルの生成を防ぐ）
+    const invalidVendors: string[] = [];
+    const seenVendor = new Set<string>();
+    for (const payment of payments) {
+      if (seenVendor.has(payment.vendor)) continue;
+      seenVendor.add(payment.vendor);
+      const v = vendorMap.get(payment.vendor);
+      const lacks =
+        !v ||
+        !v.bankCode ||
+        !v.bankBranchCode ||
+        !v.bankAccountType ||
+        !v.bankAccountNumber ||
+        !v.bankAccountHolderKana;
+      if (lacks) invalidVendors.push(payment.vendor);
+    }
+    if (invalidVendors.length > 0) {
+      return res.status(400).json({
+        message: `振込先の口座情報が未登録の仕入先があります：${invalidVendors.join("、")}。仕入先マスタで口座情報（銀行・支店・種別・口座番号・名義カナ）を登録してください。`,
+      });
+    }
+
     // 取組日 MMDD
     const [, mm, dd] = executionDate.split("-");
     const mmdd = `${mm}${dd}`;

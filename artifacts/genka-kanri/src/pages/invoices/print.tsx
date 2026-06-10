@@ -107,12 +107,10 @@ export default function InvoicePrint({ id }: { id: number }) {
   });
 
   useEffect(() => {
+    // 印刷は手動ボタンから実行する。見積・発注の印刷と挙動を統一し、自動でダイアログは開かない
     if (!loadingInvoice && !loadingCompany && !loadingProject && invoice) {
       document.title = `請求書_${invoice.invoiceNumber}`;
-      const timer = setTimeout(() => window.print(), 400);
-      return () => clearTimeout(timer);
     }
-    return undefined;
   }, [loadingInvoice, loadingCompany, invoice]);
 
   if (loadingInvoice || loadingCompany || (projectId && loadingProject)) {

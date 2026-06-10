@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, ne, and, lt, or } from "drizzle-orm";
-import { db, invoicesTable, invoiceItemsTable, invoicePaymentsTable, budgetItemsTable } from "@workspace/db";
+import { db, invoicesTable, invoiceItemsTable, invoicePaymentsTable, projectsTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -104,6 +104,18 @@ async function computeBilledToDate(projectId: number, currentId: number, current
   return pastInvoices.reduce((s, inv) => s + parseN(inv.totalAmount), 0);
 }
 
+/**
+ * 出来高請求の基準となる契約金額 = 工事の請負金額（projects.contractAmount）。
+ * 実行予算（内部の原価予算）ではなく、お客様との請負金額を使う。
+ */
+async function getContractAmount(projectId: number): Promise<number> {
+  const [proj] = await db
+    .select({ contractAmount: projectsTable.contractAmount })
+    .from(projectsTable)
+    .where(eq(projectsTable.id, projectId));
+  return proj ? parseN(proj.contractAmount) : 0;
+}
+
 // ─── GET /api/invoices ────────────────────────────────────────────────────────
 router.get("/", async (req, res) => {
   try {
@@ -174,11 +186,7 @@ router.get("/:id", async (req, res) => {
     let billedToDate = 0;
 
     if (row.projectId) {
-      const budgetItems = await db
-        .select({ revisedBudget: budgetItemsTable.revisedBudget })
-        .from(budgetItemsTable)
-        .where(eq(budgetItemsTable.projectId, row.projectId));
-      contractAmount = budgetItems.reduce((s, bi) => s + parseN(bi.revisedBudget), 0);
+      contractAmount = await getContractAmount(row.projectId);
       billedToDate = await computeBilledToDate(row.projectId, id, row.invoiceDate);
     }
 
@@ -233,11 +241,7 @@ router.patch("/:id", async (req, res) => {
     let billedToDate = 0;
 
     if (updated.projectId) {
-      const budgetItems = await db
-        .select({ revisedBudget: budgetItemsTable.revisedBudget })
-        .from(budgetItemsTable)
-        .where(eq(budgetItemsTable.projectId, updated.projectId));
-      contractAmount = budgetItems.reduce((s, bi) => s + parseN(bi.revisedBudget), 0);
+      contractAmount = await getContractAmount(updated.projectId);
       billedToDate = await computeBilledToDate(updated.projectId, id, updated.invoiceDate);
     }
 

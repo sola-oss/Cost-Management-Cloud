@@ -10,16 +10,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  CreditCard, Plus, Save, Loader2, CheckCircle2, Clock, AlertCircle,
+  CreditCard, Save, Loader2, CheckCircle2, Clock, AlertCircle,
   RefreshCw, Trash2, RotateCcw, Upload, AlertTriangle, ExternalLink,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
 import { useToast } from "@/hooks/use-toast";
 
 // ─── 型定義 ────────────────────────────────────────────────────────────────
@@ -139,32 +135,6 @@ function useVendors() {
   });
 }
 
-function useCreatePayment() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (data: {
-      projectId: number;
-      vendor: string;
-      description: string;
-      amount: number;
-      dueDate?: string;
-      invoiceNumber?: string;
-      notes?: string;
-    }) => {
-      const res = await fetch("/api/payments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error("Failed to create payment");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
-    },
-  });
-}
-
 function useMarkAsPaid() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -211,16 +181,6 @@ function useDeletePayment() {
 }
 
 // ─── フォームスキーマ ────────────────────────────────────────────────────────
-
-const newPaymentSchema = z.object({
-  projectId: z.coerce.number().min(1, "工事を選択してください"),
-  vendor: z.string().min(1, "支払先は必須です"),
-  description: z.string().min(1, "内容は必須です"),
-  amount: z.coerce.number().min(1, "金額は1以上である必要があります"),
-  dueDate: z.string().optional(),
-  invoiceNumber: z.string().optional(),
-  notes: z.string().optional(),
-});
 
 // ─── ステータスバッジ ─────────────────────────────────────────────────────────
 
@@ -490,7 +450,6 @@ export default function Payments() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [projectFilter, setProjectFilter] = useState("all");
   const [overdueOnly, setOverdueOnly] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
   const [zenginOpen, setZenginOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
@@ -498,46 +457,8 @@ export default function Payments() {
   const { data: projects } = useListProjects(undefined, { query: { queryKey: getListProjectsQueryKey() } });
   const { data: companySettings } = useCompanySettings();
   const { data: vendors = [] } = useVendors();
-  const createPayment = useCreatePayment();
   const revertPayment = useRevertPayment();
   const deletePayment = useDeletePayment();
-
-  const form = useForm<z.infer<typeof newPaymentSchema>>({
-    resolver: zodResolver(newPaymentSchema),
-    defaultValues: {
-      projectId: 0,
-      vendor: "",
-      description: "",
-      amount: 0,
-      dueDate: "",
-      invoiceNumber: "",
-      notes: "",
-    },
-  });
-
-  function onAddSubmit(values: z.infer<typeof newPaymentSchema>) {
-    createPayment.mutate(
-      {
-        projectId: values.projectId,
-        vendor: values.vendor,
-        description: values.description,
-        amount: values.amount,
-        dueDate: values.dueDate || undefined,
-        invoiceNumber: values.invoiceNumber || undefined,
-        notes: values.notes || undefined,
-      },
-      {
-        onSuccess: () => {
-          toast({ title: "登録しました", description: "支払予定を追加しました。" });
-          setAddOpen(false);
-          form.reset();
-        },
-        onError: () => {
-          toast({ title: "エラー", description: "登録に失敗しました。", variant: "destructive" });
-        },
-      },
-    );
-  }
 
   async function handleRevert(id: number) {
     try {
@@ -719,111 +640,6 @@ export default function Payments() {
           </h1>
           <p className="text-sm text-slate-500 mt-1">外注・仕入先への支払状況を管理します。</p>
         </div>
-        <Dialog open={addOpen} onOpenChange={setAddOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="w-4 h-4 mr-2" />
-              支払登録
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>支払予定の登録</DialogTitle>
-            </DialogHeader>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onAddSubmit)} className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="projectId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>工事 <span className="text-destructive">*</span></FormLabel>
-                      <Select onValueChange={(v) => field.onChange(Number(v))} value={field.value ? String(field.value) : ""}>
-                        <FormControl>
-                          <SelectTrigger><SelectValue placeholder="工事を選択" /></SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {projects?.items.map((p) => (
-                            <SelectItem key={p.id} value={String(p.id)}>
-                              <span className="font-mono text-xs text-slate-400 mr-2">{p.projectCode}</span>{p.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <div className="grid grid-cols-2 gap-3">
-                  <FormField
-                    control={form.control}
-                    name="vendor"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>支払先 <span className="text-destructive">*</span></FormLabel>
-                        <FormControl><Input placeholder="例: 田中建設" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="invoiceNumber"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>請求書番号</FormLabel>
-                        <FormControl><Input placeholder="例: INV-001" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                <FormField
-                  control={form.control}
-                  name="description"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>内容 <span className="text-destructive">*</span></FormLabel>
-                      <FormControl><Input placeholder="例: 3月分外注費" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <div className="grid grid-cols-2 gap-3">
-                  <FormField
-                    control={form.control}
-                    name="amount"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>金額（円） <span className="text-destructive">*</span></FormLabel>
-                        <FormControl><Input type="number" placeholder="0" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="dueDate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>支払期日</FormLabel>
-                        <FormControl><Input type="date" {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setAddOpen(false)}>キャンセル</Button>
-                  <Button type="submit" disabled={createPayment.isPending}>
-                    {createPayment.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Save className="w-4 h-4 mr-2" />}
-                    登録
-                  </Button>
-                </DialogFooter>
-              </form>
-            </Form>
-          </DialogContent>
-        </Dialog>
       </div>
 
       {/* 期日超過警告バナー */}
@@ -1015,7 +831,7 @@ export default function Payments() {
                 ) : items.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={9} className="h-32 text-center text-slate-500">
-                      支払記録がありません。「支払登録」から追加してください。
+                      支払記録がありません。仕入入力 → 支払査定 で支払予定が作成されます。
                     </TableCell>
                   </TableRow>
                 ) : (

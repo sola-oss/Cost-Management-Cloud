@@ -61,12 +61,16 @@ function toBytesInt32(n: number) {
   return arr;
 }
 
+let _fontCache: ArrayBuffer | null = null;
 async function loadNotoSansJP(): Promise<ArrayBuffer | null> {
+  if (_fontCache) return _fontCache;
   try {
-    const url = "https://fonts.gstatic.com/s/notosansjp/v53/-F6jfjtqLzI2JPCgQBnw7HFQMisq1H1hj-sNFQ.woff2";
+    // アプリに同梱した日本語フォント（OTF）を埋め込む。外部CDN依存をなくし、オフラインでも生成できる
+    const url = `${import.meta.env.BASE_URL}fonts/NotoSansJP-Regular.otf`;
     const res = await fetch(url);
     if (!res.ok) throw new Error("Failed to fetch font");
-    return await res.arrayBuffer();
+    _fontCache = await res.arrayBuffer();
+    return _fontCache;
   } catch {
     return null;
   }

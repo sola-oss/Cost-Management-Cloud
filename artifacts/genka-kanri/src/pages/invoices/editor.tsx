@@ -16,7 +16,7 @@ import { generateInvoicePDF } from "./pdf";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 interface Client { id: number; name: string; address: string | null; }
-interface Project { id: number; name: string; projectCode: string; }
+interface Project { id: number; name: string; projectCode: string; contractAmount?: number; }
 interface CompanySettings {
   companyName: string; postalCode: string; address: string; tel: string; fax: string;
   invoiceRegistrationNumber: string; representativeName: string; department: string;
@@ -220,15 +220,10 @@ export default function InvoiceEditor({ id }: Props) {
     }
   };
 
-  const fetchBillingSummary = async (pid: number) => {
-    try {
-      const r = await fetch(`${BASE}/api/projects/${pid}/budget-items`);
-      if (!r.ok) return;
-      const data: { items: BudgetItem[]; totalRevisedBudget: number } = await r.json();
-      setContractAmount(data.totalRevisedBudget ?? 0);
-    } catch {
-      // ignore, billing summary is best-effort
-    }
+  const fetchBillingSummary = (pid: number) => {
+    // 出来高請求の契約金額は工事の請負金額を使う（実行予算ではない）
+    const p = projects?.items.find((x) => x.id === pid);
+    setContractAmount(p?.contractAmount ?? 0);
   };
 
   const loadBudgetItemsForProject = async (pid: number, opts?: { silent?: boolean }) => {
@@ -237,7 +232,9 @@ export default function InvoiceEditor({ id }: Props) {
       const r = await fetch(`${BASE}/api/projects/${pid}/budget-items`);
       if (!r.ok) throw new Error("Failed to load");
       const data: { items: BudgetItem[]; totalRevisedBudget: number } = await r.json();
-      setContractAmount(data.totalRevisedBudget ?? 0);
+      // 出来高請求の契約金額は工事の請負金額を使う（実行予算ではない）
+      const proj = projects?.items.find((x) => x.id === pid);
+      setContractAmount(proj?.contractAmount ?? 0);
       if (data.items.length === 0) {
         if (!opts?.silent) {
           toast({ title: "実行予算明細がありません", description: "工事の実行予算タブから明細を登録してください", variant: "destructive" });
@@ -726,7 +723,7 @@ export default function InvoiceEditor({ id }: Props) {
               <h3 className="text-sm font-semibold text-slate-700 mb-3">出来高状況</h3>
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div className="bg-blue-50 rounded-lg p-3">
-                  <p className="text-xs text-slate-500">契約金額（実行予算総額）</p>
+                  <p className="text-xs text-slate-500">契約金額（請負金額）</p>
                   <p className="text-lg font-bold text-blue-700">{fmt(contractAmount)}</p>
                 </div>
                 <div className="bg-slate-50 rounded-lg p-3">
