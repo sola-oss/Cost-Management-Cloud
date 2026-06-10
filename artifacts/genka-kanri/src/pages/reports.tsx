@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useListProjects, getListProjectsQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, Cell } from "recharts";
@@ -5,6 +6,7 @@ import { FileSpreadsheet, Download } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 
 export default function Reports() {
@@ -12,18 +14,75 @@ export default function Reports() {
     query: { queryKey: getListProjectsQueryKey({ limit: 50 }) } 
   });
 
-  // Prepare chart data (sort by gross profit rate descending)
-  const chartData = data?.items
-    .filter(p => p.status === 'active' || p.status === 'completed')
-    .sort((a, b) => b.grossProfitRate - a.grossProfitRate)
-    .slice(0, 15)
+  // チャートの絞り込み・並び替え
+  const [statusFilter, setStatusFilter] = useState<"inprogress_done" | "active" | "completed" | "planning" | "all">("inprogress_done");
+  const [sortOrder, setSortOrder] = useState<"low" | "high">("low");
+
+  const matchStatus = (s: string | undefined | null) => {
+    switch (statusFilter) {
+      case "inprogress_done": return s === "active" || s === "completed";
+      case "active": return s === "active";
+      case "completed": return s === "completed";
+      case "planning": return s === "planning";
+      case "all": return true;
+      default: return true;
+    }
+  };
+
+  // 並び替え：低い順（ワースト先頭）が既定。粗利率が算定不可(null)の工事は末尾に回す
+  const chartData = (data?.items ?? [])
+    .filter(p => matchStatus(p.status))
+    .slice()
+    .sort((a, b) => {
+      const av = a.grossProfitRate ?? (sortOrder === "low" ? Infinity : -Infinity);
+      const bv = b.grossProfitRate ?? (sortOrder === "low" ? Infinity : -Infinity);
+      return sortOrder === "low" ? av - bv : bv - av;
+    })
     .map(p => ({
       name: p.name.length > 10 ? p.name.substring(0, 10) + '...' : p.name,
       fullName: p.name,
       grossProfitRate: p.grossProfitRate,
       budgetUsageRate: p.budgetUsageRate,
       status: p.status,
-    })) || [];
+    }));
+
+  const statusLabel: Record<string, string> = {
+    planning: "計画中", active: "施工中", completed: "完工", suspended: "中断",
+  };
+
+  // 工事ごとの収支サマリを CSV（Excelでそのまま開けるよう UTF-8 BOM 付き）で出力
+  const handleExportCsv = () => {
+    const rows = data?.items ?? [];
+    if (rows.length === 0) return;
+    const header = ["工事番号", "工事名", "得意先", "状態", "請負金額", "実行予算", "実績原価", "予算消化率(%)", "粗利率(%)", "予定粗利額", "実績粗利額"];
+    const cell = (v: string | number | null | undefined) => {
+      const s = v == null ? "" : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const body = rows.map((p) => [
+      p.projectCode ?? "",
+      p.name ?? "",
+      p.clientName ?? "",
+      statusLabel[p.status as string] ?? p.status ?? "",
+      p.contractAmount ?? 0,
+      p.totalBudget ?? 0,
+      p.totalActualCost ?? 0,
+      p.budgetUsageRate ?? 0,
+      p.grossProfitRate ?? "",
+      (p.contractAmount ?? 0) - (p.totalBudget ?? 0),
+      (p.contractAmount ?? 0) - (p.totalActualCost ?? 0),
+    ].map(cell).join(","));
+    const csv = "﻿" + [header.join(","), ...body].join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const d = new Date();
+    const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `収支レポート_${ymd}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -35,7 +94,7 @@ export default function Reports() {
           </h1>
           <p className="text-sm text-slate-500 mt-1">工事横断での粗利率・予算消化状況の分析。</p>
         </div>
-        <Button variant="outline">
+        <Button variant="outline" onClick={handleExportCsv} disabled={!data?.items?.length}>
           <Download className="w-4 h-4 mr-2" />
           CSV出力
         </Button>
@@ -44,8 +103,31 @@ export default function Reports() {
       <div className="grid grid-cols-1 gap-6">
         <Card>
           <CardHeader>
-            <CardTitle>粗利率比較 (上位15件)</CardTitle>
-            <CardDescription>施工中・完工済の工事における粗利率（%）</CardDescription>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <CardTitle>粗利率比較</CardTitle>
+                <CardDescription>工事ごとの粗利率（予定：請負金額 − 実行予算）。低い順＝採算が危ない工事が先頭。</CardDescription>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
+                  <SelectTrigger className="h-8 w-[150px] text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inprogress_done">施工中・完工</SelectItem>
+                    <SelectItem value="active">施工中のみ</SelectItem>
+                    <SelectItem value="completed">完工のみ</SelectItem>
+                    <SelectItem value="planning">計画中（予定）</SelectItem>
+                    <SelectItem value="all">すべて</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as typeof sortOrder)}>
+                  <SelectTrigger className="h-8 w-[140px] text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">粗利率：低い順</SelectItem>
+                    <SelectItem value="high">粗利率：高い順</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="h-[350px] w-full">
@@ -61,9 +143,9 @@ export default function Reports() {
                       formatter={(value: number, name: string) => [formatPercent(value), name === 'grossProfitRate' ? '粗利率' : name]}
                       labelFormatter={(label, payload) => payload?.[0]?.payload?.fullName || label}
                     />
-                    <Bar dataKey="grossProfitRate" radius={[4, 4, 0, 0]}>
+                    <Bar dataKey="grossProfitRate" radius={[4, 4, 0, 0]} isAnimationActive={false}>
                       {chartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.grossProfitRate < 10 ? '#ef4444' : '#10b981'} />
+                        <Cell key={`cell-${index}`} fill={entry.grossProfitRate != null && entry.grossProfitRate < 10 ? '#ef4444' : '#10b981'} />
                       ))}
                     </Bar>
                   </BarChart>
@@ -98,7 +180,7 @@ export default function Reports() {
                     <TableRow><TableCell colSpan={6} className="h-12 text-center">読み込み中...</TableCell></TableRow>
                   ) : (
                     data?.items
-                      .filter(p => p.budgetUsageRate > 100 || p.grossProfitRate < 10)
+                      .filter(p => p.budgetUsageRate > 100 || (p.grossProfitRate != null && p.grossProfitRate < 10))
                       .map(p => (
                         <TableRow key={p.id}>
                           <TableCell className="font-medium text-slate-900">{p.name}</TableCell>
