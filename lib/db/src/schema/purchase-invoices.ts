@@ -30,6 +30,8 @@ export const purchaseInvoicesTable = pgTable("purchase_invoices", {
   taxAmount: numeric("tax_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   totalAmount: numeric("total_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   notes: text("notes"),
+  // 支払査定で確定済みになった日時（NULL = 未査定）。集計時に査定済みを除外して二重査定を防ぐ
+  assessedAt: timestamp("assessed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

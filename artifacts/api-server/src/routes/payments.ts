@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, gte, lte, isNotNull } from "drizzle-orm";
 import iconv from "iconv-lite";
-import { db, paymentsTable, projectsTable, companySettingsTable, vendorsTable } from "@workspace/db";
+import { db, paymentsTable, projectsTable, companySettingsTable, vendorsTable, purchaseInvoicesTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -347,6 +347,41 @@ router.patch("/:id/unpay", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+
+    // 査定由来の支払を削除する場合、対象の仕入伝票の「査定済み」印を戻す（再査定できるように）
+    const [pay] = await db.select().from(paymentsTable).where(eq(paymentsTable.id, id));
+    if (pay && pay.source === "assessment" && pay.invoiceNumber?.startsWith("key:")) {
+      // invoiceNumber 形式: key:{start}_{end}_{group}_{type}_{closing}:{projectId}[:{workType}]
+      const parts = pay.invoiceNumber.split(":");
+      const keyParts = (parts[1] ?? "").split("_");
+      const start = keyParts[0];
+      const end = keyParts[1];
+      const projectId = parseInt(parts[2] ?? "");
+      const isIsoDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s ?? "");
+      if (isIsoDate(start) && isIsoDate(end) && Number.isInteger(projectId)) {
+        // 支払の仕入先名 → vendorId（同名が複数あれば全て対象）
+        const vendorRows = await db
+          .select({ id: vendorsTable.id })
+          .from(vendorsTable)
+          .where(eq(vendorsTable.name, pay.vendor));
+        const vendorIds = vendorRows.map((v) => v.id);
+        if (vendorIds.length > 0) {
+          await db
+            .update(purchaseInvoicesTable)
+            .set({ assessedAt: null, updatedAt: new Date() })
+            .where(
+              and(
+                eq(purchaseInvoicesTable.projectId, projectId),
+                inArray(purchaseInvoicesTable.vendorId, vendorIds),
+                gte(purchaseInvoicesTable.purchaseDate, start),
+                lte(purchaseInvoicesTable.purchaseDate, end),
+                isNotNull(purchaseInvoicesTable.assessedAt)
+              )
+            );
+        }
+      }
+    }
+
     await db.delete(paymentsTable).where(eq(paymentsTable.id, id));
     res.status(204).send();
   } catch (err) {

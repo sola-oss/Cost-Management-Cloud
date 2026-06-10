@@ -113,7 +113,11 @@ export default function PurchaseOrderDetail({ id }: { id: number }) {
 
   const handleDelete = async () => {
     if (!order) return;
-    if (!window.confirm(`発注書 ${order.orderNumber} を削除しますか？`)) return;
+    const linkedInvoices = (order as any).linkedInvoiceCount ?? 0;
+    const message = linkedInvoices > 0
+      ? `この発注書には仕入伝票が ${linkedInvoices} 件紐づいています。\n削除すると仕入伝票との紐付けが外れます（仕入伝票・実績原価は残ります）。\n\n発注書 ${order.orderNumber} を削除しますか？`
+      : `発注書 ${order.orderNumber} を削除しますか？`;
+    if (!window.confirm(message)) return;
     try {
       await fetch(`${BASE}/api/purchase-orders/${id}`, { method: "DELETE" });
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });

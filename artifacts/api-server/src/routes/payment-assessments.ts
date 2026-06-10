@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, gte, lte, ne } from "drizzle-orm";
+import { and, eq, gte, lte, ne, isNull, inArray } from "drizzle-orm";
 import {
   db,
   purchaseInvoicesTable,
@@ -103,6 +103,7 @@ router.post("/calculate", async (req, res) => {
       groupId,
       assessmentType = "vendor",
       closingDay,
+      includeAssessed = false,
     } = req.body;
 
     if (!startDate || !endDate) {
@@ -171,7 +172,9 @@ router.post("/calculate", async (req, res) => {
             gte(purchaseInvoicesTable.purchaseDate, effectiveStart),
             lte(purchaseInvoicesTable.purchaseDate, effectiveEnd),
             eq(purchaseInvoicesTable.isProvisional, false),
-            ne(purchaseInvoicesTable.status, "cancelled")
+            ne(purchaseInvoicesTable.status, "cancelled"),
+            // 査定済みは除外（二重査定防止）。includeAssessed=true のときだけ含める
+            ...(includeAssessed ? [] : [isNull(purchaseInvoicesTable.assessedAt)])
           )
         );
 
@@ -231,7 +234,9 @@ router.post("/calculate", async (req, res) => {
             gte(purchaseInvoicesTable.purchaseDate, effectiveStart),
             lte(purchaseInvoicesTable.purchaseDate, effectiveEnd),
             eq(purchaseInvoicesTable.isProvisional, false),
-            ne(purchaseInvoicesTable.status, "cancelled")
+            ne(purchaseInvoicesTable.status, "cancelled"),
+            // 査定済みは除外（二重査定防止）。includeAssessed=true のときだけ含める
+            ...(includeAssessed ? [] : [isNull(purchaseInvoicesTable.assessedAt)])
           )
         );
 
@@ -349,7 +354,7 @@ interface PaymentRow {
  */
 router.post("/confirm", async (req, res) => {
   try {
-    const { dueDate, assessmentKey, items } = req.body;
+    const { dueDate, assessmentKey, items, assessmentType = "vendor" } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ message: "items は必須です" });
@@ -503,6 +508,31 @@ router.post("/confirm", async (req, res) => {
           })
           .returning();
         if (payment) createdRows.push(payment as PaymentRow);
+      }
+    }
+
+    // 査定確定した仕入伝票に「査定済み」の印をつける（次回集計から除外＝二重査定防止）
+    const rawIds = (items as AssessmentResultItem[])
+      .flatMap((it) => it.costItemIds ?? [])
+      .filter((n): n is number => typeof n === "number");
+    const uniqueIds = Array.from(new Set(rawIds));
+    if (uniqueIds.length > 0) {
+      let invoiceIds: number[];
+      if (assessmentType === "vendor_project_worktype") {
+        // 工種別モードの costItemIds は明細行ID → 仕入伝票IDへ解決
+        const rows = await db
+          .select({ invoiceId: purchaseInvoiceItemsTable.purchaseInvoiceId })
+          .from(purchaseInvoiceItemsTable)
+          .where(inArray(purchaseInvoiceItemsTable.id, uniqueIds));
+        invoiceIds = Array.from(new Set(rows.map((r) => r.invoiceId)));
+      } else {
+        invoiceIds = uniqueIds;
+      }
+      if (invoiceIds.length > 0) {
+        await db
+          .update(purchaseInvoicesTable)
+          .set({ assessedAt: new Date(), updatedAt: new Date() })
+          .where(inArray(purchaseInvoicesTable.id, invoiceIds));
       }
     }
 

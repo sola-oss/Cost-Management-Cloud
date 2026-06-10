@@ -130,6 +130,7 @@ export default function PaymentAssessment() {
   const [assessmentType, setAssessmentType] = useState("vendor");
   const [closingDay, setClosingDay] = useState("none");
   const [dueDate, setDueDate] = useState("");
+  const [includeAssessed, setIncludeAssessed] = useState(false);
 
   const [items, setItems] = useState<AssessmentItem[]>([]);
   const [calculated, setCalculated] = useState(false);
@@ -158,6 +159,7 @@ export default function PaymentAssessment() {
           groupId: groupId || undefined,
           assessmentType,
           closingDay: closingDay !== "none" ? Number(closingDay) : undefined,
+          includeAssessed,
         }),
       });
       if (!res.ok) throw new Error("Failed to calculate");
@@ -182,6 +184,7 @@ export default function PaymentAssessment() {
         body: JSON.stringify({
           dueDate: dueDate || null,
           assessmentKey,
+          assessmentType,
           items: items.filter((i) => i.payAmount > 0),
         }),
       });
@@ -333,7 +336,7 @@ export default function PaymentAssessment() {
               />
             </div>
           </div>
-          <div className="mt-4 flex gap-2">
+          <div className="mt-4 flex items-center gap-4">
             <Button onClick={() => calculateMutation.mutate()} disabled={calculateMutation.isPending}>
               {calculateMutation.isPending ? (
                 <Loader2 className="w-4 h-4 animate-spin mr-2" />
@@ -342,6 +345,16 @@ export default function PaymentAssessment() {
               )}
               集計実行
             </Button>
+            <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={includeAssessed}
+                onChange={(e) => setIncludeAssessed(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              査定済みも含める
+              <span className="text-xs text-slate-400">（通常はOFF。訂正・再査定したい時だけON）</span>
+            </label>
           </div>
         </CardContent>
       </Card>

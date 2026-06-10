@@ -1,9 +1,10 @@
 import { Router, type IRouter } from "express";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import {
   db,
   purchaseOrdersTable,
   purchaseOrderItemsTable,
+  purchaseInvoicesTable,
   vendorsTable,
   projectsTable,
   budgetItemsTable,
@@ -188,11 +189,18 @@ router.get("/:id", async (req, res) => {
       .where(eq(purchaseOrderItemsTable.purchaseOrderId, id))
       .orderBy(purchaseOrderItemsTable.lineNumber);
 
+    // この発注書に紐づく仕入伝票の件数（削除時の警告に使う）
+    const [invCount] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(purchaseInvoicesTable)
+      .where(eq(purchaseInvoicesTable.purchaseOrderId, id));
+
     return res.json({
       ...formatOrder(row.order),
       vendorName: row.vendorName ?? "",
       projectCode: row.projectCode ?? "",
       projectName: row.projectName ?? "",
+      linkedInvoiceCount: invCount?.count ?? 0,
       items: items.map(formatItem),
     });
   } catch (err) {

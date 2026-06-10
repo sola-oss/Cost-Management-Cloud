@@ -20,8 +20,10 @@ function fmtMoney(n: number) {
 }
 function fmtDate(d: string) {
   if (!d) return "";
-  const [y, m, day] = d.split("-");
-  return `${y}/${m.padStart(2, "0")}/${day.padStart(2, "0")}`;
+  // YYYY-MM-DD 形式なら YYYY/MM/DD に整形。それ以外（「見積日より1ヶ月」等の文章）はそのまま表示
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(d.trim());
+  if (!m) return d;
+  return `${m[1]}/${m[2].padStart(2, "0")}/${m[3].padStart(2, "0")}`;
 }
 
 interface Item {

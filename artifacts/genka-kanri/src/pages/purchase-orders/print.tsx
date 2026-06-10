@@ -92,12 +92,10 @@ export default function PurchaseOrderPrint({ id }: { id: number }) {
   });
 
   useEffect(() => {
+    // 印刷は手動ボタン（「印刷 / PDF」）から実行する。見積書印刷と挙動を統一し、自動でダイアログは開かない
     if (!loadingOrder && !loadingCompany && order) {
       document.title = `発注書_${order.orderNumber}`;
-      const timer = setTimeout(() => window.print(), 400);
-      return () => clearTimeout(timer);
     }
-    return undefined;
   }, [loadingOrder, loadingCompany, order]);
 
   if (loadingOrder || loadingCompany) {

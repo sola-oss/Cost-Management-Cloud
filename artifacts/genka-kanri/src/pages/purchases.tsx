@@ -642,9 +642,12 @@ export default function Purchases() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-3">
             {/* 工事（最重要・先頭） */}
             <div className="space-y-1">
-              <Label className="text-xs text-slate-600 font-medium">工事 <span className="text-red-500">*</span></Label>
-              <Select value={selectedProject} onValueChange={setSelectedProject}>
-                <SelectTrigger className="text-sm">
+              <Label className="text-xs text-slate-600 font-medium">
+                工事 <span className="text-red-500">*</span>
+                {editInvoiceIdNum && <span className="ml-1.5 text-[11px] font-normal text-slate-400">（編集中は変更不可）</span>}
+              </Label>
+              <Select value={selectedProject} onValueChange={setSelectedProject} disabled={!!editInvoiceIdNum}>
+                <SelectTrigger className="text-sm disabled:opacity-70 disabled:bg-slate-50">
                   <SelectValue placeholder="工事を選択してください" />
                 </SelectTrigger>
                 <SelectContent>
@@ -659,7 +662,10 @@ export default function Purchases() {
 
             {/* 仕入先 */}
             <div className="space-y-1">
-              <Label className="text-xs text-slate-600 font-medium">仕入先</Label>
+              <Label className="text-xs text-slate-600 font-medium">
+                仕入先
+                {editInvoiceIdNum && <span className="ml-1.5 text-[11px] font-normal text-slate-400">（編集中は変更不可）</span>}
+              </Label>
               {vendors.length === 0 ? (
                 <div className="flex items-center gap-2 py-1.5">
                   <span className="text-xs text-slate-400">仕入先が未登録です。</span>
@@ -669,8 +675,8 @@ export default function Purchases() {
                   </Link>
                 </div>
               ) : (
-                <Select value={vendorId} onValueChange={setVendorId}>
-                  <SelectTrigger className="text-sm">
+                <Select value={vendorId} onValueChange={setVendorId} disabled={!!editInvoiceIdNum}>
+                  <SelectTrigger className="text-sm disabled:opacity-70 disabled:bg-slate-50">
                     <SelectValue placeholder="仕入先を選択してください" />
                   </SelectTrigger>
                   <SelectContent>
