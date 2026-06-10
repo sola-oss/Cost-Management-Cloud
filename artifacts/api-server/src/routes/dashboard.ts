@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, sql, desc, inArray } from "drizzle-orm";
-import { db, projectsTable, costItemsTable, budgetsTable, budgetItemsTable } from "@workspace/db";
+import { db, projectsTable, costItemsTable, budgetsTable, budgetItemsTable, paymentsTable, invoicesTable } from "@workspace/db";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -83,9 +83,51 @@ router.get("/overview", async (_req, res) => {
       .filter(p => p.budgetUsageRate > 80 && p.status === "active")
       .slice(0, 5);
 
+    // 予定粗利額(¥) = Σ（請負金額 − 実行予算）。実行予算がある工事のみ
+    const plannedGrossProfit = projects.reduce((s, p) => {
+      const budget = budgetMap.get(p.id) ?? 0;
+      const contract = parseNumeric(p.contractAmount);
+      return (budget > 0 && contract > 0) ? s + (contract - budget) : s;
+    }, 0);
+
+    // ── お金まわり（期日超過・今月の支払/入金予定） ──
+    const today = new Date().toISOString().slice(0, 10);
+    const monthStart = today.slice(0, 8) + "01";
+    const [yy, mm] = today.split("-").map(Number);
+    const lastDay = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+    const monthEnd = `${today.slice(0, 8)}${String(lastDay).padStart(2, "0")}`;
+
+    const [pays, invs] = await Promise.all([
+      db.select({ amount: paymentsTable.amount, paidAmount: paymentsTable.paidAmount, dueDate: paymentsTable.dueDate, status: paymentsTable.status }).from(paymentsTable),
+      db.select({ totalAmount: invoicesTable.totalAmount, paidAmount: invoicesTable.paidAmount, dueDate: invoicesTable.dueDate, status: invoicesTable.status }).from(invoicesTable),
+    ]);
+
+    let overduePayCount = 0, overduePayAmount = 0, thisMonthPayAmount = 0;
+    for (const p of pays) {
+      if (p.status !== "pending" && p.status !== "partial") continue;
+      const remain = parseNumeric(p.amount) - parseNumeric(p.paidAmount ?? 0);
+      if (remain <= 0) continue;
+      if (p.dueDate && p.dueDate < today) { overduePayCount++; overduePayAmount += remain; }
+      if (p.dueDate && p.dueDate >= monthStart && p.dueDate <= monthEnd) thisMonthPayAmount += remain;
+    }
+
+    let overdueInvCount = 0, overdueInvAmount = 0, thisMonthInvAmount = 0;
+    for (const inv of invs) {
+      if (inv.status !== "unpaid" && inv.status !== "partial") continue;
+      const remain = parseNumeric(inv.totalAmount) - parseNumeric(inv.paidAmount ?? 0);
+      if (remain <= 0) continue;
+      if (inv.dueDate && inv.dueDate < today) { overdueInvCount++; overdueInvAmount += remain; }
+      if (inv.dueDate && inv.dueDate >= monthStart && inv.dueDate <= monthEnd) thisMonthInvAmount += remain;
+    }
+
     res.json({
       totalProjects, activeProjects, completedProjects,
       totalContractAmount, totalActualCost, averageGrossProfitRate,
+      plannedGrossProfit,
+      overduePayments: { count: overduePayCount, amount: overduePayAmount },
+      overdueInvoices: { count: overdueInvCount, amount: overdueInvAmount },
+      thisMonthPayments: thisMonthPayAmount,
+      thisMonthInvoices: thisMonthInvAmount,
       recentProjects, alertProjects,
     });
   } catch (err) {

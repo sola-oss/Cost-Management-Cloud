@@ -168,6 +168,15 @@
 - 要注意リストの誤検知を修正（実行予算未設定で粗利率null の工事を要注意から除外）
 - すべて `genka-kanri/src/pages/reports.tsx`
 
+### 2026-06-10 実装分その4（ダッシュボードの整理・お金まわり追加）
+
+他画面との被りを外し、資金繰り情報を追加。
+- **撤去**：最近の工事（工事一覧と重複）、予算超過リスク（収支レポートの要注意と重複）
+- **追加**：期日超過アラート（払い忘れの支払・入金遅れの請求／件数・残額）、今月の入出金予定（入金予定・支払予定）、KPIに予定粗利額(¥)を併記
+- **修正**：原価項目別構成（円）・月別原価推移（エリア）が描画されない不具合を `isAnimationActive={false}` で修正（収支レポートと同根）
+- バックエンド `dashboard.ts /overview` に集計を追加（plannedGrossProfit / overduePayments / overdueInvoices / thisMonthPayments / thisMonthInvoices）。支払=payments、請求=invoices の due_date と status から算出
+- フロント `dashboard.tsx` レイアウト刷新
+
 ## 残To Do
 
 1. ~~単価マスタ~~ → ✅ 完了
