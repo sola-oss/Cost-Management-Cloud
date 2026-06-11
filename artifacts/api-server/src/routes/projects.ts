@@ -396,6 +396,12 @@ router.get("/:id/ledger", async (req, res) => {
 
     const totalBudget = budgets.reduce((s, b) => s + parseNumeric(b.budgetAmount), 0);
     const totalActualCost = costItems.reduce((s, c) => s + parseNumeric(c.amount), 0);
+    // 完成工事原価の内訳（材料費・労務費・外注費・経費）
+    const costByCategory = { material: 0, labor: 0, subcontract: 0, expense: 0 };
+    for (const c of costItems) {
+      const cat = c.category as keyof typeof costByCategory;
+      if (cat in costByCategory) costByCategory[cat] += parseNumeric(c.amount);
+    }
     const contractAmount = parseNumeric(project.contractAmount);
     const grossProfit = contractAmount - totalActualCost;
     const grossProfitRate = contractAmount > 0 ? (grossProfit / contractAmount) * 100 : 0;
@@ -432,6 +438,7 @@ router.get("/:id/ledger", async (req, res) => {
       summary: {
         totalBudget,
         totalActualCost,
+        costByCategory,
         grossProfit,
         grossProfitRate: Math.round(grossProfitRate * 10) / 10,
         totalInvoiced,

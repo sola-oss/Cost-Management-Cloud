@@ -85,6 +85,7 @@ interface CompanySettings {
 interface LedgerSummary {
   totalBudget: number;
   totalActualCost: number;
+  costByCategory: { material: number; labor: number; subcontract: number; expense: number };
   grossProfit: number;
   grossProfitRate: number;
   totalInvoiced: number;
@@ -178,16 +179,22 @@ export default function ProjectLedger() {
     );
   }
 
-  const { project, constructionHistory, invoices, companySettings, summary } = data;
+  const { project, constructionHistory, companySettings, summary } = data;
   const today = new Date().toISOString().slice(0, 10);
 
-  const contractLines: ContractLine[] = (project.contractLines || []).filter(l => l.taxExcludedAmount);
+  const rawContractLines: ContractLine[] = (project.contractLines || []).filter(l => l.taxExcludedAmount);
+  // 請負内訳が未入力でも、請負金額（税込）から1行を自動表示して空欄表を防ぐ
+  const contractLines: ContractLine[] = rawContractLines.length > 0
+    ? rawContractLines
+    : (project.contractAmount > 0
+        ? [{
+            contractDate: project.orderDate ?? null,
+            taxExcludedAmount: project.taxExcludedAmount ?? Math.round(project.contractAmount / 1.1),
+          }]
+        : []);
   const CONTRACT_ROWS = 10;
 
   const grossProfitPct = summary.grossProfitRate.toFixed(1);
-
-  const allPayments = invoices.flatMap(inv => inv.payments);
-  const TABLE_ROWS = 10;
 
   const prefecture = constructionHistory
     ? ""
@@ -533,38 +540,31 @@ export default function ProjectLedger() {
           </tbody>
         </table>
 
-        {/* ── Sales/Payment table ── */}
+        {/* ── 原価内訳（完成工事原価） ── */}
         <table className="w-full border-collapse text-[10px] mb-0" style={{ tableLayout: "fixed" }}>
           <colgroup>
-            <col style={{ width: "4%" }} />
-            <col style={{ width: "14%" }} />
-            <col style={{ width: "16%" }} />
-            <col style={{ width: "16%" }} />
-            <col style={{ width: "16%" }} />
+            <col style={{ width: "12%" }} />
+            <col style={{ width: "8%" }} /><col style={{ width: "14%" }} />
+            <col style={{ width: "8%" }} /><col style={{ width: "14%" }} />
+            <col style={{ width: "8%" }} /><col style={{ width: "14%" }} />
+            <col style={{ width: "8%" }} /><col style={{ width: "14%" }} />
           </colgroup>
-          <thead>
-            <tr>
-              <CellTh>No</CellTh>
-              <CellTh>売上日</CellTh>
-              <CellTh className="text-right">売上金額＊</CellTh>
-              <CellTh>入金日</CellTh>
-              <CellTh className="text-right">入金金額＊</CellTh>
-            </tr>
-          </thead>
           <tbody>
-            {Array.from({ length: TABLE_ROWS }, (_, i) => {
-              const inv = invoices[i];
-              const payment = allPayments[i];
-              return (
-                <tr key={i}>
-                  <CellTd className="text-center">{i + 1}</CellTd>
-                  <CellTd className="text-center">{inv ? toJpShort(inv.invoiceDate) : BLANK}</CellTd>
-                  <CellTd className="text-right">{inv ? fmt(inv.totalAmount) : BLANK}</CellTd>
-                  <CellTd className="text-center">{payment ? toJpShort(payment.paymentDate) : BLANK}</CellTd>
-                  <CellTd className="text-right">{payment ? fmt(payment.amount) : BLANK}</CellTd>
-                </tr>
-              );
-            })}
+            <tr>
+              <td rowSpan={2} className="border border-gray-600 text-center bg-gray-100 font-semibold align-middle">原価内訳</td>
+              <CellTh className="text-center">材料費</CellTh>
+              <CellTd className="text-right">{fmt(summary.costByCategory.material) || BLANK}</CellTd>
+              <CellTh className="text-center">労務費</CellTh>
+              <CellTd className="text-right">{fmt(summary.costByCategory.labor) || BLANK}</CellTd>
+              <CellTh className="text-center">外注費</CellTh>
+              <CellTd className="text-right">{fmt(summary.costByCategory.subcontract) || BLANK}</CellTd>
+              <CellTh className="text-center">経費</CellTh>
+              <CellTd className="text-right">{fmt(summary.costByCategory.expense) || BLANK}</CellTd>
+            </tr>
+            <tr>
+              <CellTh className="text-center">原価合計</CellTh>
+              <CellTd className="text-right font-semibold" colSpan={7}>{fmt(summary.totalActualCost) || BLANK}</CellTd>
+            </tr>
           </tbody>
         </table>
 

@@ -177,6 +177,16 @@
 - バックエンド `dashboard.ts /overview` に集計を追加（plannedGrossProfit / overduePayments / overdueInvoices / thisMonthPayments / thisMonthInvoices）。支払=payments、請求=invoices の due_date と status から算出
 - フロント `dashboard.tsx` レイアウト刷新
 
+### 2026-06-11 実装分（工事台帳の整理・経審様式の仕上げ）
+
+工事台帳は「②経審・建設業法寄りの様式（原価は内訳付き）」で確定し整理。
+- **売上/入金の10行明細表を撤去**（入金管理は請求管理で行うため重複。`ledger.tsx`）
+- **請負内訳の自動1行表示**：未入力でも請負金額（税込）から税抜/消費税/税込の1行を自動表示（空欄表を解消・下の請負金額と一致）
+- **配置技術者・工事種類の入力欄を工事登録に追加**（`new.tsx`。schema/API は元々対応済みでJSXのみ追加）。※工事詳細の編集への追加は客先確認待ちで保留
+- **原価内訳（材料費/労務費/外注費/経費＋原価合計）を台帳に追加**（台帳API `projects.ts /:id/ledger` に costByCategory 追加、`ledger.tsx` に内訳ブロック）
+- 利益は実績ベース（請負−実績原価＝完成工事原価ベース）のままが正しい様式。予実は台帳に載せない（実行予算画面・原価モニターに任せる）
+- ※ リポジトリが作業中に `/Users/i/Cost-Management-Cloud` → `/Users/i/アプリ開発/Cost-Management-Cloud` へ移動（コミット・データ消失なし）
+
 ## 残To Do
 
 1. ~~単価マスタ~~ → ✅ 完了

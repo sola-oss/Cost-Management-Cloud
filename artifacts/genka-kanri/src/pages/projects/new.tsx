@@ -760,6 +760,32 @@ export default function NewProject() {
                       </FormItem>
                     )}
                   />
+                  <div className="grid grid-cols-2 gap-2">
+                    <FormField
+                      control={form.control}
+                      name="constructionHistoryEngineer"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs text-slate-600">配置技術者（監理技術者）</FormLabel>
+                          <FormControl>
+                            <Input className="text-sm" placeholder="例: 佐藤 次郎" {...field} />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="constructionHistoryType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs text-slate-600">工事種類（業種）</FormLabel>
+                          <FormControl>
+                            <Input className="text-sm" placeholder="例: 建築工事業" {...field} />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                   <div className="grid grid-cols-3 gap-2">
                     <FormField
                       control={form.control}
