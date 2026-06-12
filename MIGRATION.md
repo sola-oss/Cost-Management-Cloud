@@ -63,6 +63,28 @@
 
 ---
 
+## ✅ 実デプロイ済み（2026-06-12）
+
+- 本番URL：**https://cost-management-cloud-production.up.railway.app**
+- Railwayプロジェクト：`cost-management-cloud`（GitHub `main` 連携・push で自動デプロイ）
+- DB：Supabase（プロジェクト ref `rnysqjnqdpdmaylojwqr`、Tokyo）
+
+### 実デプロイで判明した重要ポイント（再現時の必須設定）
+
+1. **DBは「Session pooler（IPv4）」を使う**（最重要）
+   - Supabaseの **Direct connection（`db.xxx.supabase.co`）は IPv6 専用**で、**RailwayはIPv6に出られず `ENETUNREACH` で接続不可**。
+   - 正解は **Session pooler**：`postgresql://postgres.<ref>:<PW>@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres`
+     - ユーザー名が `postgres.<ref>`、ホストが `pooler.supabase.com`、**ポート5432（session mode）**。
+     - ⚠ ポート6543（transaction mode）はDrizzleのprepared statementと相性が悪いので使わない。
+   - 東京は `aws-1-ap-northeast-1`（`aws-0` ではない場合がある。Supabaseの Connect → Session pooler の表示が正）。
+2. **install を `--no-frozen-lockfile` にする**
+   - lockfileとoverridesの不一致でnixpacksの `pnpm i --frozen-lockfile` が失敗する。
+   - 環境変数 `NIXPACKS_INSTALL_CMD=pnpm install --no-frozen-lockfile` を設定。
+3. **本番ビルドは必要パッケージだけ**（`railway.json` 設定済み）
+   - `pnpm run build`（全パッケージ）だと `mockup-sandbox` 等のビルドで落ちる。
+   - `pnpm --filter "@workspace/api-server..." --filter "@workspace/genka-kanri..." run build` で依存込みの本番分のみビルド。
+4. Railway の環境変数（最終形）：`DATABASE_URL`（Session pooler）/ `NODE_ENV=production` / `LOG_LEVEL=info` / `NIXPACKS_INSTALL_CMD`。`PORT` はRailway自動。
+
 ## 補足・既知の注意点
 
 - **同一ドメイン配信のコード**：`artifacts/api-server/src/app.ts` で、`genka-kanri/dist/public` が存在すれば静的配信＋SPAフォールバックを行う（開発時は dist が無いので Vite が配信）。配信先を変えたい場合は `FRONTEND_DIST` 環境変数で上書き可能。
