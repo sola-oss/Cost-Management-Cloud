@@ -47,3 +47,7 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# migration DB dumps (test data, regenerable)
+migration/*.sql
+vite.config.ts.bak
