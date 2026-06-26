@@ -246,7 +246,7 @@ router.post("/zengin", async (req, res) => {
 
     // データレコード
     // 1+4+15+3+15+4+1+7+30+10+1+10+10+1+1+7 = 120
-    const dataRecords: string[] = [];
+    const dataRecords: { vendor: string; line: string }[] = [];
     let totalAmount = 0;
 
     for (const payment of payments) {
@@ -273,7 +273,7 @@ router.post("/zengin", async (req, res) => {
         " " +
         " ".repeat(7);
 
-      dataRecords.push(dataRecord);
+      dataRecords.push({ vendor: payment.vendor, line: dataRecord });
     }
 
     // トレーラレコード（120バイト）
@@ -288,7 +288,32 @@ router.post("/zengin", async (req, res) => {
     // 1+119 = 120
     const end = "9" + " ".repeat(119);
 
-    const text = [header, ...dataRecords, trailer, end].join("\r\n") + "\r\n";
+    // 出力直前のバイト数ガード。
+    // padC は文字数で切り詰めるため、カナ欄に漢字や対応外の全角文字が混入すると
+    // Shift_JIS のバイト数が120を超え、銀行で取り込めない不正ファイルになる。
+    // 各レコードを実際にエンコードして120バイト固定であることを確認し、
+    // 外れていれば該当箇所を示してエラーにする（不正ファイルの送出を防ぐ）。
+    const sjisLen = (line: string) => iconv.encode(line, "Shift_JIS").length;
+    const allRecords = [
+      { label: "振込元（会社設定のカナ欄）", line: header },
+      ...dataRecords.map((d) => ({ label: `振込先「${d.vendor}」`, line: d.line })),
+      { label: "トレーラレコード", line: trailer },
+      { label: "エンドレコード", line: end },
+    ];
+    const badRecords = allRecords
+      .map((r) => ({ ...r, bytes: sjisLen(r.line) }))
+      .filter((r) => r.bytes !== 120);
+    if (badRecords.length > 0) {
+      return res.status(400).json({
+        message:
+          `全銀データを作成できませんでした。次のレコードが規定の120バイトになりません` +
+          `（カナ欄に漢字や半角カナ以外の文字が含まれている可能性があります）：` +
+          badRecords.map((r) => `${r.label}=${r.bytes}バイト`).join("、") +
+          `。カナ欄を半角カナのみで登録し直してください。`,
+      });
+    }
+
+    const text = allRecords.map((r) => r.line).join("\r\n") + "\r\n";
 
     const buffer = iconv.encode(text, "Shift_JIS");
 
