@@ -132,7 +132,7 @@ router.get("/overview", async (_req, res) => {
     });
   } catch (err) {
     logger.error({ err }, "Failed to get dashboard overview");
-    res.status(500).json({ message: String(err) });
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -158,6 +158,7 @@ router.get("/cost-by-category", async (req, res) => {
 
     res.json({ categories });
   } catch (err) {
+    logger.error({ err }, "Failed to get cost-by-category");
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -206,6 +207,7 @@ router.get("/monthly-costs", async (req, res) => {
 
     res.json({ months });
   } catch (err) {
+    logger.error({ err }, "Failed to get monthly-costs");
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -243,6 +245,7 @@ router.get("/budget-vs-actual", async (req, res) => {
 
     res.json({ items });
   } catch (err) {
+    logger.error({ err }, "Failed to get budget-vs-actual");
     res.status(500).json({ message: "Internal server error" });
   }
 });

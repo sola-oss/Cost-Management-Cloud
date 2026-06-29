@@ -191,8 +191,8 @@ export default function Reports() {
                           <TableCell className="text-center font-bold text-destructive">
                             {p.budgetUsageRate.toFixed(1)}%
                           </TableCell>
-                          <TableCell className={`text-right font-bold ${p.grossProfitRate < 10 ? 'text-destructive' : ''}`}>
-                            {formatPercent(p.grossProfitRate)}
+                          <TableCell className={`text-right font-bold ${p.grossProfitRate != null && p.grossProfitRate < 10 ? 'text-destructive' : ''}`}>
+                            {p.grossProfitRate == null ? '—' : formatPercent(p.grossProfitRate)}
                           </TableCell>
                         </TableRow>
                       )) || <TableRow><TableCell colSpan={6} className="h-24 text-center text-slate-500">該当する工事はありません</TableCell></TableRow>

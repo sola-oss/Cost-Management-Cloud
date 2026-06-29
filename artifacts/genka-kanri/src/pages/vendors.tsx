@@ -541,7 +541,7 @@ export default function Vendors() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-slate-400">
+                  <TableCell colSpan={7} className="text-center py-8 text-slate-400">
                     <Loader2 className="w-5 h-5 animate-spin inline mr-2" />読み込み中...
                   </TableCell>
                 </TableRow>

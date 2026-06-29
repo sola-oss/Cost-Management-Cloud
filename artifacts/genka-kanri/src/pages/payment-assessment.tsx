@@ -209,7 +209,8 @@ export default function PaymentAssessment() {
   const handleHoldChange = (index: number, value: string) => {
     setItems((prev) => {
       const next = [...prev];
-      const hold = Math.max(0, parseFloat(value) || 0);
+      // 保留金は仕入合計を超えられない（超えると保留金合計が破綻表示になる）。
+      const hold = Math.min(next[index].totalAmount, Math.max(0, parseFloat(value) || 0));
       const pay = Math.max(0, next[index].totalAmount - hold);
       next[index] = { ...next[index], holdAmount: hold, payAmount: pay };
       return next;
