@@ -5,6 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { useHighlightNew } from "@/hooks/use-highlight-new";
+import { cn } from "@/lib/utils";
 import { Plus, Pencil, Trash2, Loader2, Users } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -46,6 +48,7 @@ const defaultForm: FormValues = {
 export default function ClientMaster() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { mark, isNew } = useHighlightNew();
 
   const { data, isLoading } = useQuery({
     queryKey: QUERY_KEY,
@@ -110,6 +113,7 @@ export default function ClientMaster() {
           throw new Error(err.message ?? "更新に失敗しました");
         }
         toast({ title: "更新しました", description: `${form.name} を更新しました。` });
+        mark(editingItem.id);
       } else {
         const res = await fetch(`${BASE}/api/clients`, {
           method: "POST",
@@ -120,7 +124,9 @@ export default function ClientMaster() {
           const err = await res.json().catch(() => ({}));
           throw new Error(err.message ?? "登録に失敗しました");
         }
+        const created = await res.json().catch(() => null);
         toast({ title: "登録しました", description: `${form.name} を登録しました。` });
+        mark(created?.id);
       }
 
       queryClient.invalidateQueries({ queryKey: QUERY_KEY });
@@ -198,7 +204,7 @@ export default function ClientMaster() {
               </TableRow>
             ) : (
               clients.map((client) => (
-                <TableRow key={client.id} className="hover:bg-slate-50">
+                <TableRow key={client.id} data-row-id={client.id} className={cn("hover:bg-slate-50", isNew(client.id) && "highlight-new")}>
                   <TableCell className="font-mono text-sm text-slate-600">{client.clientCode}</TableCell>
                   <TableCell className="font-medium text-slate-900">{client.name}</TableCell>
                   <TableCell className="text-sm text-slate-600">{client.address ?? "—"}</TableCell>

@@ -9,6 +9,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useHighlightNew } from "@/hooks/use-highlight-new";
+import { cn } from "@/lib/utils";
 import { Plus, Pencil, Trash2, Loader2, DollarSign, Search } from "lucide-react";
 
 /* ── 型定義 ── */
@@ -96,6 +98,7 @@ function fmtMoney(v: string | number): string {
 export default function UnitPriceMaster() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { mark, isNew } = useHighlightNew();
 
   // フィルタ
   const [filterVendorId, setFilterVendorId] = useState("");
@@ -184,6 +187,7 @@ export default function UnitPriceMaster() {
           throw new Error(data.message ?? "更新に失敗しました");
         }
         toast({ title: "更新しました" });
+        mark(editingItem.id);
       } else {
         const res = await fetch(`${BASE}/api/unit-prices`, {
           method: "POST",
@@ -194,7 +198,9 @@ export default function UnitPriceMaster() {
           const data = await res.json().catch(() => ({}));
           throw new Error(data.message ?? "登録に失敗しました");
         }
+        const created = await res.json().catch(() => null);
         toast({ title: "登録しました" });
+        mark(created?.id);
       }
       queryClient.invalidateQueries({ queryKey: ["/api/unit-prices"] });
       closeDialog();
@@ -331,7 +337,7 @@ export default function UnitPriceMaster() {
                 </TableRow>
               ) : (
                 items.map((item) => (
-                  <TableRow key={item.id} className="hover:bg-slate-50/60">
+                  <TableRow key={item.id} data-row-id={item.id} className={cn("hover:bg-slate-50/60", isNew(item.id) && "highlight-new")}>
                     <TableCell className="text-sm font-medium text-slate-800">
                       {item.vendorName ?? "—"}
                     </TableCell>

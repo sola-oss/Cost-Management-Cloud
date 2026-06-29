@@ -14,6 +14,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { useHighlightNew } from "@/hooks/use-highlight-new";
+import { cn } from "@/lib/utils";
 import { Plus, Trash2, Save, FileText, ExternalLink, ClipboardList, Pencil, ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { UnitPricePicker, type UnitPriceSelection } from "@/components/unit-price-picker";
@@ -258,6 +260,7 @@ interface PurchaseInvoiceDetail {
 export default function Purchases() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { mark, isNew } = useHighlightNew();
   const [, navigate] = useLocation();
   const quantityRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
@@ -475,11 +478,12 @@ export default function Purchases() {
           }),
         });
         if (!res.ok) throw new Error("Failed to update purchase invoice");
-        const invoice = await res.json() as { voucherNumber: string };
+        const invoice = await res.json() as { id: number; voucherNumber: string };
         toast({
           title: "更新完了",
           description: `仕入伝票 ${invoice.voucherNumber} を更新しました。`,
         });
+        mark(invoice.id ?? editInvoiceIdNum);
       } else {
         // ── 新規作成：POST ──────────────────────────────────────────────
         res = await fetch("/api/purchase-invoices", {
@@ -498,7 +502,7 @@ export default function Purchases() {
           }),
         });
         if (!res.ok) throw new Error("Failed to create purchase invoice");
-        const invoice = await res.json() as { voucherNumber: string };
+        const invoice = await res.json() as { id: number; voucherNumber: string };
         if (createPayment) {
           queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
         }
@@ -507,6 +511,7 @@ export default function Purchases() {
           description: `仕入伝票 ${invoice.voucherNumber} を登録しました。${createPayment ? "支払予定も作成しました。" : ""}`,
         });
         newSlip();
+        mark(invoice.id);
       }
 
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-invoices"] });
@@ -532,8 +537,9 @@ export default function Purchases() {
         }),
       });
       if (!res.ok) throw new Error("Failed");
-      const invoice = await res.json() as { voucherNumber: string };
+      const invoice = await res.json() as { id: number; voucherNumber: string };
       toast({ title: "取込完了", description: `仕入伝票 ${invoice.voucherNumber} を作成しました。` });
+      mark(invoice.id);
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
       if (createPayment) queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
@@ -1137,7 +1143,7 @@ export default function Purchases() {
                   </TableCell>
                 </TableRow>
               ) : invoiceList.map((inv) => (
-                <TableRow key={inv.id} className="hover:bg-slate-50/60">
+                <TableRow key={inv.id} data-row-id={inv.id} className={cn("hover:bg-slate-50/60", isNew(inv.id) && "highlight-new")}>
                   <TableCell className="font-mono text-sm font-medium">
                     <Link
                       href={`/purchases?id=${inv.id}`}

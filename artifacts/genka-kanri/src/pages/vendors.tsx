@@ -11,7 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Badge } from "@/components/ui/badge";
 import { Users, Plus, Pencil, Trash2, Loader2, Save, ChevronDown, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { toHankakuKana } from "@/lib/utils";
+import { useHighlightNew } from "@/hooks/use-highlight-new";
+import { toHankakuKana, cn } from "@/lib/utils";
 
 interface VendorGroup {
   id: number;
@@ -195,9 +196,10 @@ interface VendorFormDialogProps {
   onClose: () => void;
   initial?: Vendor | null;
   groups: VendorGroup[];
+  onSaved?: (id: number) => void;
 }
 
-function VendorFormDialog({ open, onClose, initial, groups }: VendorFormDialogProps) {
+function VendorFormDialog({ open, onClose, initial, groups, onSaved }: VendorFormDialogProps) {
   const { toast } = useToast();
   const [form, setForm] = useState<VendorFormState>(() => defaultForm(initial));
   const [bankOpen, setBankOpen] = useState(false);
@@ -256,9 +258,11 @@ function VendorFormDialog({ open, onClose, initial, groups }: VendorFormDialogPr
       if (initial) {
         await update.mutateAsync({ id: initial.id, ...payload });
         toast({ title: "更新しました" });
+        onSaved?.(initial.id);
       } else {
-        await create.mutateAsync(payload);
+        const created = await create.mutateAsync(payload);
         toast({ title: "登録しました" });
+        onSaved?.(created?.id);
       }
       handleClose();
     } catch {
@@ -493,6 +497,7 @@ export default function Vendors() {
   const { data, isLoading } = useVendors();
   const { data: groupsData } = useVendorGroups();
   const deleteVendor = useDeleteVendor();
+  const { mark, isNew } = useHighlightNew();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Vendor | null>(null);
 
@@ -554,7 +559,7 @@ export default function Vendors() {
                 </TableRow>
               ) : (
                 items.map((v) => (
-                  <TableRow key={v.id}>
+                  <TableRow key={v.id} data-row-id={v.id} className={cn(isNew(v.id) && "highlight-new")}>
                     <TableCell className="font-medium">{v.name}</TableCell>
                     <TableCell className="font-mono text-xs text-slate-400">{v.code ?? "—"}</TableCell>
                     <TableCell>
@@ -606,6 +611,7 @@ export default function Vendors() {
         onClose={() => setDialogOpen(false)}
         initial={editing}
         groups={groups}
+        onSaved={mark}
       />
     </div>
   );

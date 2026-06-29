@@ -205,3 +205,44 @@
     break-after: avoid;
   }
 }
+
+/* 新規登録・更新した行の一時ハイライト（数秒で消える） */
+@keyframes highlightNewRow {
+  0% {
+    background-color: rgba(234, 88, 12, 0.22);
+    box-shadow: inset 3px 0 0 0 rgba(234, 88, 12, 1);
+  }
+  60% {
+    background-color: rgba(234, 88, 12, 0.13);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: inset 3px 0 0 0 rgba(234, 88, 12, 0);
+  }
+}
+@keyframes highlightNewCell {
+  0% {
+    background-color: rgba(234, 88, 12, 0.22);
+  }
+  60% {
+    background-color: rgba(234, 88, 12, 0.13);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+.highlight-new {
+  animation: highlightNewRow 3.2s ease-out forwards;
+}
+.highlight-new > td,
+.highlight-new > th {
+  animation: highlightNewCell 3.2s ease-out forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .highlight-new,
+  .highlight-new > td,
+  .highlight-new > th {
+    animation: none;
+    background-color: rgba(234, 88, 12, 0.12);
+  }
+}

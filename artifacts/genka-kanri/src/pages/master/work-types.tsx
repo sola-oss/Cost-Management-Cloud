@@ -9,6 +9,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useHighlightNew } from "@/hooks/use-highlight-new";
+import { cn } from "@/lib/utils";
 import { Plus, Pencil, Trash2, Loader2, Wrench } from "lucide-react";
 
 interface WorkType {
@@ -70,6 +72,7 @@ const defaultForm: FormValues = {
 export default function WorkTypeMaster() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { mark, isNew } = useHighlightNew();
 
   const { data: workTypes = [], isLoading } = useQuery({
     queryKey: QUERY_KEY,
@@ -132,6 +135,7 @@ export default function WorkTypeMaster() {
           throw new Error(data.message ?? "更新に失敗しました");
         }
         toast({ title: "更新しました" });
+        mark(editingItem.id);
       } else {
         const res = await fetch("/api/work-types", {
           method: "POST",
@@ -147,7 +151,9 @@ export default function WorkTypeMaster() {
           const data = await res.json().catch(() => ({}));
           throw new Error(data.message ?? "登録に失敗しました");
         }
+        const created = await res.json().catch(() => null);
         toast({ title: "登録しました" });
+        mark(created?.id);
       }
       queryClient.invalidateQueries({ queryKey: QUERY_KEY });
       closeDialog();
@@ -235,7 +241,7 @@ export default function WorkTypeMaster() {
                 </TableRow>
               ) : (
                 workTypes.map((item) => (
-                  <TableRow key={item.id} className="hover:bg-slate-50/60">
+                  <TableRow key={item.id} data-row-id={item.id} className={cn("hover:bg-slate-50/60", isNew(item.id) && "highlight-new")}>
                     <TableCell className="text-xs font-mono text-slate-600 font-medium">
                       {item.code}
                     </TableCell>
