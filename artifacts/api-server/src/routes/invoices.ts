@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, ne, and, lt, or } from "drizzle-orm";
 import { db, invoicesTable, invoiceItemsTable, invoicePaymentsTable, projectsTable } from "@workspace/db";
+import { withUniqueNumberRetry } from "../lib/unique-number";
 
 const router: IRouter = Router();
 
@@ -139,10 +140,10 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const b = req.body;
-    const invoiceNumber = await generateInvoiceNumber();
     const today = new Date().toISOString().slice(0, 10);
 
-    const [row] = await db.insert(invoicesTable).values({
+    const row = await withUniqueNumberRetry(generateInvoiceNumber, (invoiceNumber) =>
+      db.insert(invoicesTable).values({
       invoiceNumber,
       invoiceDate: b.invoiceDate || today,
       dueDate: b.dueDate || null,
@@ -163,7 +164,8 @@ router.post("/", async (req, res) => {
       paidAmount: "0",
       status: "unpaid",
       notes: b.notes ?? "",
-    }).returning();
+    }).returning().then((r) => r[0]),
+    );
 
     res.status(201).json(formatInvoice(row));
   } catch (err) {

@@ -12,6 +12,7 @@ import {
   costItemsTable,
 } from "@workspace/db";
 import type { PurchaseInvoiceStatus } from "@workspace/db";
+import { withUniqueNumberRetry } from "../lib/unique-number";
 
 const router: IRouter = Router();
 
@@ -236,11 +237,11 @@ router.post("/", async (req, res) => {
       .where(eq(vendorsTable.id, parseInt(vendorId)));
     const vendorName = vendorRow?.name ?? "（仕入先）";
 
-    const voucherNumber = await generateVoucherNumber();
     const itemRows: InvoiceItemInput[] = items ?? [];
     const { subtotal: calcedSubtotal, taxAmount: calcedTaxAmount, totalAmount: calcedTotalAmount } = calcInvoiceTotals(itemRows);
 
-    const [inv] = await db
+    const inv = await withUniqueNumberRetry(generateVoucherNumber, (voucherNumber) =>
+      db
       .insert(purchaseInvoicesTable)
       .values({
         voucherNumber,
@@ -259,7 +260,9 @@ router.post("/", async (req, res) => {
         totalAmount: String(calcedTotalAmount),
         notes: notes ?? null,
       })
-      .returning();
+      .returning().then((r) => r[0]),
+    );
+    const voucherNumber = inv.voucherNumber;
 
     let insertedItems: typeof purchaseInvoiceItemsTable.$inferSelect[] = [];
     if (itemRows.length > 0) {
@@ -345,7 +348,6 @@ router.post("/from-order/:orderId", async (req, res) => {
       .where(eq(purchaseOrderItemsTable.purchaseOrderId, orderId))
       .orderBy(purchaseOrderItemsTable.lineNumber);
 
-    const voucherNumber = await generateVoucherNumber();
     const purchaseDate = new Date().toISOString().split("T")[0];
 
     const itemRows = orderItems
@@ -380,7 +382,8 @@ router.post("/from-order/:orderId", async (req, res) => {
     );
     const totalAmt = subtotal + taxAmt;
 
-    const [inv] = await db
+    const inv = await withUniqueNumberRetry(generateVoucherNumber, (voucherNumber) =>
+      db
       .insert(purchaseInvoicesTable)
       .values({
         voucherNumber,
@@ -398,7 +401,9 @@ router.post("/from-order/:orderId", async (req, res) => {
         totalAmount: String(totalAmt),
         notes: notes ?? null,
       })
-      .returning();
+      .returning().then((r) => r[0]),
+    );
+    const voucherNumber = inv.voucherNumber;
 
     const insertedItems = await db
       .insert(purchaseInvoiceItemsTable)

@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, and } from "drizzle-orm";
 import { db, estimatesTable, estimateItemsTable, projectsTable } from "@workspace/db";
+import { withUniqueNumberRetry } from "../lib/unique-number";
 
 const router: IRouter = Router();
 
@@ -116,10 +117,10 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const b = extractBody(req.body);
-    const estimateNumber = await generateEstimateNumber();
     const today = new Date().toISOString().slice(0, 10);
 
-    const [row] = await db.insert(estimatesTable).values({
+    const row = await withUniqueNumberRetry(generateEstimateNumber, (estimateNumber) =>
+      db.insert(estimatesTable).values({
       estimateNumber,
       projectId: b.projectId ?? null,
       estimateDate: b.estimateDate || today,
@@ -151,7 +152,8 @@ router.post("/", async (req, res) => {
       staffEmail: b.staffEmail ?? "",
       miscExpensesRate: b.miscExpensesRate ?? "0",
       discountAmount: b.discountAmount ?? "0",
-    }).returning();
+    }).returning().then((r) => r[0]),
+    );
 
     res.status(201).json(formatEstimate(row));
   } catch (err) {
@@ -277,10 +279,10 @@ router.post("/:id/duplicate", async (req, res) => {
     if (!orig) return res.status(404).json({ message: "Not found" });
 
     const origItems = await db.select().from(estimateItemsTable).where(eq(estimateItemsTable.estimateId, id));
-    const newNumber = await generateEstimateNumber();
     const today = new Date().toISOString().slice(0, 10);
 
-    const [newEst] = await db.insert(estimatesTable).values({
+    const newEst = await withUniqueNumberRetry(generateEstimateNumber, (newNumber) =>
+      db.insert(estimatesTable).values({
       estimateNumber: newNumber,
       projectId: orig.projectId,
       estimateDate: today,
@@ -312,7 +314,8 @@ router.post("/:id/duplicate", async (req, res) => {
       staffEmail: orig.staffEmail,
       miscExpensesRate: orig.miscExpensesRate,
       discountAmount: orig.discountAmount,
-    }).returning();
+    }).returning().then((r) => r[0]),
+    );
 
     if (origItems.length > 0) {
       await db.insert(estimateItemsTable).values(
