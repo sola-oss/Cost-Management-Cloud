@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, sql, desc, inArray } from "drizzle-orm";
-import { db, projectsTable, costItemsTable, budgetsTable, budgetItemsTable, paymentsTable, invoicesTable } from "@workspace/db";
+import { db, projectsTable, costItemsTable, budgetItemsTable, paymentsTable, invoicesTable } from "@workspace/db";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -216,34 +216,26 @@ router.get("/monthly-costs", async (req, res) => {
 router.get("/budget-vs-actual", async (req, res) => {
   try {
     const { projectId } = req.query as Record<string, string>;
+    const pid = projectId ? parseInt(projectId) : undefined;
 
-    const conditions = projectId ? eq(budgetsTable.projectId, parseInt(projectId)) : undefined;
-    const costConditions = projectId ? eq(costItemsTable.projectId, parseInt(projectId)) : undefined;
-
-    const [budgets, costItems] = await Promise.all([
-      db.select().from(budgetsTable).where(conditions),
-      db.select().from(costItemsTable).where(costConditions),
+    // 実行予算は budget_items(revisedBudget) にしか保存されず、区分(material/labor/…)を持たない。
+    // 旧 budgets テーブルは未使用で常に空のため、合計ベースで「実行予算合計 vs 実績原価合計」を返す。
+    // （工種別の内訳は実行予算画面の原価モニター、区分別の実績は原価明細タブで確認できる）
+    const [budgetAgg, costAgg] = await Promise.all([
+      db.select({ total: sql<string>`coalesce(sum(${budgetItemsTable.revisedBudget}), 0)` })
+        .from(budgetItemsTable)
+        .where(pid ? eq(budgetItemsTable.projectId, pid) : undefined),
+      db.select({ total: sql<string>`coalesce(sum(${costItemsTable.amount}), 0)` })
+        .from(costItemsTable)
+        .where(pid ? eq(costItemsTable.projectId, pid) : undefined),
     ]);
 
-    const costByCategory = new Map<string, number>();
-    for (const ci of costItems) {
-      costByCategory.set(ci.category, (costByCategory.get(ci.category) ?? 0) + parseNumeric(ci.amount));
-    }
+    const budget = parseNumeric(budgetAgg[0]?.total);
+    const actual = parseNumeric(costAgg[0]?.total);
+    const variance = budget - actual;
+    const usageRate = budget > 0 ? Math.round((actual / budget) * 1000) / 10 : 0;
 
-    const categories = ["material", "labor", "subcontract", "expense"];
-    const budgetByCategory = new Map<string, number>();
-    for (const b of budgets) {
-      budgetByCategory.set(b.category, (budgetByCategory.get(b.category) ?? 0) + parseNumeric(b.budgetAmount));
-    }
-
-    const items = categories.map(category => {
-      const budget = budgetByCategory.get(category) ?? 0;
-      const actual = costByCategory.get(category) ?? 0;
-      const variance = budget - actual;
-      const usageRate = budget > 0 ? Math.round((actual / budget) * 1000) / 10 : 0;
-      return { category, label: categoryLabels[category] ?? category, budget, actual, variance, usageRate };
-    });
-
+    const items = [{ category: "total", label: "合計", budget, actual, variance, usageRate }];
     res.json({ items });
   } catch (err) {
     logger.error({ err }, "Failed to get budget-vs-actual");

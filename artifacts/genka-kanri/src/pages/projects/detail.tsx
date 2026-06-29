@@ -593,8 +593,8 @@ function FinancialTab({ projectId, contractAmount }: { projectId: number; contra
       {/* 予算実績グラフ */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">工種別 予算・実績比較</CardTitle>
-          <CardDescription>各工種区分の実行予算と実績原価の比較</CardDescription>
+          <CardTitle className="text-base">予算・実績比較</CardTitle>
+          <CardDescription>実行予算と実績原価の比較（工種別の内訳は実行予算画面の原価モニターで確認できます）</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-[280px]">
@@ -629,13 +629,13 @@ function FinancialTab({ projectId, contractAmount }: { projectId: number; contra
       {/* 収支明細テーブル */}
       <Card>
         <CardHeader className="border-b py-3">
-          <CardTitle className="text-sm font-semibold text-slate-700">工種別収支明細</CardTitle>
+          <CardTitle className="text-sm font-semibold text-slate-700">予算・実績収支</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader className="bg-slate-50">
               <TableRow>
-                <TableHead>工種区分</TableHead>
+                <TableHead>項目</TableHead>
                 <TableHead className="text-right">予算金額</TableHead>
                 <TableHead className="text-right">実績原価</TableHead>
                 <TableHead className="text-right">差異</TableHead>
