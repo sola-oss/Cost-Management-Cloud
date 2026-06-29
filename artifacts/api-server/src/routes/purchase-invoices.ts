@@ -12,7 +12,7 @@ import {
   costItemsTable,
 } from "@workspace/db";
 import type { PurchaseInvoiceStatus } from "@workspace/db";
-import { withUniqueNumberRetry } from "../lib/unique-number";
+import { withUniqueNumberTransaction, type Tx } from "../lib/unique-number";
 
 const router: IRouter = Router();
 
@@ -87,6 +87,7 @@ function calcInvoiceTotals(items: InvoiceItemInput[]): { subtotal: number; taxAm
 
 /** 仕入伝票の各明細行に対応する cost_items を作成し costItemId を更新する */
 async function syncCostItemsAfterInvoice(
+  tx: Tx,
   projectId: number,
   purchaseDate: string,
   voucherNumber: string,
@@ -96,7 +97,7 @@ async function syncCostItemsAfterInvoice(
   insertedItems: typeof purchaseInvoiceItemsTable.$inferSelect[]
 ) {
   for (const item of insertedItems) {
-    const [ci] = await db
+    const [ci] = await tx
       .insert(costItemsTable)
       .values({
         projectId,
@@ -117,7 +118,7 @@ async function syncCostItemsAfterInvoice(
       })
       .returning();
 
-    await db
+    await tx
       .update(purchaseInvoiceItemsTable)
       .set({ costItemId: ci.id })
       .where(eq(purchaseInvoiceItemsTable.id, item.id));
@@ -125,8 +126,8 @@ async function syncCostItemsAfterInvoice(
 }
 
 /** 仕入伝票に紐づく cost_items を全削除する */
-async function deleteCostItemsByInvoiceId(invoiceId: number) {
-  const items = await db
+async function deleteCostItemsByInvoiceId(tx: Tx, invoiceId: number) {
+  const items = await tx
     .select({ costItemId: purchaseInvoiceItemsTable.costItemId })
     .from(purchaseInvoiceItemsTable)
     .where(eq(purchaseInvoiceItemsTable.purchaseInvoiceId, invoiceId));
@@ -136,7 +137,7 @@ async function deleteCostItemsByInvoiceId(invoiceId: number) {
     .filter((id): id is number => id != null);
 
   if (costItemIds.length > 0) {
-    await db.delete(costItemsTable).where(inArray(costItemsTable.id, costItemIds));
+    await tx.delete(costItemsTable).where(inArray(costItemsTable.id, costItemIds));
   }
 }
 
@@ -240,82 +241,89 @@ router.post("/", async (req, res) => {
     const itemRows: InvoiceItemInput[] = items ?? [];
     const { subtotal: calcedSubtotal, taxAmount: calcedTaxAmount, totalAmount: calcedTotalAmount } = calcInvoiceTotals(itemRows);
 
-    const inv = await withUniqueNumberRetry(generateVoucherNumber, (voucherNumber) =>
-      db
-      .insert(purchaseInvoicesTable)
-      .values({
-        voucherNumber,
-        projectId: parseInt(projectId),
-        vendorId: parseInt(vendorId),
-        purchaseOrderId: purchaseOrderId ? parseInt(purchaseOrderId) : null,
-        purchaseDate,
-        paymentDueDate: paymentDueDate ?? null,
-        status: (status ?? "confirmed") as PurchaseInvoiceStatus,
-        taxCalculationMethod: taxCalculationMethod ?? "detail_exclusive",
-        isProvisional: isProvisional ?? false,
-        invoiceRegistrationNumber: invoiceRegistrationNumber ?? null,
-        isTaxableInvoice: isTaxableInvoice ?? true,
-        subtotal: String(calcedSubtotal),
-        taxAmount: String(calcedTaxAmount),
-        totalAmount: String(calcedTotalAmount),
-        notes: notes ?? null,
-      })
-      .returning().then((r) => r[0]),
+    // 伝票本体・明細・原価明細・発注納品数量・支払予定を1つのトランザクションで作成する。
+    // 採番(voucherNumber)が重複したらトランザクションごとロールバックして採り直す。
+    const { inv, insertedItems } = await withUniqueNumberTransaction(
+      generateVoucherNumber,
+      async (voucherNumber, tx) => {
+        const [inv] = await tx
+          .insert(purchaseInvoicesTable)
+          .values({
+            voucherNumber,
+            projectId: parseInt(projectId),
+            vendorId: parseInt(vendorId),
+            purchaseOrderId: purchaseOrderId ? parseInt(purchaseOrderId) : null,
+            purchaseDate,
+            paymentDueDate: paymentDueDate ?? null,
+            status: (status ?? "confirmed") as PurchaseInvoiceStatus,
+            taxCalculationMethod: taxCalculationMethod ?? "detail_exclusive",
+            isProvisional: isProvisional ?? false,
+            invoiceRegistrationNumber: invoiceRegistrationNumber ?? null,
+            isTaxableInvoice: isTaxableInvoice ?? true,
+            subtotal: String(calcedSubtotal),
+            taxAmount: String(calcedTaxAmount),
+            totalAmount: String(calcedTotalAmount),
+            notes: notes ?? null,
+          })
+          .returning();
+
+        let insertedItems: typeof purchaseInvoiceItemsTable.$inferSelect[] = [];
+        if (itemRows.length > 0) {
+          insertedItems = await tx
+            .insert(purchaseInvoiceItemsTable)
+            .values(
+              itemRows.map((item, idx) => ({
+                purchaseInvoiceId: inv.id,
+                purchaseOrderItemId: item.purchaseOrderItemId ?? null,
+                lineNumber: item.lineNumber ?? idx + 1,
+                category: item.category as "material" | "labor" | "subcontract" | "expense",
+                description: item.description,
+                specification: item.specification ?? null,
+                quantity: String(item.quantity ?? 1),
+                unit: item.unit ?? "",
+                unitPrice: String(item.unitPrice ?? 0),
+                amount: String(item.amount ?? 0),
+                taxRate: String(item.taxRate ?? 10),
+                workTypeId: item.workTypeId ?? null,
+              }))
+            )
+            .returning();
+
+          await syncCostItemsAfterInvoice(
+            tx,
+            parseInt(projectId),
+            purchaseDate,
+            voucherNumber,
+            isProvisional ?? false,
+            vendorName,
+            parseInt(vendorId),
+            insertedItems
+          );
+        }
+
+        if (purchaseOrderId) {
+          await syncDeliveredQuantity(tx, parseInt(purchaseOrderId));
+        }
+
+        if (createPayment) {
+          await tx.insert(paymentsTable).values({
+            projectId: parseInt(projectId),
+            vendor: vendorName,
+            description: paymentDescription ?? `仕入伝票 ${voucherNumber}`,
+            amount: String(calcedTotalAmount),
+            dueDate: paymentDueDate ?? null,
+            invoiceNumber: voucherNumber,
+            source: "manual",
+          });
+        }
+
+        return { inv, insertedItems };
+      },
     );
-    const voucherNumber = inv.voucherNumber;
-
-    let insertedItems: typeof purchaseInvoiceItemsTable.$inferSelect[] = [];
-    if (itemRows.length > 0) {
-      insertedItems = await db
-        .insert(purchaseInvoiceItemsTable)
-        .values(
-          itemRows.map((item, idx) => ({
-            purchaseInvoiceId: inv.id,
-            purchaseOrderItemId: item.purchaseOrderItemId ?? null,
-            lineNumber: item.lineNumber ?? idx + 1,
-            category: item.category as "material" | "labor" | "subcontract" | "expense",
-            description: item.description,
-            specification: item.specification ?? null,
-            quantity: String(item.quantity ?? 1),
-            unit: item.unit ?? "",
-            unitPrice: String(item.unitPrice ?? 0),
-            amount: String(item.amount ?? 0),
-            taxRate: String(item.taxRate ?? 10),
-            workTypeId: item.workTypeId ?? null,
-          }))
-        )
-        .returning();
-
-      await syncCostItemsAfterInvoice(
-        parseInt(projectId),
-        purchaseDate,
-        voucherNumber,
-        isProvisional ?? false,
-        vendorName,
-        parseInt(vendorId),
-        insertedItems
-      );
-    }
-
-    if (purchaseOrderId) {
-      await syncDeliveredQuantity(parseInt(purchaseOrderId));
-    }
-
-    if (createPayment) {
-      await db.insert(paymentsTable).values({
-        projectId: parseInt(projectId),
-        vendor: vendorName,
-        description: paymentDescription ?? `仕入伝票 ${voucherNumber}`,
-        amount: String(calcedTotalAmount),
-        dueDate: paymentDueDate ?? null,
-        invoiceNumber: voucherNumber,
-        source: "manual",
-      });
-    }
 
     return res.status(201).json({
       ...formatInvoice(inv),
-      voucherNumber,
+      voucherNumber: inv.voucherNumber,
       items: insertedItems.map(formatItem),
     });
   } catch (err) {
@@ -382,72 +390,78 @@ router.post("/from-order/:orderId", async (req, res) => {
     );
     const totalAmt = subtotal + taxAmt;
 
-    const inv = await withUniqueNumberRetry(generateVoucherNumber, (voucherNumber) =>
-      db
-      .insert(purchaseInvoicesTable)
-      .values({
-        voucherNumber,
-        projectId: order.projectId,
-        vendorId: order.vendorId,
-        purchaseOrderId: orderId,
-        purchaseDate,
-        paymentDueDate: paymentDueDate ?? null,
-        status: "confirmed" as PurchaseInvoiceStatus,
-        taxCalculationMethod: "detail_exclusive",
-        isProvisional: isProvisional ?? false,
-        isTaxableInvoice: true,
-        subtotal: String(subtotal),
-        taxAmount: String(taxAmt),
-        totalAmount: String(totalAmt),
-        notes: notes ?? null,
-      })
-      .returning().then((r) => r[0]),
+    // 発注からの伝票化も、本体・明細・原価・納品数量・支払を1トランザクションで作成する。
+    const { inv, insertedItems } = await withUniqueNumberTransaction(
+      generateVoucherNumber,
+      async (voucherNumber, tx) => {
+        const [inv] = await tx
+          .insert(purchaseInvoicesTable)
+          .values({
+            voucherNumber,
+            projectId: order.projectId,
+            vendorId: order.vendorId,
+            purchaseOrderId: orderId,
+            purchaseDate,
+            paymentDueDate: paymentDueDate ?? null,
+            status: "confirmed" as PurchaseInvoiceStatus,
+            taxCalculationMethod: "detail_exclusive",
+            isProvisional: isProvisional ?? false,
+            isTaxableInvoice: true,
+            subtotal: String(subtotal),
+            taxAmount: String(taxAmt),
+            totalAmount: String(totalAmt),
+            notes: notes ?? null,
+          })
+          .returning();
+
+        const insertedItems = await tx
+          .insert(purchaseInvoiceItemsTable)
+          .values(
+            itemRows.map((item) => ({
+              purchaseInvoiceId: inv.id,
+              purchaseOrderItemId: item.purchaseOrderItemId,
+              lineNumber: item.lineNumber,
+              category: item.category,
+              description: item.description,
+              specification: item.specification,
+              quantity: item.quantity,
+              unit: item.unit,
+              unitPrice: item.unitPrice,
+              amount: item.amount,
+              taxRate: item.taxRate,
+              workTypeId: item.workTypeId,
+            }))
+          )
+          .returning();
+
+        await syncCostItemsAfterInvoice(
+          tx,
+          order.projectId,
+          purchaseDate,
+          voucherNumber,
+          isProvisional ?? false,
+          vendorName,
+          order.vendorId,
+          insertedItems
+        );
+
+        await syncDeliveredQuantity(tx, orderId);
+
+        if (createPayment) {
+          await tx.insert(paymentsTable).values({
+            projectId: order.projectId,
+            vendor: vendorName,
+            description: `仕入伝票 ${voucherNumber}`,
+            amount: String(totalAmt),
+            dueDate: paymentDueDate ?? null,
+            invoiceNumber: voucherNumber,
+            source: "manual",
+          });
+        }
+
+        return { inv, insertedItems };
+      },
     );
-    const voucherNumber = inv.voucherNumber;
-
-    const insertedItems = await db
-      .insert(purchaseInvoiceItemsTable)
-      .values(
-        itemRows.map((item) => ({
-          purchaseInvoiceId: inv.id,
-          purchaseOrderItemId: item.purchaseOrderItemId,
-          lineNumber: item.lineNumber,
-          category: item.category,
-          description: item.description,
-          specification: item.specification,
-          quantity: item.quantity,
-          unit: item.unit,
-          unitPrice: item.unitPrice,
-          amount: item.amount,
-          taxRate: item.taxRate,
-          workTypeId: item.workTypeId,
-        }))
-      )
-      .returning();
-
-    await syncCostItemsAfterInvoice(
-      order.projectId,
-      purchaseDate,
-      voucherNumber,
-      isProvisional ?? false,
-      vendorName,
-      order.vendorId,
-      insertedItems
-    );
-
-    await syncDeliveredQuantity(orderId);
-
-    if (createPayment) {
-      await db.insert(paymentsTable).values({
-        projectId: order.projectId,
-        vendor: vendorName,
-        description: `仕入伝票 ${voucherNumber}`,
-        amount: String(totalAmt),
-        dueDate: paymentDueDate ?? null,
-        invoiceNumber: voucherNumber,
-        source: "manual",
-      });
-    }
 
     return res.status(201).json({
       ...formatInvoice(inv),
@@ -481,71 +495,77 @@ router.patch("/:id", async (req, res) => {
     if (isProvisional !== undefined) updates.isProvisional = isProvisional;
     if (notes !== undefined) updates.notes = notes ?? null;
 
-    if (items !== undefined) {
-      const itemRows: InvoiceItemInput[] = items;
+    // 明細の差し替え（旧cost_items削除→旧明細削除→新明細→新cost_items→納品数量）と
+    // 伝票本体の更新を1トランザクションにまとめ、途中失敗で原価と伝票が食い違わないようにする。
+    const updated = await db.transaction(async (tx) => {
+      if (items !== undefined) {
+        const itemRows: InvoiceItemInput[] = items;
 
-      // 明細から合計を再計算（クライアント送信値は信用しない）
-      const { subtotal: calcedSubtotal, taxAmount: calcedTaxAmount, totalAmount: calcedTotalAmount } = calcInvoiceTotals(itemRows);
-      updates.subtotal = String(calcedSubtotal);
-      updates.taxAmount = String(calcedTaxAmount);
-      updates.totalAmount = String(calcedTotalAmount);
+        // 明細から合計を再計算（クライアント送信値は信用しない）
+        const { subtotal: calcedSubtotal, taxAmount: calcedTaxAmount, totalAmount: calcedTotalAmount } = calcInvoiceTotals(itemRows);
+        updates.subtotal = String(calcedSubtotal);
+        updates.taxAmount = String(calcedTaxAmount);
+        updates.totalAmount = String(calcedTotalAmount);
 
-      // 1. 旧 cost_items を先に削除（costItemId 参照が必要なため items 削除より前に行う）
-      await deleteCostItemsByInvoiceId(id);
+        // 1. 旧 cost_items を先に削除（costItemId 参照が必要なため items 削除より前に行う）
+        await deleteCostItemsByInvoiceId(tx, id);
 
-      // 2. 旧明細を削除
-      await db
-        .delete(purchaseInvoiceItemsTable)
-        .where(eq(purchaseInvoiceItemsTable.purchaseInvoiceId, id));
+        // 2. 旧明細を削除
+        await tx
+          .delete(purchaseInvoiceItemsTable)
+          .where(eq(purchaseInvoiceItemsTable.purchaseInvoiceId, id));
 
-      // 3. 新明細を INSERT
-      let newInsertedItems: typeof purchaseInvoiceItemsTable.$inferSelect[] = [];
-      if (itemRows.length > 0) {
-        newInsertedItems = await db.insert(purchaseInvoiceItemsTable).values(
-          itemRows.map((item, idx) => ({
-            purchaseInvoiceId: id,
-            purchaseOrderItemId: item.purchaseOrderItemId ?? null,
-            lineNumber: item.lineNumber ?? idx + 1,
-            category: item.category as "material" | "labor" | "subcontract" | "expense",
-            description: item.description,
-            specification: item.specification ?? null,
-            quantity: String(item.quantity ?? 1),
-            unit: item.unit ?? "",
-            unitPrice: String(item.unitPrice ?? 0),
-            amount: String(item.amount ?? 0),
-            taxRate: String(item.taxRate ?? 10),
-            workTypeId: item.workTypeId ?? null,
-          }))
-        ).returning();
+        // 3. 新明細を INSERT
+        let newInsertedItems: typeof purchaseInvoiceItemsTable.$inferSelect[] = [];
+        if (itemRows.length > 0) {
+          newInsertedItems = await tx.insert(purchaseInvoiceItemsTable).values(
+            itemRows.map((item, idx) => ({
+              purchaseInvoiceId: id,
+              purchaseOrderItemId: item.purchaseOrderItemId ?? null,
+              lineNumber: item.lineNumber ?? idx + 1,
+              category: item.category as "material" | "labor" | "subcontract" | "expense",
+              description: item.description,
+              specification: item.specification ?? null,
+              quantity: String(item.quantity ?? 1),
+              unit: item.unit ?? "",
+              unitPrice: String(item.unitPrice ?? 0),
+              amount: String(item.amount ?? 0),
+              taxRate: String(item.taxRate ?? 10),
+              workTypeId: item.workTypeId ?? null,
+            }))
+          ).returning();
 
-        // 4. 新 cost_items を生成
-        const [vendorRow] = await db
-          .select({ name: vendorsTable.name })
-          .from(vendorsTable)
-          .where(eq(vendorsTable.id, existing.vendorId));
-        const vendorName = vendorRow?.name ?? "（仕入先）";
+          // 4. 新 cost_items を生成
+          const [vendorRow] = await tx
+            .select({ name: vendorsTable.name })
+            .from(vendorsTable)
+            .where(eq(vendorsTable.id, existing.vendorId));
+          const vendorName = vendorRow?.name ?? "（仕入先）";
 
-        await syncCostItemsAfterInvoice(
-          existing.projectId,
-          (purchaseDate ?? existing.purchaseDate) as string,
-          existing.voucherNumber,
-          isProvisional !== undefined ? (isProvisional as boolean) : existing.isProvisional,
-          vendorName,
-          existing.vendorId,
-          newInsertedItems
-        );
+          await syncCostItemsAfterInvoice(
+            tx,
+            existing.projectId,
+            (purchaseDate ?? existing.purchaseDate) as string,
+            existing.voucherNumber,
+            isProvisional !== undefined ? (isProvisional as boolean) : existing.isProvisional,
+            vendorName,
+            existing.vendorId,
+            newInsertedItems
+          );
+        }
+
+        if (existing.purchaseOrderId) {
+          await syncDeliveredQuantity(tx, existing.purchaseOrderId);
+        }
       }
 
-      if (existing.purchaseOrderId) {
-        await syncDeliveredQuantity(existing.purchaseOrderId);
-      }
-    }
-
-    const [updated] = await db
-      .update(purchaseInvoicesTable)
-      .set(updates)
-      .where(eq(purchaseInvoicesTable.id, id))
-      .returning();
+      const [u] = await tx
+        .update(purchaseInvoicesTable)
+        .set(updates)
+        .where(eq(purchaseInvoicesTable.id, id))
+        .returning();
+      return u;
+    });
 
     const newItems = await db
       .select()
@@ -582,16 +602,19 @@ router.delete("/:id", async (req, res) => {
 
     const orderId = existing.purchaseOrderId;
 
-    // 1. 対応 cost_items を先に削除
-    await deleteCostItemsByInvoiceId(id);
+    // cost_items削除・伝票削除・納品数量の再計算を1トランザクションにまとめる。
+    await db.transaction(async (tx) => {
+      // 1. 対応 cost_items を先に削除
+      await deleteCostItemsByInvoiceId(tx, id);
 
-    // 2. 仕入伝票削除（CASCADE で明細も削除）
-    await db.delete(purchaseInvoicesTable).where(eq(purchaseInvoicesTable.id, id));
+      // 2. 仕入伝票削除（CASCADE で明細も削除）
+      await tx.delete(purchaseInvoicesTable).where(eq(purchaseInvoicesTable.id, id));
 
-    // 3. 発注書の納品数量を再計算
-    if (orderId) {
-      await syncDeliveredQuantity(orderId);
-    }
+      // 3. 発注書の納品数量を再計算
+      if (orderId) {
+        await syncDeliveredQuantity(tx, orderId);
+      }
+    });
 
     return res.status(204).send();
   } catch (err) {
@@ -601,14 +624,14 @@ router.delete("/:id", async (req, res) => {
 });
 
 // ─── Helper: sync deliveredQuantity on PO items ───────────────────────────────
-async function syncDeliveredQuantity(purchaseOrderId: number) {
-  const orderItems = await db
+async function syncDeliveredQuantity(tx: Tx, purchaseOrderId: number) {
+  const orderItems = await tx
     .select()
     .from(purchaseOrderItemsTable)
     .where(eq(purchaseOrderItemsTable.purchaseOrderId, purchaseOrderId));
 
   for (const oi of orderItems) {
-    const invoiceItems = await db
+    const invoiceItems = await tx
       .select({ quantity: purchaseInvoiceItemsTable.quantity })
       .from(purchaseInvoiceItemsTable)
       .innerJoin(
@@ -623,13 +646,13 @@ async function syncDeliveredQuantity(purchaseOrderId: number) {
       );
 
     const delivered = invoiceItems.reduce((s, i) => s + parseN(i.quantity), 0);
-    await db
+    await tx
       .update(purchaseOrderItemsTable)
       .set({ deliveredQuantity: String(delivered), updatedAt: new Date() })
       .where(eq(purchaseOrderItemsTable.id, oi.id));
   }
 
-  const updatedItems = await db
+  const updatedItems = await tx
     .select()
     .from(purchaseOrderItemsTable)
     .where(eq(purchaseOrderItemsTable.purchaseOrderId, purchaseOrderId));
@@ -639,14 +662,14 @@ async function syncDeliveredQuantity(purchaseOrderId: number) {
   );
   const anyDelivered = updatedItems.some((i) => parseN(i.deliveredQuantity) > 0);
 
-  const [order] = await db
+  const [order] = await tx
     .select({ status: purchaseOrdersTable.status })
     .from(purchaseOrdersTable)
     .where(eq(purchaseOrdersTable.id, purchaseOrderId));
 
   if (order && order.status !== "cancelled" && order.status !== "draft") {
     const orderStatus = allDelivered ? "completed" : anyDelivered ? "partial" : "ordered";
-    await db
+    await tx
       .update(purchaseOrdersTable)
       .set({ status: orderStatus, updatedAt: new Date() })
       .where(eq(purchaseOrdersTable.id, purchaseOrderId));
