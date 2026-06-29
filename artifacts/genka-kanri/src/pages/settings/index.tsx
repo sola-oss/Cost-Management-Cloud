@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { toHankakuKana } from "@/lib/utils";
 import { Loader2, Building2, Save } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -247,7 +248,7 @@ export default function CompanySettingsPage() {
             </div>
             <div>
               <Label>会社名カナ</Label>
-              <Input value={form.companyNameKana} onChange={(e) => set("companyNameKana", e.target.value)} className="mt-1" placeholder="半角カナ40桁以内" />
+              <Input value={form.companyNameKana} onChange={(e) => set("companyNameKana", toHankakuKana(e.target.value))} className="mt-1" placeholder="半角カナ40桁以内" />
             </div>
           </div>
 
@@ -262,7 +263,7 @@ export default function CompanySettingsPage() {
             </div>
             <div>
               <Label>銀行名カナ</Label>
-              <Input value={form.bankNameKana} onChange={(e) => set("bankNameKana", e.target.value)} className="mt-1" placeholder="半角カナ15桁以内" />
+              <Input value={form.bankNameKana} onChange={(e) => set("bankNameKana", toHankakuKana(e.target.value))} className="mt-1" placeholder="半角カナ15桁以内" />
             </div>
           </div>
 
@@ -277,7 +278,7 @@ export default function CompanySettingsPage() {
             </div>
             <div>
               <Label>支店名カナ</Label>
-              <Input value={form.bankBranchKana} onChange={(e) => set("bankBranchKana", e.target.value)} className="mt-1" placeholder="半角カナ15桁以内" />
+              <Input value={form.bankBranchKana} onChange={(e) => set("bankBranchKana", toHankakuKana(e.target.value))} className="mt-1" placeholder="半角カナ15桁以内" />
             </div>
           </div>
 

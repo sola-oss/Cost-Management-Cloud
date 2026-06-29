@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Badge } from "@/components/ui/badge";
 import { Users, Plus, Pencil, Trash2, Loader2, Save, ChevronDown, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { toHankakuKana } from "@/lib/utils";
 
 interface VendorGroup {
   id: number;
@@ -408,7 +409,7 @@ function VendorFormDialog({ open, onClose, initial, groups }: VendorFormDialogPr
                   </div>
                   <div>
                     <Label className="text-xs">銀行名カナ</Label>
-                    <Input value={form.bankNameKana} onChange={(e) => set("bankNameKana", e.target.value)} placeholder="半角カナ15桁以内" className="mt-1 h-8 text-sm" />
+                    <Input value={form.bankNameKana} onChange={(e) => set("bankNameKana", toHankakuKana(e.target.value))} placeholder="半角カナ15桁以内" className="mt-1 h-8 text-sm" />
                   </div>
                 </div>
 
@@ -423,7 +424,7 @@ function VendorFormDialog({ open, onClose, initial, groups }: VendorFormDialogPr
                   </div>
                   <div>
                     <Label className="text-xs">支店名カナ</Label>
-                    <Input value={form.bankBranchKana} onChange={(e) => set("bankBranchKana", e.target.value)} placeholder="半角カナ15桁以内" className="mt-1 h-8 text-sm" />
+                    <Input value={form.bankBranchKana} onChange={(e) => set("bankBranchKana", toHankakuKana(e.target.value))} placeholder="半角カナ15桁以内" className="mt-1 h-8 text-sm" />
                   </div>
                 </div>
 
@@ -453,7 +454,7 @@ function VendorFormDialog({ open, onClose, initial, groups }: VendorFormDialogPr
 
                 <div>
                   <Label className="text-xs">受取人名カナ</Label>
-                  <Input value={form.bankAccountHolderKana} onChange={(e) => set("bankAccountHolderKana", e.target.value)} placeholder="半角カナ30桁以内" className="mt-1 h-8 text-sm" />
+                  <Input value={form.bankAccountHolderKana} onChange={(e) => set("bankAccountHolderKana", toHankakuKana(e.target.value))} placeholder="半角カナ30桁以内" className="mt-1 h-8 text-sm" />
                 </div>
               </div>
             )}
