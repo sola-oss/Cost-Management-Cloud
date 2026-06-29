@@ -407,17 +407,25 @@ router.get("/:id/ledger", async (req, res) => {
     const grossProfit = contractAmount - totalActualCost;
     const grossProfitRate = contractAmount > 0 ? (grossProfit / contractAmount) * 100 : 0;
 
-    const invoicesWithPayments = await Promise.all(
-      invoiceRows.map(async (inv) => {
-        const payments = await db.select().from(invoicePaymentsTable).where(eq(invoicePaymentsTable.invoiceId, inv.id)).orderBy(invoicePaymentsTable.paymentDate);
-        return {
-          ...inv,
-          totalAmount: parseNumeric(inv.totalAmount),
-          paidAmount: parseNumeric(inv.paidAmount),
-          payments: payments.map(p => ({ ...p, amount: parseNumeric(p.amount) })),
-        };
-      })
-    );
+    // 請求ごとに入金を個別取得するとN+1になるため、全請求の入金を1クエリでまとめて取得し
+    // メモリ上で請求IDごとに振り分ける（結果は従来と同じ。paymentDate順も維持）。
+    const invoiceIds = invoiceRows.map((inv) => inv.id);
+    const allInvPayments = invoiceIds.length > 0
+      ? await db.select().from(invoicePaymentsTable).where(inArray(invoicePaymentsTable.invoiceId, invoiceIds)).orderBy(invoicePaymentsTable.paymentDate)
+      : [];
+    const payByInvoice = new Map<number, typeof allInvPayments>();
+    for (const p of allInvPayments) {
+      const arr = payByInvoice.get(p.invoiceId) ?? [];
+      arr.push(p);
+      payByInvoice.set(p.invoiceId, arr);
+    }
+
+    const invoicesWithPayments = invoiceRows.map((inv) => ({
+      ...inv,
+      totalAmount: parseNumeric(inv.totalAmount),
+      paidAmount: parseNumeric(inv.paidAmount),
+      payments: (payByInvoice.get(inv.id) ?? []).map((p) => ({ ...p, amount: parseNumeric(p.amount) })),
+    }));
 
     const totalInvoiced = invoicesWithPayments.reduce((s, inv) => s + inv.totalAmount, 0);
     const totalPaid = invoicesWithPayments.reduce((s, inv) => s + inv.paidAmount, 0);

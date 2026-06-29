@@ -97,9 +97,10 @@ router.get("/overview", async (_req, res) => {
     const lastDay = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
     const monthEnd = `${today.slice(0, 8)}${String(lastDay).padStart(2, "0")}`;
 
+    // 未払/一部のみ集計対象。SQL側で status を絞って読み込む行数を減らす（結果は不変）。
     const [pays, invs] = await Promise.all([
-      db.select({ amount: paymentsTable.amount, paidAmount: paymentsTable.paidAmount, dueDate: paymentsTable.dueDate, status: paymentsTable.status }).from(paymentsTable),
-      db.select({ totalAmount: invoicesTable.totalAmount, paidAmount: invoicesTable.paidAmount, dueDate: invoicesTable.dueDate, status: invoicesTable.status }).from(invoicesTable),
+      db.select({ amount: paymentsTable.amount, paidAmount: paymentsTable.paidAmount, dueDate: paymentsTable.dueDate, status: paymentsTable.status }).from(paymentsTable).where(inArray(paymentsTable.status, ["pending", "partial"])),
+      db.select({ totalAmount: invoicesTable.totalAmount, paidAmount: invoicesTable.paidAmount, dueDate: invoicesTable.dueDate, status: invoicesTable.status }).from(invoicesTable).where(inArray(invoicesTable.status, ["unpaid", "partial"])),
     ]);
 
     let overduePayCount = 0, overduePayAmount = 0, thisMonthPayAmount = 0;

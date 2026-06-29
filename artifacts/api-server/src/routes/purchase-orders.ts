@@ -102,22 +102,30 @@ router.get("/available-for-invoice", async (req, res) => {
       .where(and(...conditions))
       .orderBy(desc(purchaseOrdersTable.orderDate));
 
-    const ordersWithItems = await Promise.all(
-      rows.map(async (r) => {
-        const items = await db
+    // 発注ごとに明細を個別取得するとN+1になるため、全発注の明細を1クエリでまとめて取得し
+    // メモリ上で発注IDごとに振り分ける（結果は従来と同じ。lineNumber順も維持）。
+    const orderIds = rows.map((r) => r.order.id);
+    const allItems = orderIds.length > 0
+      ? await db
           .select()
           .from(purchaseOrderItemsTable)
-          .where(eq(purchaseOrderItemsTable.purchaseOrderId, r.order.id))
-          .orderBy(purchaseOrderItemsTable.lineNumber);
-        return {
-          ...formatOrder(r.order),
-          vendorName: r.vendorName ?? "",
-          projectCode: r.projectCode ?? "",
-          projectName: r.projectName ?? "",
-          items: items.map(formatItem),
-        };
-      })
-    );
+          .where(inArray(purchaseOrderItemsTable.purchaseOrderId, orderIds))
+          .orderBy(purchaseOrderItemsTable.lineNumber)
+      : [];
+    const itemsByOrder = new Map<number, typeof allItems>();
+    for (const it of allItems) {
+      const arr = itemsByOrder.get(it.purchaseOrderId) ?? [];
+      arr.push(it);
+      itemsByOrder.set(it.purchaseOrderId, arr);
+    }
+
+    const ordersWithItems = rows.map((r) => ({
+      ...formatOrder(r.order),
+      vendorName: r.vendorName ?? "",
+      projectCode: r.projectCode ?? "",
+      projectName: r.projectName ?? "",
+      items: (itemsByOrder.get(r.order.id) ?? []).map(formatItem),
+    }));
 
     res.json({ items: ordersWithItems, total: ordersWithItems.length });
   } catch (err) {
