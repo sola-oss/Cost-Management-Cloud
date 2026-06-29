@@ -215,6 +215,10 @@ function BudgetTab({ projectId }: { projectId: number }) {
 
 const COST_FILTER_OPTIONS: Array<Category | "all"> = ["all", "material", "labor", "subcontract", "expense"];
 
+// 原価明細の取得件数上限。100件で頭打ちになると合計金額が過小になるため、
+// 1工事の明細が数百件でも全件取得できる値にする（サーバ側の上限と揃える）。
+const COST_ITEMS_LIMIT = 2000;
+
 function CostItemsTab({ projectId }: { projectId: number }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -224,8 +228,8 @@ function CostItemsTab({ projectId }: { projectId: number }) {
   const [searchText, setSearchText] = useState("");
 
   const { data: costItems, isLoading } = useListCostItems(
-    { projectId, limit: 100 },
-    { query: { enabled: !!projectId, queryKey: getListCostItemsQueryKey({ projectId, limit: 100 }) } },
+    { projectId, limit: COST_ITEMS_LIMIT },
+    { query: { enabled: !!projectId, queryKey: getListCostItemsQueryKey({ projectId, limit: COST_ITEMS_LIMIT }) } },
   );
 
   const createCostItem = useCreateCostItem();
@@ -267,7 +271,7 @@ function CostItemsTab({ projectId }: { projectId: number }) {
       {
         onSuccess: () => {
           toast({ title: "計上しました", description: "原価明細を登録しました。" });
-          queryClient.invalidateQueries({ queryKey: getListCostItemsQueryKey({ projectId, limit: 100 }) });
+          queryClient.invalidateQueries({ queryKey: getListCostItemsQueryKey({ projectId, limit: COST_ITEMS_LIMIT }) });
           queryClient.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
           queryClient.invalidateQueries({ queryKey: getGetBudgetVsActualQueryKey({ projectId }) });
           setAddOpen(false);
@@ -286,7 +290,7 @@ function CostItemsTab({ projectId }: { projectId: number }) {
     try {
       await deleteCostItem.mutateAsync({ id });
       toast({ title: "削除しました" });
-      queryClient.invalidateQueries({ queryKey: getListCostItemsQueryKey({ projectId, limit: 100 }) });
+      queryClient.invalidateQueries({ queryKey: getListCostItemsQueryKey({ projectId, limit: COST_ITEMS_LIMIT }) });
       queryClient.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
       queryClient.invalidateQueries({ queryKey: getGetBudgetVsActualQueryKey({ projectId }) });
     } catch {
@@ -407,7 +411,7 @@ function CostItemsTab({ projectId }: { projectId: number }) {
                   <TableRow>
                     <TableCell colSpan={9} className="h-32 text-center text-slate-500">
                       {items.length === 0
-                        ? "原価明細がありません。「明細追加」から計上してください。"
+                        ? "原価明細がありません。「仕入入力で登録」から計上してください。"
                         : "条件に一致する明細がありません。"}
                     </TableCell>
                   </TableRow>
@@ -429,7 +433,7 @@ function CostItemsTab({ projectId }: { projectId: number }) {
                         {new Date(item.incurredDate).toLocaleDateString("ja-JP")}
                       </TableCell>
                       <TableCell>
-                        <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-1.5">
                           <Badge variant="outline" className={`${CATEGORY_COLORS[item.category as Category] ?? ""} text-xs`}>
                             {CATEGORY_LABELS[item.category as Category] ?? item.category}
                           </Badge>
@@ -484,14 +488,20 @@ function CostItemsTab({ projectId }: { projectId: number }) {
       </Card>
 
       {filteredItems.length > 0 && (
-        <div className="flex items-center justify-between text-sm text-slate-500">
-          <span>{filteredItems.length} 件表示 / 全 {items.length} 件</span>
-          <span>
-            表示合計:{" "}
-            <span className="font-bold text-slate-900">
-              {formatCurrency(filteredItems.reduce((s, i) => s + i.amount, 0))}
+        // スクロールしても画面下に貼り付く合計バー（明細が多くても合計が常に見える）。
+        // 親に overflow:hidden が無く、スクロール実体は layout の overflow-auto なので sticky が効く。
+        <div className="sticky bottom-0 z-10 pt-2">
+          <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white/90 px-4 py-2.5 shadow-[0_-2px_10px_rgba(15,23,42,0.08)] backdrop-blur supports-[backdrop-filter]:bg-white/75">
+            <span className="text-sm text-slate-500">
+              {filteredItems.length} 件表示 / 全 {items.length} 件
             </span>
-          </span>
+            <span className="text-sm text-slate-600">
+              表示合計
+              <span className="ml-2 text-base font-bold text-slate-900">
+                {formatCurrency(filteredItems.reduce((s, i) => s + i.amount, 0))}
+              </span>
+            </span>
+          </div>
         </div>
       )}
     </div>

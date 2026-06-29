@@ -11,7 +11,8 @@ function parseNumeric(val: unknown): number {
 router.get("/", async (req, res) => {
   try {
     const { projectId, category, limit: limitStr } = req.query as Record<string, string>;
-    const limitNum = limitStr ? Math.min(parseInt(limitStr), 500) : 100;
+    // 上限はクランプするが、1工事の原価明細が数百件になっても全件表示できるよう余裕を持たせる。
+    const limitNum = limitStr ? Math.min(parseInt(limitStr), 2000) : 100;
 
     if (projectId) {
       const conditions = [eq(costItemsTable.projectId, parseInt(projectId))];
