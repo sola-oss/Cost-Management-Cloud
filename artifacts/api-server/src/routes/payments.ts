@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, desc, inArray, gte, lte, isNotNull } from "drizzle-orm";
+import { eq, and, desc, inArray, gte, lte, isNotNull, sql } from "drizzle-orm";
 import iconv from "iconv-lite";
 import { db, paymentsTable, projectsTable, companySettingsTable, vendorsTable, purchaseInvoicesTable } from "@workspace/db";
 
@@ -89,6 +89,8 @@ router.get("/", async (req, res) => {
     if (projectId) conditions.push(eq(paymentsTable.projectId, parseInt(projectId)));
     if (status) conditions.push(eq(paymentsTable.status, status as any));
 
+    const whereConditions = conditions.length > 0 ? and(...conditions) : undefined;
+
     const rows = await db
       .select({
         payment: paymentsTable,
@@ -97,14 +99,27 @@ router.get("/", async (req, res) => {
       })
       .from(paymentsTable)
       .innerJoin(projectsTable, eq(paymentsTable.projectId, projectsTable.id))
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .where(whereConditions)
       .orderBy(desc(paymentsTable.createdAt))
-      .limit(200);
+      .limit(2000);
 
-    const totalAmount = rows.reduce((s, r) => s + parseNumeric(r.payment.amount), 0);
-    const paidAmount = rows
-      .filter((r) => r.payment.status === "paid")
-      .reduce((s, r) => s + parseNumeric(r.payment.amount), 0);
+    // KPI合計は一覧の取得上限(limit)に左右されないよう、DB側の集計で別途算出する。
+    // 「支払済」は status=paid の全額に加え、一部入金(partial)の paidAmount も加算する
+    // （これを足さないと支払済が過小・未払が過大になる）。
+    const [agg] = await db
+      .select({
+        count: sql<number>`count(*)`,
+        totalAmount: sql<number>`coalesce(sum(${paymentsTable.amount}), 0)`,
+        paidAmount: sql<number>`coalesce(sum(case
+          when ${paymentsTable.status} = 'paid' then ${paymentsTable.amount}
+          when ${paymentsTable.status} = 'partial' then coalesce(${paymentsTable.paidAmount}, 0)
+          else 0 end), 0)`,
+      })
+      .from(paymentsTable)
+      .where(whereConditions);
+
+    const totalAmount = parseNumeric(agg?.totalAmount);
+    const paidAmount = parseNumeric(agg?.paidAmount);
 
     res.json({
       items: rows.map((r) => ({
@@ -112,7 +127,7 @@ router.get("/", async (req, res) => {
         projectCode: r.projectCode,
         projectName: r.projectName,
       })),
-      total: rows.length,
+      total: Number(agg?.count ?? 0),
       totalAmount,
       paidAmount,
       pendingAmount: totalAmount - paidAmount,

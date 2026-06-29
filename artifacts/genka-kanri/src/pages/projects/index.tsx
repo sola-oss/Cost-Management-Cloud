@@ -38,12 +38,12 @@ export default function Projects() {
     return () => clearTimeout(t);
   }, [search]);
 
-  const params = (statusFilter !== "all" || debouncedSearch)
-    ? {
-        ...(statusFilter !== "all" ? { status: statusFilter as "planning" | "active" | "completed" | "suspended" } : {}),
-        ...(debouncedSearch ? { search: debouncedSearch } : {}),
-      }
-    : undefined;
+  // limit を明示しないとサーバ既定の20件で打ち切られ、21件目以降の工事が一覧から消える。
+  const params = {
+    limit: 2000,
+    ...(statusFilter !== "all" ? { status: statusFilter as "planning" | "active" | "completed" | "suspended" } : {}),
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
+  };
 
   const { data, isLoading, isError } = useListProjects(params, {
     query: { queryKey: getListProjectsQueryKey(params) },

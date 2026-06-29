@@ -96,7 +96,7 @@ router.get("/", async (req, res) => {
       .leftJoin(projectsTable, eq(estimatesTable.projectId, projectsTable.id))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(desc(estimatesTable.createdAt))
-      .limit(200);
+      .limit(2000);
 
     res.json({
       items: rows.map((r) => ({

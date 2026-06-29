@@ -10,8 +10,9 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { formatCurrency, formatPercent } from "@/lib/utils";
 
 export default function Reports() {
-  const { data, isLoading } = useListProjects({ limit: 50 }, { 
-    query: { queryKey: getListProjectsQueryKey({ limit: 50 }) } 
+  // CSV出力・粗利チャート・要注意抽出は全工事が対象。50件だと51件目以降を取りこぼす。
+  const { data, isLoading } = useListProjects({ limit: 2000 }, {
+    query: { queryKey: getListProjectsQueryKey({ limit: 2000 }) }
   });
 
   // チャートの絞り込み・並び替え

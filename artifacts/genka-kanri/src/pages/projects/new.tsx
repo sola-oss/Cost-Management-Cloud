@@ -75,7 +75,8 @@ function useNextProjectCode(): string {
   const { data } = useQuery<{ items: { projectCode: string }[] }>({
     queryKey: ["/api/projects/codes"],
     queryFn: async () => {
-      const res = await fetch(`${BASE}/api/projects`);
+      // 既定20件だと当月分を見落とし採番が巻き戻る（工事番号重複）。全件見て最大連番を取る。
+      const res = await fetch(`${BASE}/api/projects?limit=2000`);
       if (!res.ok) return { items: [] };
       return res.json();
     },

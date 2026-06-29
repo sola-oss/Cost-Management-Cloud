@@ -123,7 +123,7 @@ router.get("/", async (req, res) => {
       .select()
       .from(invoicesTable)
       .orderBy(desc(invoicesTable.createdAt))
-      .limit(200);
+      .limit(2000);
 
     res.json({
       items: rows.map(formatInvoice),

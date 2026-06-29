@@ -48,8 +48,9 @@ function buildProjectListItem(project: typeof projectsTable.$inferSelect, totalB
 router.get("/", async (req, res) => {
   try {
     const { status, search, page = "1", limit = "20" } = req.query as Record<string, string>;
-    const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
+    // 不正な値で .limit(NaN)/.offset(NaN) になり500化するのを防ぎ、上限もクランプする。
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(Math.max(1, parseInt(limit) || 20), 2000);
     const offset = (pageNum - 1) * limitNum;
 
     const conditions = [];
