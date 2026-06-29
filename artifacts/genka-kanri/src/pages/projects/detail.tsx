@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import {
   useGetProject, useUpdateProject,
@@ -728,7 +728,15 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
   const taxExcludedAmount = form.watch("taxExcludedAmount");
   const taxRate = form.watch("taxRate");
 
+  // 税抜・税率からの自動計算は「ユーザーが税抜/税率を変更したとき」だけ行う。
+  // 初回（編集を開いた直後）はマウントで発火させず、保存済みの請負金額を勝手に
+  // 上書きしないようにする（読み込んだだけで金額が変わる事故を防ぐ）。
+  const taxCalcInitialized = useRef(false);
   useEffect(() => {
+    if (!taxCalcInitialized.current) {
+      taxCalcInitialized.current = true;
+      return;
+    }
     const excluded = taxExcludedAmount === "" || taxExcludedAmount == null ? null : Number(taxExcludedAmount);
     const rate = taxRate === "" || taxRate == null ? null : Number(taxRate);
     if (excluded !== null && !isNaN(excluded) && rate !== null && !isNaN(rate)) {
