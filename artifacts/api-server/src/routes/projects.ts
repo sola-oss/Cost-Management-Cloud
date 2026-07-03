@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, sql, and, or, ilike, inArray } from "drizzle-orm";
-import { db, projectsTable, costItemsTable, budgetsTable, budgetItemsTable, invoicesTable, invoicePaymentsTable, companySettingsTable, constructionHistoriesTable } from "@workspace/db";
+import { db, projectsTable, costItemsTable, budgetsTable, budgetItemsTable, invoicesTable, invoicePaymentsTable, companySettingsTable, constructionHistoriesTable, estimatesTable, purchaseOrdersTable, purchaseInvoicesTable, paymentsTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -322,11 +322,57 @@ router.put("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+    if (isNaN(id) || id <= 0) return res.status(400).json({ message: "Invalid project ID" });
+
+    const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, id));
+    if (!project) return res.status(404).json({ message: "工事が見つかりません" });
+
+    // 関連データがある工事は、cascadeで発注・仕入・請求・予算・原価・支払が
+    // 巻き込み削除されてしまうため、安全のため削除を禁止する。
+    // （工事履歴だけは付随メタデータなので判定に含めない＝空の工事は削除可能）
+    const cnt = sql<number>`count(*)::int`;
+    const [estRows, budRows, budItemRows, costRows, poRows, pinvRows, invRows, payRows] =
+      await Promise.all([
+        db.select({ n: cnt }).from(estimatesTable).where(eq(estimatesTable.projectId, id)),
+        db.select({ n: cnt }).from(budgetsTable).where(eq(budgetsTable.projectId, id)),
+        db.select({ n: cnt }).from(budgetItemsTable).where(eq(budgetItemsTable.projectId, id)),
+        db.select({ n: cnt }).from(costItemsTable).where(eq(costItemsTable.projectId, id)),
+        db.select({ n: cnt }).from(purchaseOrdersTable).where(eq(purchaseOrdersTable.projectId, id)),
+        db.select({ n: cnt }).from(purchaseInvoicesTable).where(eq(purchaseInvoicesTable.projectId, id)),
+        db.select({ n: cnt }).from(invoicesTable).where(eq(invoicesTable.projectId, id)),
+        db.select({ n: cnt }).from(paymentsTable).where(eq(paymentsTable.projectId, id)),
+      ]);
+    const estimates = estRows[0]?.n ?? 0;
+    const budgets = budRows[0]?.n ?? 0;
+    const budgetItems = budItemRows[0]?.n ?? 0;
+    const costItems = costRows[0]?.n ?? 0;
+    const purchaseOrders = poRows[0]?.n ?? 0;
+    const purchaseInvoices = pinvRows[0]?.n ?? 0;
+    const invoices = invRows[0]?.n ?? 0;
+    const payments = payRows[0]?.n ?? 0;
+
+    const related = {
+      estimates,
+      budgets: budgets + budgetItems,
+      costItems,
+      purchaseOrders,
+      purchaseInvoices,
+      invoices,
+      payments,
+    };
+    const total = Object.values(related).reduce((s, v) => s + v, 0);
+    if (total > 0) {
+      return res.status(409).json({
+        message: "関連データがあるため、この工事は削除できません。先に関連する見積・発注・仕入・請求・支払・実行予算を削除してください。",
+        related,
+      });
+    }
+
     await db.delete(projectsTable).where(eq(projectsTable.id, id));
-    res.status(204).send();
+    return res.status(204).send();
   } catch (err) {
     req.log.error({ err }, "Failed to delete project");
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 

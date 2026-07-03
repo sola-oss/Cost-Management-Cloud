@@ -38,6 +38,8 @@ import * as z from "zod";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
 const STATUS_LABELS: Record<string, string> = {
   planning: "計画中",
   active: "施工中",
@@ -683,9 +685,54 @@ function FinancialTab({ projectId, contractAmount }: { projectId: number; contra
 function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectId: number }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
   const [isEditing, setIsEditing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const updateProject = useUpdateProject();
   const clients = useClients();
+
+  async function handleDeleteProject() {
+    if (!window.confirm(
+      `工事「${project.name}」を削除します。よろしいですか？\n` +
+      `※見積・発注・仕入・請求・支払・実行予算などの関連データがある工事は削除できません。`,
+    )) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`${BASE}/api/projects/${projectId}`, { method: "DELETE" });
+      if (res.status === 204) {
+        toast({ title: "工事を削除しました" });
+        queryClient.invalidateQueries();
+        setLocation("/projects");
+        return;
+      }
+      const data = await res.json().catch(() => ({} as { message?: string; related?: Record<string, number> }));
+      if (res.status === 409) {
+        const r = data.related ?? {};
+        const labels: Record<string, string> = {
+          estimates: "見積", budgets: "実行予算", costItems: "原価明細",
+          purchaseOrders: "発注", purchaseInvoices: "仕入", invoices: "請求", payments: "支払",
+        };
+        const parts = Object.entries(r)
+          .filter(([, n]) => (n as number) > 0)
+          .map(([k, n]) => `${labels[k] ?? k} ${n}件`);
+        toast({
+          title: "この工事は削除できません",
+          description: (data.message ?? "関連データがあります。") + (parts.length ? `（${parts.join(" / ")}）` : ""),
+          variant: "destructive",
+        });
+        return;
+      }
+      throw new Error(data.message ?? "削除に失敗しました");
+    } catch (err) {
+      toast({
+        title: "削除エラー",
+        description: err instanceof Error ? err.message : "削除に失敗しました",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   const form = useForm<z.infer<typeof projectEditSchema>>({
     resolver: zodResolver(projectEditSchema),
@@ -1260,10 +1307,20 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
         <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
           <Edit className="w-4 h-4 mr-1" />
           編集
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+          onClick={handleDeleteProject}
+          disabled={deleting}
+        >
+          {deleting ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Trash2 className="w-4 h-4 mr-1" />}
+          削除
         </Button>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
