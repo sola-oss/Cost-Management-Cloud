@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useHighlightNew } from "@/hooks/use-highlight-new";
+import { useVendors } from "@/hooks/use-vendors";
 import { cn } from "@/lib/utils";
 import { Plus, Pencil, Trash2, Loader2, Wrench } from "lucide-react";
 
@@ -48,12 +49,6 @@ async function fetchWorkTypes(): Promise<WorkType[]> {
   return res.json();
 }
 
-async function fetchVendors(): Promise<VendorLite[]> {
-  const res = await fetch("/api/vendors");
-  if (!res.ok) throw new Error("Failed to fetch vendors");
-  const data = await res.json();
-  return Array.isArray(data) ? data : (data.items ?? []);
-}
 
 type FormValues = {
   name: string;
@@ -78,10 +73,7 @@ export default function WorkTypeMaster() {
     queryKey: QUERY_KEY,
     queryFn: fetchWorkTypes,
   });
-  const { data: vendors = [] } = useQuery({
-    queryKey: ["/api/vendors"],
-    queryFn: fetchVendors,
-  });
+  const { data: vendors = [] } = useVendors<VendorLite>();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<WorkType | null>(null);

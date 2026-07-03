@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Users, Plus, Pencil, Trash2, Loader2, Save, ChevronDown, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useHighlightNew } from "@/hooks/use-highlight-new";
+import { useVendors } from "@/hooks/use-vendors";
 import { toHankakuKana, cn } from "@/lib/utils";
 
 interface VendorGroup {
@@ -87,16 +88,6 @@ function useVendorGroups() {
   });
 }
 
-function useVendors() {
-  return useQuery({
-    queryKey: ["/api/vendors"],
-    queryFn: async () => {
-      const res = await fetch("/api/vendors");
-      if (!res.ok) throw new Error("Failed to fetch vendors");
-      return res.json() as Promise<{ items: Vendor[]; total: number }>;
-    },
-  });
-}
 
 function useCreateVendor() {
   const qc = useQueryClient();
@@ -494,14 +485,13 @@ function paymentDayLabel(day: number) {
 
 export default function Vendors() {
   const { toast } = useToast();
-  const { data, isLoading } = useVendors();
+  const { data: items = [], isLoading } = useVendors<Vendor>();
   const { data: groupsData } = useVendorGroups();
   const deleteVendor = useDeleteVendor();
   const { mark, isNew } = useHighlightNew();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Vendor | null>(null);
 
-  const items = data?.items ?? [];
   const groups = groupsData?.items ?? [];
 
   const handleDelete = async (v: Vendor) => {

@@ -72,17 +72,6 @@ function usePurchaseInvoices(projectId: string, status: string) {
   });
 }
 
-function useVendors() {
-  return useQuery({
-    queryKey: ["/api/vendors"],
-    queryFn: async () => {
-      const res = await fetch("/api/vendors");
-      if (!res.ok) throw new Error("Failed");
-      return res.json() as Promise<{ items: VendorItem[] }>;
-    },
-  });
-}
-
 // ── メインコンポーネント ──────────────────────────────────────────────────────
 export default function PurchaseInvoices() {
   const [filterProject, setFilterProject] = useState("__all__");

@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useHighlightNew } from "@/hooks/use-highlight-new";
+import { useVendors } from "@/hooks/use-vendors";
 import { cn } from "@/lib/utils";
 import { Plus, Pencil, Trash2, Loader2, DollarSign, Search } from "lucide-react";
 
@@ -51,13 +52,6 @@ async function fetchUnitPrices(vendorId?: string, workTypeId?: string, q?: strin
   const res = await fetch(`${BASE}/api/unit-prices?${params}`);
   if (!res.ok) throw new Error("Failed to fetch unit prices");
   return res.json();
-}
-
-async function fetchVendors(): Promise<Vendor[]> {
-  const res = await fetch(`${BASE}/api/vendors`);
-  if (!res.ok) throw new Error("Failed to fetch vendors");
-  const data = await res.json();
-  return Array.isArray(data) ? data : (data.items ?? []);
 }
 
 async function fetchWorkTypes(): Promise<WorkType[]> {
@@ -112,10 +106,7 @@ export default function UnitPriceMaster() {
     queryFn: () => fetchUnitPrices(filterVendorId, filterWorkTypeId, filterQ),
   });
 
-  const { data: vendors = [] } = useQuery({
-    queryKey: ["/api/vendors"],
-    queryFn: fetchVendors,
-  });
+  const { data: vendors = [] } = useVendors<Vendor>();
 
   const { data: workTypes = [] } = useQuery({
     queryKey: ["/api/work-types"],

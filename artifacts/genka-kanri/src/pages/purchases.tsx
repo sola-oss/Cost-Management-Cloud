@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { Link, useSearch, useLocation } from "wouter";
 import { useListProjects, getListProjectsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { useVendors } from "@/hooks/use-vendors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
@@ -222,16 +223,6 @@ interface VendorItem {
   name: string;
 }
 
-function useVendors() {
-  return useQuery({
-    queryKey: ["/api/vendors"],
-    queryFn: async () => {
-      const res = await fetch("/api/vendors");
-      if (!res.ok) throw new Error("Failed to fetch vendors");
-      return res.json() as Promise<{ items: VendorItem[] }>;
-    },
-  });
-}
 
 // ── 編集対象の仕入伝票型 ──────────────────────────────────────────────────────
 interface PurchaseInvoiceDetail {
@@ -273,8 +264,7 @@ export default function Purchases() {
     query: { queryKey: getListProjectsQueryKey() },
   });
   const projects = projectsData?.items ?? [];
-  const { data: vendorsData } = useVendors();
-  const vendors = vendorsData?.items ?? [];
+  const { data: vendors = [] } = useVendors<VendorItem>();
   const { data: workTypesData } = useWorkTypes();
   const workTypes = workTypesData ?? [];
   const [saving, setSaving] = useState(false);

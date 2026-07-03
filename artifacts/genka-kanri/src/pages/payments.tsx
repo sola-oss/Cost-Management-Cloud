@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useVendors } from "@/hooks/use-vendors";
 
 // ─── 型定義 ────────────────────────────────────────────────────────────────
 
@@ -122,18 +123,6 @@ function useCompanySettings() {
   });
 }
 
-function useVendors() {
-  return useQuery({
-    queryKey: ["/api/vendors"],
-    queryFn: async () => {
-      const res = await fetch("/api/vendors");
-      if (!res.ok) throw new Error("Failed to fetch vendors");
-      const data = await res.json();
-      return (data.items ?? []) as VendorItem[];
-    },
-    staleTime: 60_000,
-  });
-}
 
 function useMarkAsPaid() {
   const queryClient = useQueryClient();
@@ -456,7 +445,7 @@ export default function Payments() {
   const { data: payments, isLoading, refetch } = usePayments(statusFilter, projectFilter);
   const { data: projects } = useListProjects(undefined, { query: { queryKey: getListProjectsQueryKey() } });
   const { data: companySettings } = useCompanySettings();
-  const { data: vendors = [] } = useVendors();
+  const { data: vendors = [] } = useVendors<VendorItem>();
   const revertPayment = useRevertPayment();
   const deletePayment = useDeletePayment();
 

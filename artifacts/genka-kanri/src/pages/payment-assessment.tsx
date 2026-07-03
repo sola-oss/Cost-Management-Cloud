@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Calculator, CheckSquare, Loader2, RefreshCw, Info } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useVendors } from "@/hooks/use-vendors";
 
 interface VendorGroup {
   id: number;
@@ -84,17 +85,6 @@ function useVendorGroups() {
   });
 }
 
-function useVendors() {
-  return useQuery({
-    queryKey: ["/api/vendors"],
-    queryFn: async () => {
-      const res = await fetch("/api/vendors");
-      if (!res.ok) throw new Error("Failed to fetch vendors");
-      return res.json() as Promise<{ items: VendorItem[] }>;
-    },
-  });
-}
-
 function today(): string {
   return new Date().toISOString().split("T")[0];
 }
@@ -120,9 +110,8 @@ export default function PaymentAssessment() {
   const qc = useQueryClient();
 
   const { data: groupsData } = useVendorGroups();
-  const { data: vendorsData } = useVendors();
+  const { data: vendors = [] } = useVendors<VendorItem>();
   const groups = groupsData?.items ?? [];
-  const vendors = vendorsData?.items ?? [];
 
   const [startDate, setStartDate] = useState(firstDayOfMonth());
   const [endDate, setEndDate] = useState(today());

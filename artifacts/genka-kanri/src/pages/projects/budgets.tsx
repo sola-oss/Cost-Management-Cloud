@@ -24,6 +24,7 @@ import {
 import { formatCurrency } from "@/lib/utils";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useVendors } from "@/hooks/use-vendors";
 import { UnitPricePicker, type UnitPriceSelection } from "@/components/unit-price-picker";
 
 type WorkType = { id: number; code: string; name: string; constructionType?: string };
@@ -143,19 +144,6 @@ function useMonitorData(projectId: number) {
   });
 }
 
-function useVendors() {
-  const { data } = useQuery<VendorItem[]>({
-    queryKey: ["/api/vendors"],
-    queryFn: async () => {
-      const res = await fetch("/api/vendors");
-      if (!res.ok) return [];
-      const json = await res.json();
-      return Array.isArray(json) ? json : (Array.isArray(json.items) ? json.items : []);
-    },
-    staleTime: 60_000,
-  });
-  return Array.isArray(data) ? data : [];
-}
 
 export default function BudgetManagement() {
   const { id } = useParams<{ id: string }>();
@@ -163,7 +151,7 @@ export default function BudgetManagement() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const workTypes = useWorkTypes();
-  const vendors = useVendors();
+  const { data: vendors = [] } = useVendors<VendorItem>();
 
   const { data: project } = useGetProject(projectId, {
     query: { enabled: !!projectId, queryKey: getGetProjectQueryKey(projectId) },

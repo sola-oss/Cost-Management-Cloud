@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useListProjects, getListProjectsQueryKey } from "@workspace/api-client-react";
+import { useVendors } from "@/hooks/use-vendors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
@@ -99,16 +100,6 @@ function usePurchaseOrders(projectId: string, status: string) {
   });
 }
 
-function useVendors() {
-  return useQuery({
-    queryKey: ["/api/vendors"],
-    queryFn: async () => {
-      const res = await fetch(`${BASE}/api/vendors`);
-      if (!res.ok) throw new Error("Failed");
-      return res.json() as Promise<{ items: VendorItem[] }>;
-    },
-  });
-}
 
 interface ItemRow {
   id: string;
@@ -156,8 +147,7 @@ export default function PurchaseOrders() {
     query: { queryKey: getListProjectsQueryKey() },
   });
   const projects = projectsData?.items ?? [];
-  const { data: vendorsData } = useVendors();
-  const vendors = vendorsData?.items ?? [];
+  const { data: vendors = [] } = useVendors<VendorItem>();
   const { data: ordersData, isLoading } = usePurchaseOrders(filterProject, filterStatus);
   const orders = ordersData?.items ?? [];
 
