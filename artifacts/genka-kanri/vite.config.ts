@@ -45,8 +45,12 @@ export default defineConfig({
     port,
     host: "0.0.0.0",
     allowedHosts: true,
+    // 通常はローカルAPI(:3000)へproxy。API_PROXY を指定するとその向き先へ転送する。
+    // 例: `pnpm run dev:prod` で本番APIの実データを見ながらローカルUIを確認できる（閲覧用）。
     proxy: {
-      "/api": "http://localhost:3000",
+      "/api": process.env.API_PROXY
+        ? { target: process.env.API_PROXY, changeOrigin: true, secure: true }
+        : "http://localhost:3000",
     },
     fs: {
       strict: true,
