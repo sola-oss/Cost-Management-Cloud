@@ -261,22 +261,6 @@ function VendorFormDialog({ open, onClose, initial, onSaved }: VendorFormDialogP
           </div>
 
           <div className="border-t pt-3">
-            <p className="text-xs font-semibold text-slate-500 mb-2">インボイス制度</p>
-            <div>
-              <Label className="text-xs">適格請求書発行事業者登録番号</Label>
-              <div className="flex items-center gap-2 mt-1">
-                <Input
-                  value={form.invoiceRegistrationNumber}
-                  onChange={(e) => set("invoiceRegistrationNumber", e.target.value)}
-                  placeholder="例: T1234567890123"
-                  className="h-8 text-sm font-mono"
-                />
-              </div>
-              <p className="text-xs text-slate-400 mt-1">「T」＋13桁の数字。未登録の場合は空欄のままにしてください。</p>
-            </div>
-          </div>
-
-          <div className="border-t pt-3">
             <p className="text-xs font-semibold text-slate-500 mb-2">支払条件</p>
             <div className="grid grid-cols-3 gap-3">
               <div>
@@ -473,7 +457,6 @@ export default function Vendors() {
               <TableRow className="bg-slate-50">
                 <TableHead>仕入先名</TableHead>
                 <TableHead>コード</TableHead>
-                <TableHead>適格番号</TableHead>
                 <TableHead>締日</TableHead>
                 <TableHead>支払サイト</TableHead>
                 <TableHead className="w-24 text-center">操作</TableHead>
@@ -482,13 +465,13 @@ export default function Vendors() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-slate-400">
+                  <TableCell colSpan={5} className="text-center py-8 text-slate-400">
                     <Loader2 className="w-5 h-5 animate-spin inline mr-2" />読み込み中...
                   </TableCell>
                 </TableRow>
               ) : items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-slate-400">
+                  <TableCell colSpan={5} className="text-center py-8 text-slate-400">
                     仕入先が登録されていません
                   </TableCell>
                 </TableRow>
@@ -497,13 +480,6 @@ export default function Vendors() {
                   <TableRow key={v.id} data-row-id={v.id} className={cn(isNew(v.id) && "highlight-new")}>
                     <TableCell className="font-medium">{v.name}</TableCell>
                     <TableCell className="font-mono text-xs text-slate-400">{v.code ?? "—"}</TableCell>
-                    <TableCell className="text-sm">
-                      {v.invoiceRegistrationNumber ? (
-                        <span className="font-mono text-xs text-slate-700">{v.invoiceRegistrationNumber}</span>
-                      ) : (
-                        <span className="text-xs text-slate-400">未登録</span>
-                      )}
-                    </TableCell>
                     <TableCell className="text-sm">{closingDayLabel(v.closingDay)}締め</TableCell>
                     <TableCell className="text-sm">
                       {paymentMonthsLabel(v.paymentMonths)}{paymentDayLabel(v.paymentDay)}払い
