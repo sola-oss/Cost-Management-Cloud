@@ -28,7 +28,7 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const {
-      name, code, groupId, closingDay, paymentMonths, paymentDay, contactName, phone, email, notes,
+      name, code, groupId, address, closingDay, paymentMonths, paymentDay, contactName, phone, email, notes,
       invoiceRegistrationNumber,
       bankCode, bankName, bankNameKana, bankBranchCode, bankBranch, bankBranchKana,
       bankAccountType, bankAccountNumber, bankAccountHolder, bankAccountHolderKana,
@@ -40,6 +40,7 @@ router.post("/", async (req, res) => {
         name,
         code: code ?? null,
         groupId: groupId ? Number(groupId) : null,
+        address: address ?? "",
         closingDay: closingDay != null ? Number(closingDay) : 99,
         paymentMonths: paymentMonths != null ? Number(paymentMonths) : 1,
         paymentDay: paymentDay != null ? Number(paymentDay) : 25,
@@ -71,7 +72,7 @@ router.patch("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const {
-      name, code, groupId, closingDay, paymentMonths, paymentDay, contactName, phone, email, notes,
+      name, code, groupId, address, closingDay, paymentMonths, paymentDay, contactName, phone, email, notes,
       invoiceRegistrationNumber,
       bankCode, bankName, bankNameKana, bankBranchCode, bankBranch, bankBranchKana,
       bankAccountType, bankAccountNumber, bankAccountHolder, bankAccountHolderKana,
@@ -82,6 +83,7 @@ router.patch("/:id", async (req, res) => {
         ...(name !== undefined && { name }),
         ...(code !== undefined && { code: code ?? null }),
         ...(groupId !== undefined && { groupId: groupId ? Number(groupId) : null }),
+        ...(address !== undefined && { address: address ?? "" }),
         ...(closingDay !== undefined && { closingDay: Number(closingDay) }),
         ...(paymentMonths !== undefined && { paymentMonths: Number(paymentMonths) }),
         ...(paymentDay !== undefined && { paymentDay: Number(paymentDay) }),

@@ -23,6 +23,7 @@ export const vendorsTable = pgTable("vendors", {
   name: text("name").notNull(),
   code: text("code"),
   groupId: integer("group_id").references(() => vendorGroupsTable.id, { onDelete: "set null" }),
+  address: text("address").default(""),
   closingDay: integer("closing_day").notNull().default(99),
   paymentMonths: integer("payment_months").notNull().default(1),
   paymentDay: integer("payment_day").notNull().default(25),

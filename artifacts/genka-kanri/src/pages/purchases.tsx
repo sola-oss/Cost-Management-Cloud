@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useHighlightNew } from "@/hooks/use-highlight-new";
 import { cn } from "@/lib/utils";
-import { Plus, Trash2, Save, FileText, ExternalLink, ClipboardList, Pencil, ChevronDown, ChevronRight, Copy } from "lucide-react";
+import { Plus, Trash2, Save, FileText, ExternalLink, ClipboardList, Pencil, ChevronDown, ChevronRight, Copy, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { UnitPricePicker, type UnitPriceSelection } from "@/components/unit-price-picker";
 
@@ -384,6 +384,48 @@ export default function Purchases() {
   }, []);
 
   const addRow = () => setRows(prev => [...prev, createRow()]);
+
+  // ── 単価マスタへ新規登録（単価マスタに無い品目をその場で登録） ──────────────
+  const [registeringRow, setRegisteringRow] = useState<string | null>(null);
+  const handleRegisterUnitPrice = async (row: DetailRow) => {
+    if (!vendorId || vendorId === "none") {
+      toast({ title: "仕入先を選択してください", variant: "destructive" });
+      return;
+    }
+    if (!row.productName.trim()) {
+      toast({ title: "品名を入力してください", variant: "destructive" });
+      return;
+    }
+    const price = parseFloat(row.unitPrice);
+    if (!row.unitPrice || Number.isNaN(price) || price <= 0) {
+      toast({ title: "単価を入力してください", variant: "destructive" });
+      return;
+    }
+    const workTypeId = row.workTypeCode
+      ? (workTypes.find(w => w.code === row.workTypeCode)?.id ?? null)
+      : null;
+    setRegisteringRow(row.id);
+    try {
+      const res = await fetch("/api/unit-prices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vendorId: parseInt(vendorId),
+          workTypeId,
+          itemName: row.productName.trim(),
+          unit: row.unit || "式",
+          unitPrice: price,
+        }),
+      });
+      if (!res.ok) throw new Error("failed");
+      queryClient.invalidateQueries({ queryKey: ["/api/unit-prices"] });
+      toast({ title: "単価マスタに登録しました", description: `${row.productName.trim()}（${price.toLocaleString()}円）` });
+    } catch {
+      toast({ title: "登録に失敗しました", variant: "destructive" });
+    } finally {
+      setRegisteringRow(null);
+    }
+  };
 
   const deleteRow = (idx: number) => {
     setRows(prev => {
@@ -867,6 +909,7 @@ export default function Purchases() {
                             className="h-8 text-xs flex-1"
                           />
                           {vendorId && vendorId !== "none" && (
+                          <>
                           <UnitPricePicker
                             vendorId={vendorId}
                             initialWorkTypeCode={row.workTypeCode}
@@ -887,6 +930,21 @@ export default function Purchases() {
                               setTimeout(() => quantityRefs.current[idx]?.focus(), 50);
                             }}
                           />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="gap-1 text-xs h-7 px-2 text-emerald-600 border-emerald-200 hover:bg-emerald-50 shrink-0"
+                            title="この品名・単価を単価マスタに新規登録"
+                            disabled={registeringRow === row.id || !row.productName.trim() || !row.unitPrice}
+                            onClick={() => handleRegisterUnitPrice(row)}
+                          >
+                            {registeringRow === row.id
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <Plus className="w-3 h-3" />}
+                            単価登録
+                          </Button>
+                          </>
                           )}
                         </div>
                         <Input

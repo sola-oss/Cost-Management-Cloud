@@ -20,6 +20,7 @@ interface Vendor {
   code: string | null;
   groupId: number | null;
   groupName: string | null;
+  address: string | null;
   closingDay: number;
   paymentMonths: number;
   paymentDay: number;
@@ -118,6 +119,7 @@ interface VendorFormState {
   name: string;
   code: string;
   groupId: string;
+  address: string;
   closingDay: number;
   paymentMonths: number;
   paymentDay: number;
@@ -143,6 +145,7 @@ function defaultForm(v?: Vendor | null): VendorFormState {
     name: v?.name ?? "",
     code: v?.code ?? "",
     groupId: v?.groupId ? String(v.groupId) : "none",
+    address: v?.address ?? "",
     closingDay: v?.closingDay ?? 99,
     paymentMonths: v?.paymentMonths ?? 1,
     paymentDay: v?.paymentDay ?? 25,
@@ -207,6 +210,7 @@ function VendorFormDialog({ open, onClose, initial, onSaved }: VendorFormDialogP
       name: form.name.trim(),
       code: form.code.trim() || null,
       groupId: form.groupId !== "none" && form.groupId ? Number(form.groupId) : null,
+      address: form.address.trim(),
       closingDay: form.closingDay,
       paymentMonths: form.paymentMonths,
       paymentDay: form.paymentDay,
@@ -257,6 +261,10 @@ function VendorFormDialog({ open, onClose, initial, onSaved }: VendorFormDialogP
             <div>
               <Label>仕入先コード</Label>
               <Input value={form.code} onChange={(e) => set("code", e.target.value)} placeholder="例: V001" className="mt-1" />
+            </div>
+            <div className="col-span-2">
+              <Label>住所</Label>
+              <Input value={form.address} onChange={(e) => set("address", e.target.value)} placeholder="例: 山口県山口市〇〇町1-2-3" className="mt-1" />
             </div>
           </div>
 

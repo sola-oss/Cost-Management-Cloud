@@ -13,6 +13,14 @@ import { useToast } from "@/hooks/use-toast";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+// 印刷日時（ISO文字列）を「YYYY/MM/DD HH:mm」に整形
+function fmtPrintedAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}/${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 // ─── 型定義 ──────────────────────────────────────────────────────────────────
 interface EstimateItem {
   _key: string;
@@ -403,6 +411,19 @@ export default function EstimateEditor({ id }: { id?: number }) {
     },
     staleTime: 60_000,
   });
+  const { data: printLogs } = useQuery({
+    queryKey: ["estimate-print-logs", id],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/estimates/${id}/print-logs`);
+      if (!res.ok) return { items: [], total: 0 };
+      return res.json() as Promise<{ items: { id: number; printedAt: string }[]; total: number }>;
+    },
+    enabled: !isNew && !!id,
+    // 印刷は別タブで行うため、タブに戻ってきたら最新の履歴を取り直す
+    refetchOnWindowFocus: true,
+  });
+  const printCount = printLogs?.total ?? 0;
+  const lastPrintedAt = printLogs?.items?.[0]?.printedAt;
 
   useEffect(() => {
     if (!isNew || !companySettings || !companySettings.id) return;
@@ -628,6 +649,12 @@ export default function EstimateEditor({ id }: { id?: number }) {
         <div className="flex items-center gap-2">
           {!isNew && (
             <>
+              {printCount > 0 && (
+                <span className="text-xs text-slate-400" title={lastPrintedAt ? `最終印刷: ${fmtPrintedAt(lastPrintedAt)}` : undefined}>
+                  印刷 {printCount}回
+                  {lastPrintedAt && <span className="ml-1">（最終 {fmtPrintedAt(lastPrintedAt)}）</span>}
+                </span>
+              )}
               <Button variant="outline" size="sm" onClick={handleDuplicate} className="gap-1.5">
                 <Copy className="w-3.5 h-3.5" />複写
               </Button>

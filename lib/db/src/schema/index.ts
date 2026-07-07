@@ -6,6 +6,7 @@ export * from "./payments";
 export * from "./vendors";
 export * from "./work-types";
 export * from "./estimates";
+export * from "./estimate-print-logs";
 export * from "./clients";
 export * from "./company-settings";
 export * from "./invoices";

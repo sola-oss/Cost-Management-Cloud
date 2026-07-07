@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, and } from "drizzle-orm";
-import { db, estimatesTable, estimateItemsTable, projectsTable } from "@workspace/db";
+import { db, estimatesTable, estimateItemsTable, projectsTable, estimatePrintLogsTable } from "@workspace/db";
 import { withUniqueNumberRetry } from "../lib/unique-number";
 
 const router: IRouter = Router();
@@ -338,6 +338,46 @@ router.post("/:id/duplicate", async (req, res) => {
     return res.status(201).json(formatEstimate(newEst));
   } catch (err) {
     req.log.error({ err }, "Failed to duplicate estimate");
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ── 印刷履歴 ─────────────────────────────────────────────────────────────────
+
+// GET /api/estimates/:id/print-logs — 印刷履歴の一覧＋件数
+router.get("/:id/print-logs", async (req, res) => {
+  try {
+    const estimateId = parseInt(req.params.id);
+    if (Number.isNaN(estimateId)) return res.status(400).json({ message: "Invalid ID" });
+    const logs = await db
+      .select()
+      .from(estimatePrintLogsTable)
+      .where(eq(estimatePrintLogsTable.estimateId, estimateId))
+      .orderBy(desc(estimatePrintLogsTable.printedAt));
+    return res.json({ items: logs, total: logs.length });
+  } catch (err) {
+    req.log.error({ err }, "Failed to list estimate print logs");
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// POST /api/estimates/:id/print-logs — 印刷したことを記録
+router.post("/:id/print-logs", async (req, res) => {
+  try {
+    const estimateId = parseInt(req.params.id);
+    if (Number.isNaN(estimateId)) return res.status(400).json({ message: "Invalid ID" });
+    const [exists] = await db
+      .select({ id: estimatesTable.id })
+      .from(estimatesTable)
+      .where(eq(estimatesTable.id, estimateId));
+    if (!exists) return res.status(404).json({ message: "見積書が見つかりません" });
+    const [log] = await db
+      .insert(estimatePrintLogsTable)
+      .values({ estimateId })
+      .returning();
+    return res.status(201).json(log);
+  } catch (err) {
+    req.log.error({ err }, "Failed to record estimate print log");
     return res.status(500).json({ message: "Internal server error" });
   }
 });

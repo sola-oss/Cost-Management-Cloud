@@ -134,7 +134,15 @@ export default function EstimatePrint({ id }: { id: number }) {
       {/* 画面表示時のみ印刷ボタン */}
       <div className="print:hidden fixed top-4 right-4 z-50 flex gap-2">
         <button
-          onClick={() => window.print()}
+          onClick={async () => {
+            // 印刷履歴を記録（失敗しても印刷は妨げない）
+            try {
+              await fetch(`${BASE}/api/estimates/${id}/print-logs`, { method: "POST" });
+            } catch {
+              /* noop */
+            }
+            window.print();
+          }}
           className="flex items-center gap-2 bg-teal-700 hover:bg-teal-800 text-white text-sm font-medium px-4 py-2 rounded shadow"
         >
           <Printer className="w-4 h-4" />
