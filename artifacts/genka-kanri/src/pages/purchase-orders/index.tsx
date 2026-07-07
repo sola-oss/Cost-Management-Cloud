@@ -57,6 +57,12 @@ interface VendorItem {
   name: string;
 }
 
+interface WorkTypeItem {
+  id: number;
+  code: string;
+  name: string;
+}
+
 const STATUS_LABELS: Record<string, string> = {
   draft: "下書き",
   ordered: "発注済",
@@ -84,6 +90,17 @@ function fmt(n: number): string {
   return n.toLocaleString("ja-JP", { style: "currency", currency: "JPY" });
 }
 
+function useWorkTypes() {
+  return useQuery({
+    queryKey: ["/api/work-types"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/work-types`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json() as Promise<WorkTypeItem[]>;
+    },
+  });
+}
+
 function usePurchaseOrders(projectId: string, status: string) {
   const params = new URLSearchParams();
   const pId = projectId !== "__all__" ? projectId : "";
@@ -104,6 +121,7 @@ function usePurchaseOrders(projectId: string, status: string) {
 interface ItemRow {
   id: string;
   categoryValue: string;
+  workTypeId: string;
   description: string;
   specification: string;
   quantity: string;
@@ -117,6 +135,7 @@ function createItemRow(): ItemRow {
   return {
     id: crypto.randomUUID(),
     categoryValue: "subcontract",
+    workTypeId: "",
     description: "",
     specification: "",
     quantity: "1",
@@ -148,6 +167,7 @@ export default function PurchaseOrders() {
   });
   const projects = projectsData?.items ?? [];
   const { data: vendors = [] } = useVendors<VendorItem>();
+  const { data: workTypes = [] } = useWorkTypes();
   const { data: ordersData, isLoading } = usePurchaseOrders(filterProject, filterStatus);
   const orders = ordersData?.items ?? [];
 
@@ -210,6 +230,7 @@ export default function PurchaseOrders() {
           items: validRows.map((r, idx) => ({
             lineNumber: idx + 1,
             category: r.categoryValue,
+            workTypeId: r.workTypeId ? parseInt(r.workTypeId) : null,
             description: r.description,
             specification: r.specification || null,
             quantity: parseFloat(r.quantity) || 1,
@@ -483,6 +504,7 @@ export default function PurchaseOrders() {
                     <tr className="bg-slate-50 text-slate-600 border-b">
                       <th className="px-2 py-2 text-center w-8">No</th>
                       <th className="px-2 py-2 text-left w-28">科目</th>
+                      <th className="px-2 py-2 text-left w-28">工種</th>
                       <th className="px-2 py-2 text-left">品名・摘要</th>
                       <th className="px-2 py-2 text-right w-20">数量</th>
                       <th className="px-2 py-2 text-center w-14">単位</th>
@@ -504,6 +526,24 @@ export default function PurchaseOrders() {
                               {CATEGORY_OPTIONS.map((c) => (
                                 <SelectItem key={c.value} value={c.value} className="text-xs">
                                   {c.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </td>
+                        <td className="px-1 py-1">
+                          <Select
+                            value={row.workTypeId || "__none__"}
+                            onValueChange={(v) => handleRowChange(idx, "workTypeId", v === "__none__" ? "" : v)}
+                          >
+                            <SelectTrigger className="h-7 text-xs border-slate-200">
+                              <SelectValue placeholder="工種" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__none__" className="text-xs">（なし）</SelectItem>
+                              {workTypes.map((wt) => (
+                                <SelectItem key={wt.id} value={String(wt.id)} className="text-xs">
+                                  {wt.name}
                                 </SelectItem>
                               ))}
                             </SelectContent>

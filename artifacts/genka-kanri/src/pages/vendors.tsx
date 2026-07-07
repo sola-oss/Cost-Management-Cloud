@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,17 +8,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
 import { Users, Plus, Pencil, Trash2, Loader2, Save, ChevronDown, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useHighlightNew } from "@/hooks/use-highlight-new";
 import { useVendors } from "@/hooks/use-vendors";
 import { toHankakuKana, cn } from "@/lib/utils";
-
-interface VendorGroup {
-  id: number;
-  name: string;
-}
 
 interface Vendor {
   id: number;
@@ -76,18 +70,6 @@ const BANK_ACCOUNT_TYPE_OPTIONS = [
   { value: "貯蓄", label: "貯蓄" },
   { value: "その他", label: "その他" },
 ];
-
-function useVendorGroups() {
-  return useQuery({
-    queryKey: ["/api/vendor-groups"],
-    queryFn: async () => {
-      const res = await fetch("/api/vendor-groups");
-      if (!res.ok) throw new Error("Failed to fetch vendor groups");
-      return res.json() as Promise<{ items: VendorGroup[] }>;
-    },
-  });
-}
-
 
 function useCreateVendor() {
   const qc = useQueryClient();
@@ -186,11 +168,10 @@ interface VendorFormDialogProps {
   open: boolean;
   onClose: () => void;
   initial?: Vendor | null;
-  groups: VendorGroup[];
   onSaved?: (id: number) => void;
 }
 
-function VendorFormDialog({ open, onClose, initial, groups, onSaved }: VendorFormDialogProps) {
+function VendorFormDialog({ open, onClose, initial, onSaved }: VendorFormDialogProps) {
   const { toast } = useToast();
   const [form, setForm] = useState<VendorFormState>(() => defaultForm(initial));
   const [bankOpen, setBankOpen] = useState(false);
@@ -277,20 +258,6 @@ function VendorFormDialog({ open, onClose, initial, groups, onSaved }: VendorFor
               <Label>仕入先コード</Label>
               <Input value={form.code} onChange={(e) => set("code", e.target.value)} placeholder="例: V001" className="mt-1" />
             </div>
-            <div>
-              <Label>グループ</Label>
-              <Select value={form.groupId} onValueChange={(v) => set("groupId", v)}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="グループを選択" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">（なし）</SelectItem>
-                  {groups.map((g) => (
-                    <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
           </div>
 
           <div className="border-t pt-3">
@@ -350,24 +317,6 @@ function VendorFormDialog({ open, onClose, initial, groups, onSaved }: VendorFor
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t pt-3">
-            <p className="text-xs font-semibold text-slate-500 mb-2">連絡先</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs">担当者名</Label>
-                <Input value={form.contactName} onChange={(e) => set("contactName", e.target.value)} placeholder="例: 田中 太郎" className="mt-1 h-8 text-sm" />
-              </div>
-              <div>
-                <Label className="text-xs">電話番号</Label>
-                <Input value={form.phone} onChange={(e) => set("phone", e.target.value)} placeholder="例: 03-1234-5678" className="mt-1 h-8 text-sm" />
-              </div>
-              <div className="col-span-2">
-                <Label className="text-xs">メール</Label>
-                <Input value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="例: info@example.com" className="mt-1 h-8 text-sm" />
               </div>
             </div>
           </div>
@@ -486,13 +435,10 @@ function paymentDayLabel(day: number) {
 export default function Vendors() {
   const { toast } = useToast();
   const { data: items = [], isLoading } = useVendors<Vendor>();
-  const { data: groupsData } = useVendorGroups();
   const deleteVendor = useDeleteVendor();
   const { mark, isNew } = useHighlightNew();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Vendor | null>(null);
-
-  const groups = groupsData?.items ?? [];
 
   const handleDelete = async (v: Vendor) => {
     if (!window.confirm(`「${v.name}」を削除してもよいですか？`)) return;
@@ -527,7 +473,6 @@ export default function Vendors() {
               <TableRow className="bg-slate-50">
                 <TableHead>仕入先名</TableHead>
                 <TableHead>コード</TableHead>
-                <TableHead>グループ</TableHead>
                 <TableHead>適格番号</TableHead>
                 <TableHead>締日</TableHead>
                 <TableHead>支払サイト</TableHead>
@@ -537,13 +482,13 @@ export default function Vendors() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-slate-400">
+                  <TableCell colSpan={6} className="text-center py-8 text-slate-400">
                     <Loader2 className="w-5 h-5 animate-spin inline mr-2" />読み込み中...
                   </TableCell>
                 </TableRow>
               ) : items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-slate-400">
+                  <TableCell colSpan={6} className="text-center py-8 text-slate-400">
                     仕入先が登録されていません
                   </TableCell>
                 </TableRow>
@@ -552,11 +497,6 @@ export default function Vendors() {
                   <TableRow key={v.id} data-row-id={v.id} className={cn(isNew(v.id) && "highlight-new")}>
                     <TableCell className="font-medium">{v.name}</TableCell>
                     <TableCell className="font-mono text-xs text-slate-400">{v.code ?? "—"}</TableCell>
-                    <TableCell>
-                      {v.groupName ? (
-                        <Badge variant="secondary" className="text-xs">{v.groupName}</Badge>
-                      ) : "—"}
-                    </TableCell>
                     <TableCell className="text-sm">
                       {v.invoiceRegistrationNumber ? (
                         <span className="font-mono text-xs text-slate-700">{v.invoiceRegistrationNumber}</span>
@@ -600,7 +540,6 @@ export default function Vendors() {
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         initial={editing}
-        groups={groups}
         onSaved={mark}
       />
     </div>

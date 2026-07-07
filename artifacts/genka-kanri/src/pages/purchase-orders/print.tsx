@@ -8,6 +8,7 @@ interface PurchaseOrderItem {
   id: number;
   lineNumber: number;
   category: string;
+  workTypeId: number | null;
   description: string;
   specification: string | null;
   quantity: number;
@@ -91,6 +92,17 @@ export default function PurchaseOrderPrint({ id }: { id: number }) {
     },
   });
 
+  const { data: workTypes = [], isLoading: loadingWorkTypes } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["work-types-print"],
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/work-types`);
+      if (!r.ok) return [];
+      return r.json();
+    },
+  });
+  const workTypeName = (id: number | null) =>
+    id ? workTypes.find((w) => w.id === id)?.name ?? "" : "";
+
   useEffect(() => {
     // 印刷は手動ボタン（「印刷 / PDF」）から実行する。見積書印刷と挙動を統一し、自動でダイアログは開かない
     if (!loadingOrder && !loadingCompany && order) {
@@ -98,7 +110,7 @@ export default function PurchaseOrderPrint({ id }: { id: number }) {
     }
   }, [loadingOrder, loadingCompany, order]);
 
-  if (loadingOrder || loadingCompany) {
+  if (loadingOrder || loadingCompany || loadingWorkTypes) {
     return (
       <div className="flex items-center justify-center h-screen text-slate-500">
         読み込み中…
@@ -257,6 +269,7 @@ export default function PurchaseOrderPrint({ id }: { id: number }) {
               <tr className="bg-slate-100">
                 <th className="border border-slate-400 px-2 py-2 text-center w-8">No.</th>
                 <th className="border border-slate-400 px-2 py-2 text-left w-20">科目</th>
+                <th className="border border-slate-400 px-2 py-2 text-left w-20">工種</th>
                 <th className="border border-slate-400 px-3 py-2 text-left">品名・摘要</th>
                 <th className="border border-slate-400 px-2 py-2 text-right w-16">数量</th>
                 <th className="border border-slate-400 px-2 py-2 text-center w-10">単位</th>
@@ -273,6 +286,9 @@ export default function PurchaseOrderPrint({ id }: { id: number }) {
                   </td>
                   <td className="border border-slate-300 px-2 py-1.5 text-slate-600">
                     {CATEGORY_MAP[item.category] ?? item.category}
+                  </td>
+                  <td className="border border-slate-300 px-2 py-1.5 text-slate-600">
+                    {workTypeName(item.workTypeId)}
                   </td>
                   <td className="border border-slate-300 px-3 py-1.5">
                     <div>{item.description}</div>

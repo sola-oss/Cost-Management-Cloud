@@ -15,6 +15,7 @@ interface PurchaseOrderItem {
   id: number;
   lineNumber: number;
   category: string;
+  workTypeId: number | null;
   description: string;
   specification: string | null;
   quantity: number;
@@ -91,6 +92,17 @@ export default function PurchaseOrderDetail({ id }: { id: number }) {
       return res.json();
     },
   });
+
+  const { data: workTypes = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["/api/work-types"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/work-types`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+  const workTypeName = (id: number | null) =>
+    id ? workTypes.find((w) => w.id === id)?.name ?? "—" : "—";
 
   const handleStatusChange = async (status: string) => {
     setUpdatingStatus(true);
@@ -266,6 +278,7 @@ export default function PurchaseOrderDetail({ id }: { id: number }) {
                 <TableRow className="bg-slate-50 text-xs">
                   <TableHead className="w-10 text-center font-medium">No.</TableHead>
                   <TableHead className="font-medium w-24">科目</TableHead>
+                  <TableHead className="font-medium w-24">工種</TableHead>
                   <TableHead className="font-medium">品名・摘要</TableHead>
                   <TableHead className="font-medium text-right w-20">数量</TableHead>
                   <TableHead className="font-medium text-center w-14">単位</TableHead>
@@ -277,7 +290,7 @@ export default function PurchaseOrderDetail({ id }: { id: number }) {
               <TableBody>
                 {items.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-slate-400 text-sm">
+                    <TableCell colSpan={9} className="text-center py-8 text-slate-400 text-sm">
                       明細がありません
                     </TableCell>
                   </TableRow>
@@ -287,6 +300,9 @@ export default function PurchaseOrderDetail({ id }: { id: number }) {
                       <TableCell className="text-center text-xs text-slate-400">{item.lineNumber}</TableCell>
                       <TableCell className="text-xs text-slate-600">
                         {CATEGORY_MAP[item.category] ?? item.category}
+                      </TableCell>
+                      <TableCell className="text-xs text-slate-600">
+                        {workTypeName(item.workTypeId)}
                       </TableCell>
                       <TableCell className="text-sm">
                         <div>{item.description}</div>

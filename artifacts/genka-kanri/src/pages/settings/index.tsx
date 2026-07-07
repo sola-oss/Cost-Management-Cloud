@@ -197,25 +197,6 @@ export default function CompanySettingsPage() {
           </div>
         </section>
 
-        {/* 担当者情報 */}
-        <section className="bg-white rounded-xl border p-6 space-y-4">
-          <h2 className="text-base font-semibold text-slate-700 border-b pb-2">担当者情報</h2>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>担当者名</Label>
-              <Input value={form.staffName} onChange={(e) => set("staffName", e.target.value)} className="mt-1" placeholder="担当者名" />
-            </div>
-            <div>
-              <Label>携帯番号</Label>
-              <Input value={form.staffMobile} onChange={(e) => set("staffMobile", e.target.value)} className="mt-1" placeholder="090-0000-0000" />
-            </div>
-          </div>
-          <div>
-            <Label>メールアドレス</Label>
-            <Input value={form.staffEmail} onChange={(e) => set("staffEmail", e.target.value)} className="mt-1" placeholder="example@company.co.jp" />
-          </div>
-        </section>
-
         {/* インボイス情報 */}
         <section className="bg-white rounded-xl border p-6 space-y-4">
           <h2 className="text-base font-semibold text-slate-700 border-b pb-2">インボイス（適格請求書）情報</h2>
