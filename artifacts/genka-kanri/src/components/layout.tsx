@@ -1,12 +1,16 @@
 import { Link, useLocation } from "wouter";
-import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, CreditCard, Calculator, Users, Layers, FileText, Wrench, Settings, Receipt, ClipboardList, DollarSign } from "lucide-react";
+import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, CreditCard, Calculator, Users, Layers, FileText, Wrench, Settings, Receipt, ClipboardList, DollarSign, KeyRound, LogOut, UserCircle } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarProvider, SidebarRail, SidebarTrigger, SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from "./ui/sidebar";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { useCompanySettings } from "@/hooks/use-company-settings";
+import { useAuthStatus, useLogout } from "@/hooks/use-auth";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
 
   const { data: companySettings } = useCompanySettings<{ companyName?: string }>();
+  const { data: auth } = useAuthStatus();
+  const logout = useLogout();
 
   const companyDisplayName = companySettings?.companyName || "会社名未設定";
 
@@ -148,6 +152,28 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <Building2 className="w-4 h-4" />
               <span>{companyDisplayName}</span>
             </div>
+            {auth?.user && (
+              <DropdownMenu>
+                <DropdownMenuTrigger className="flex items-center gap-1.5 text-sm font-medium text-slate-600 border px-3 py-1.5 rounded-full bg-slate-50 hover:bg-slate-100">
+                  <UserCircle className="w-4 h-4" />
+                  <span>{auth.user.name}</span>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuLabel className="text-xs text-slate-400 font-normal">
+                    {auth.user.email}
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => navigate("/account")}>
+                    <KeyRound className="w-4 h-4 mr-2" />
+                    パスワード変更
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => logout.mutate()}>
+                    <LogOut className="w-4 h-4 mr-2" />
+                    ログアウト
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </header>
           <div className="flex-1 overflow-auto">
             {children}

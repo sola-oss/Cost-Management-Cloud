@@ -6,6 +6,7 @@
   "scripts": {
     "hello": "tsx ./src/hello.ts",
     "migrate-vendor-ids": "tsx ./src/migrate-budget-item-vendors.ts",
+    "set-user": "tsx ./src/set-user.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {

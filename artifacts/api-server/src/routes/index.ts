@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import authRouter from "./auth";
 import healthRouter from "./health";
 import projectsRouter from "./projects";
 import costItemsRouter from "./cost-items";
@@ -23,6 +24,7 @@ import unitPricesRouter from "./unit-prices";
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use("/auth", authRouter);
 router.use("/projects", projectsRouter);
 router.use("/projects/:id/budget-items", budgetItemsRouter);
 router.use("/cost-items", costItemsRouter);

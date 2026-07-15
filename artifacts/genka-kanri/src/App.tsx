@@ -4,6 +4,10 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/layout";
 import NotFound from "@/pages/not-found";
+import LoginPage from "@/pages/login";
+import AccountPage from "@/pages/account";
+import { useAuthStatus } from "@/hooks/use-auth";
+import { Loader2 } from "lucide-react";
 
 // Pages
 import Dashboard from "@/pages/dashboard";
@@ -98,6 +102,7 @@ function Router() {
         <Route path="/master/unit-prices" component={UnitPriceMaster} />
         <Route path="/master/clients" component={ClientMaster} />
         <Route path="/settings" component={CompanySettings} />
+        <Route path="/account" component={AccountPage} />
         <Route path="/invoices" component={InvoiceList} />
         <Route path="/invoices/new" component={NewInvoice} />
         <Route path="/invoices/:id" component={InvoiceDetail} />
@@ -112,12 +117,32 @@ function Router() {
   );
 }
 
+// 認証ガード。AUTH_REQUIRED がONかつ未ログインならログイン画面だけを表示する。
+// 状態取得に失敗した場合はアプリを表示する（本当に認証必須ならAPI側が401を返すため締め出しにならない）。
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const { data, isLoading } = useAuthStatus();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400">
+        <Loader2 className="w-6 h-6 animate-spin" />
+      </div>
+    );
+  }
+  if (data?.authRequired && !data.user) {
+    return <LoginPage />;
+  }
+  return <>{children}</>;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
+          <AuthGate>
+            <Router />
+          </AuthGate>
         </WouterRouter>
         <Toaster />
       </TooltipProvider>
