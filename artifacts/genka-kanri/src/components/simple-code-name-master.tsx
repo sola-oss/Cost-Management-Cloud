@@ -4,6 +4,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Plus, Pencil, Trash2, Loader2, Save } from "lucide-react";
@@ -20,6 +22,8 @@ export interface CodeNameRow {
   id: number;
   code: string;
   name: string;
+  /** statusToggle を使うマスタのみ（在職/退職など）。省略時は常に有効扱い */
+  isActive?: boolean;
 }
 
 interface SimpleCodeNameMasterProps {
@@ -35,6 +39,12 @@ interface SimpleCodeNameMasterProps {
   namePlaceholder?: string;
   /** 操作列の先頭に行ごとの追加アクションを描画する（例: 担当者マスタの「ログイン発行」） */
   renderExtraAction?: (row: CodeNameRow) => React.ReactNode;
+  /** 有効/無効の状態列と編集ダイアログの切替を有効にする（例: 在職/退職） */
+  statusToggle?: {
+    columnLabel: string; // 例: "状態"
+    activeLabel: string; // 例: "在職"
+    inactiveLabel: string; // 例: "退職"
+  };
 }
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -51,6 +61,7 @@ export function SimpleCodeNameMaster({
   nameLabel,
   namePlaceholder,
   renderExtraAction,
+  statusToggle,
 }: SimpleCodeNameMasterProps) {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -59,11 +70,13 @@ export function SimpleCodeNameMaster({
   const [editing, setEditing] = useState<CodeNameRow | null>(null);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
+  const [isActive, setIsActive] = useState(true);
 
   useEffect(() => {
     if (dialogOpen) {
       setCode(editing?.code ?? "");
       setName(editing?.name ?? "");
+      setIsActive(editing?.isActive ?? true);
     }
   }, [dialogOpen, editing]);
 
@@ -73,7 +86,11 @@ export function SimpleCodeNameMaster({
       const res = await fetch(url, {
         method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: code.trim(), name: name.trim() }),
+        body: JSON.stringify({
+          code: code.trim(),
+          name: name.trim(),
+          ...(statusToggle && editing ? { isActive } : {}),
+        }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.message ?? "保存に失敗しました");
@@ -144,27 +161,41 @@ export function SimpleCodeNameMaster({
               <TableRow className="bg-slate-50">
                 <TableHead className="w-28">コード</TableHead>
                 <TableHead>{nameLabel}</TableHead>
+                {statusToggle && <TableHead className="w-20">{statusToggle.columnLabel}</TableHead>}
                 <TableHead className="w-24 text-center">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={3} className="text-center py-8 text-slate-400">
+                  <TableCell colSpan={statusToggle ? 4 : 3} className="text-center py-8 text-slate-400">
                     <Loader2 className="w-5 h-5 animate-spin inline mr-2" />読み込み中...
                   </TableCell>
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={3} className="text-center py-8 text-slate-400">
+                  <TableCell colSpan={statusToggle ? 4 : 3} className="text-center py-8 text-slate-400">
                     {entityLabel}が登録されていません
                   </TableCell>
                 </TableRow>
               ) : (
                 rows.map((row) => (
-                  <TableRow key={row.id} data-row-id={row.id} className={cn(isNew(row.id) && "highlight-new")}>
+                  <TableRow
+                    key={row.id}
+                    data-row-id={row.id}
+                    className={cn(isNew(row.id) && "highlight-new", statusToggle && row.isActive === false && "opacity-60")}
+                  >
                     <TableCell className="font-mono text-sm">{row.code}</TableCell>
                     <TableCell className="font-medium">{row.name}</TableCell>
+                    {statusToggle && (
+                      <TableCell>
+                        {row.isActive === false ? (
+                          <Badge variant="secondary">{statusToggle.inactiveLabel}</Badge>
+                        ) : (
+                          <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">{statusToggle.activeLabel}</Badge>
+                        )}
+                      </TableCell>
+                    )}
                     <TableCell>
                       <div className="flex items-center justify-center gap-1">
                         {renderExtraAction?.(row)}
@@ -208,6 +239,23 @@ export function SimpleCodeNameMaster({
               <Label>{nameLabel} <span className="text-destructive">*</span></Label>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={namePlaceholder} className="mt-1" />
             </div>
+            {statusToggle && editing && (
+              <div>
+                <Label>{statusToggle.columnLabel}</Label>
+                <Select value={isActive ? "active" : "inactive"} onValueChange={(v) => setIsActive(v === "active")}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">{statusToggle.activeLabel}</SelectItem>
+                    <SelectItem value="inactive">{statusToggle.inactiveLabel}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-slate-400 mt-1">
+                  {statusToggle.inactiveLabel}にすると新しい工事では選べなくなります（過去の工事の記録はそのまま残ります）。
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>キャンセル</Button>

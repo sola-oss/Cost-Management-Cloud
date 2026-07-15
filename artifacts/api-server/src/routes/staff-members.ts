@@ -40,11 +40,16 @@ router.post("/", async (req, res) => {
 router.patch("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { code, name } = req.body;
+    const { code, name, isActive } = req.body;
     if (!code || !name) return res.status(400).json({ message: "コードと名前は必須です" });
     const [row] = await db
       .update(staffMembersTable)
-      .set({ code: String(code).trim(), name: String(name).trim(), updatedAt: new Date() })
+      .set({
+        code: String(code).trim(),
+        name: String(name).trim(),
+        ...(typeof isActive === "boolean" ? { isActive } : {}),
+        updatedAt: new Date(),
+      })
       .where(eq(staffMembersTable.id, id))
       .returning();
     if (!row) return res.status(404).json({ message: "担当者が見つかりません" });

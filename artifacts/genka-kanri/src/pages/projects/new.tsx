@@ -159,7 +159,8 @@ export default function NewProject() {
   const { data: constructionCategories = [] } = useConstructionCategories();
   const { data: staffMembers = [] } = useStaffMembers();
   const categoryNames = constructionCategories.map((c) => c.name);
-  const staffNames = staffMembers.map((s) => s.name);
+  // 退職者は新しい工事の担当に選べない（既存工事の値はMasterSelectが選択肢に残す）
+  const staffNames = staffMembers.filter((s) => s.isActive !== false).map((s) => s.name);
   const estimates = useEstimates();
   const nextCode = useNextProjectCode();
 

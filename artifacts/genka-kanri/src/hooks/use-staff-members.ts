@@ -10,6 +10,7 @@ export interface StaffMemberRow {
   id: number;
   code: string;
   name: string;
+  isActive: boolean;
 }
 
 export const STAFF_MEMBERS_QUERY_KEY = ["/api/staff-members"];

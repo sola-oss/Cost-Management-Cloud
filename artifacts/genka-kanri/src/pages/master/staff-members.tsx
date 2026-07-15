@@ -23,17 +23,20 @@ export default function StaffMemberMaster() {
         entityLabel="担当者"
         nameLabel="名前"
         namePlaceholder="例: 山口 太郎"
-        renderExtraAction={(row) => (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 w-7 p-0"
-            title="この担当者にログインを発行"
-            onClick={() => setIssuingFor(row)}
-          >
-            <KeyRound className="w-3.5 h-3.5" />
-          </Button>
-        )}
+        statusToggle={{ columnLabel: "状態", activeLabel: "在職", inactiveLabel: "退職" }}
+        renderExtraAction={(row) =>
+          row.isActive === false ? null : (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 p-0"
+              title="この担当者にログインを発行"
+              onClick={() => setIssuingFor(row)}
+            >
+              <KeyRound className="w-3.5 h-3.5" />
+            </Button>
+          )
+        }
       />
       <UserFormDialog
         open={issuingFor !== null}
