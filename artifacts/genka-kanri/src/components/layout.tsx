@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, CreditCard, Calculator, Users, Layers, FileText, Wrench, Settings, Receipt, ClipboardList, DollarSign, KeyRound, LogOut, UserCircle, Tags, UserRound } from "lucide-react";
+import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, CreditCard, Calculator, Users, FileText, Wrench, Settings, Receipt, ClipboardList, DollarSign, KeyRound, LogOut, UserCircle, Tags, UserRound } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarProvider, SidebarRail, SidebarTrigger, SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from "./ui/sidebar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { useCompanySettings } from "@/hooks/use-company-settings";
@@ -39,7 +39,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     { title: "工種マスタ", icon: Wrench, url: "/master/work-types" },
     { title: "単価マスタ", icon: DollarSign, url: "/master/unit-prices" },
     { title: "仕入先マスタ", icon: Building2, url: "/master/suppliers" },
-    { title: "仕入先グループ", icon: Layers, url: "/master/vendor-groups" },
     { title: "会社設定", icon: Settings, url: "/settings" },
   ];
 

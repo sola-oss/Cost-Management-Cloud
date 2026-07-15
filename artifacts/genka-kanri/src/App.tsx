@@ -18,7 +18,6 @@ import BudgetManagement from "@/pages/projects/budgets";
 import Reports from "@/pages/reports";
 import Purchases from "@/pages/purchases";
 import Payments from "@/pages/payments";
-import VendorGroups from "@/pages/vendor-groups";
 import Vendors from "@/pages/vendors";
 import PaymentAssessment from "@/pages/payment-assessment";
 import EstimateList from "@/pages/estimates/index";
@@ -98,8 +97,6 @@ function Router() {
         <Route path="/estimates/:id" component={EstimateDetail} />
         <Route path="/vendors" component={Vendors} />
         <Route path="/master/suppliers" component={Vendors} />
-        <Route path="/vendor-groups" component={VendorGroups} />
-        <Route path="/master/vendor-groups" component={VendorGroups} />
         <Route path="/master/work-types" component={WorkTypeMaster} />
         <Route path="/master/construction-categories" component={ConstructionCategoryMaster} />
         <Route path="/master/staff" component={StaffMemberMaster} />
