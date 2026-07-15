@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useCompanySettings } from "@/hooks/use-company-settings";
 import { Printer } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -86,14 +87,7 @@ export default function InvoicePrint({ id }: { id: number }) {
     },
   });
 
-  const { data: company, isLoading: loadingCompany } = useQuery<CompanySettings>({
-    queryKey: ["company-settings-print"],
-    queryFn: async () => {
-      const r = await fetch(`${BASE}/api/company-settings`);
-      if (!r.ok) return null;
-      return r.json();
-    },
-  });
+  const { data: company, isLoading: loadingCompany } = useCompanySettings<CompanySettings>();
 
   const projectId = invoice?.projectId ?? null;
   const { data: project, isLoading: loadingProject } = useQuery<Project>({

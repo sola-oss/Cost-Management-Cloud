@@ -18,6 +18,7 @@ import {
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useVendors } from "@/hooks/use-vendors";
+import { useCompanySettings } from "@/hooks/use-company-settings";
 
 // ─── 型定義 ────────────────────────────────────────────────────────────────
 
@@ -108,18 +109,6 @@ function usePayments(statusFilter?: string, projectFilter?: string) {
       if (!res.ok) throw new Error("Failed to fetch payments");
       return res.json() as Promise<PaymentsResponse>;
     },
-  });
-}
-
-function useCompanySettings() {
-  return useQuery({
-    queryKey: ["/api/company-settings"],
-    queryFn: async () => {
-      const res = await fetch("/api/company-settings");
-      if (!res.ok) throw new Error("Failed to fetch company settings");
-      return res.json() as Promise<CompanySettings>;
-    },
-    staleTime: 60_000,
   });
 }
 
@@ -444,7 +433,7 @@ export default function Payments() {
 
   const { data: payments, isLoading, refetch } = usePayments(statusFilter, projectFilter);
   const { data: projects } = useListProjects(undefined, { query: { queryKey: getListProjectsQueryKey() } });
-  const { data: companySettings } = useCompanySettings();
+  const { data: companySettings } = useCompanySettings<CompanySettings>();
   const { data: vendors = [] } = useVendors<VendorItem>();
   const revertPayment = useRevertPayment();
   const deletePayment = useDeletePayment();

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useCompanySettings } from "@/hooks/use-company-settings";
 import { Printer } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -9,12 +10,6 @@ async function fetchEstimate(id: number) {
   if (!r.ok) throw new Error("not found");
   return r.json();
 }
-async function fetchCompanySettings() {
-  const r = await fetch(`${BASE}/api/company-settings`);
-  if (!r.ok) return null;
-  return r.json();
-}
-
 function fmtMoney(n: number) {
   return `¥${n.toLocaleString()}`;
 }
@@ -49,10 +44,7 @@ export default function EstimatePrint({ id }: { id: number }) {
     queryKey: ["estimate", id],
     queryFn: () => fetchEstimate(id),
   });
-  const { data: cs, isLoading: loadingCs } = useQuery({
-    queryKey: ["company-settings"],
-    queryFn: fetchCompanySettings,
-  });
+  const { data: cs, isLoading: loadingCs } = useCompanySettings();
 
   useEffect(() => {
     if (!loadingEst && !loadingCs && est) {

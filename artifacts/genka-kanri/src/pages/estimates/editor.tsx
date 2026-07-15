@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { useCompanySettings } from "@/hooks/use-company-settings";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -402,15 +403,7 @@ export default function EstimateEditor({ id }: { id?: number }) {
     queryFn: () => fetchEstimate(id!),
     enabled: !isNew && !!id,
   });
-  const { data: companySettings } = useQuery({
-    queryKey: ["company-settings"],
-    queryFn: async () => {
-      const res = await fetch(`${BASE}/api/company-settings`);
-      if (!res.ok) return null;
-      return res.json();
-    },
-    staleTime: 60_000,
-  });
+  const { data: companySettings } = useCompanySettings();
   const { data: printLogs } = useQuery({
     queryKey: ["estimate-print-logs", id],
     queryFn: async () => {

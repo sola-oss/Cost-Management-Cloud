@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useCompanySettings, COMPANY_SETTINGS_QUERY_KEY } from "@/hooks/use-company-settings";
 import { toHankakuKana } from "@/lib/utils";
 import { Loader2, Building2, Save } from "lucide-react";
 
@@ -64,12 +65,6 @@ const defaultSettings: CompanySettings = {
   bankBranchKana: "",
 };
 
-async function fetchSettings(): Promise<CompanySettings> {
-  const res = await fetch(`${BASE}/api/company-settings`);
-  if (!res.ok) throw new Error("Failed to fetch company settings");
-  return res.json();
-}
-
 async function saveSettings(data: Omit<CompanySettings, "id">): Promise<CompanySettings> {
   const res = await fetch(`${BASE}/api/company-settings`, {
     method: "PUT",
@@ -91,10 +86,7 @@ export default function CompanySettingsPage() {
   const [form, setForm] = useState<CompanySettings>(defaultSettings);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["/api/company-settings"],
-    queryFn: fetchSettings,
-  });
+  const { data, isLoading } = useCompanySettings<CompanySettings>();
 
   useEffect(() => {
     if (data) setForm(data);
@@ -103,7 +95,7 @@ export default function CompanySettingsPage() {
   const mutation = useMutation({
     mutationFn: saveSettings,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/company-settings"] });
+      queryClient.invalidateQueries({ queryKey: COMPANY_SETTINGS_QUERY_KEY });
       toast({ title: "保存しました", description: "会社設定を保存しました。" });
     },
     onError: () => {

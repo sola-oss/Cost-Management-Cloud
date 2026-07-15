@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { useCompanySettings } from "@/hooks/use-company-settings";
 import { Loader2, Plus, Trash2, ArrowLeft, Save, FileDown, Download, Printer } from "lucide-react";
 import { Link } from "wouter";
 import { generateInvoicePDF } from "./pdf";
@@ -155,10 +156,7 @@ export default function InvoiceEditor({ id }: Props) {
     queryFn: async () => { const r = await fetch(`${BASE}/api/projects`); return r.json(); },
   });
 
-  const { data: companySettings } = useQuery<CompanySettings>({
-    queryKey: ["/api/company-settings"],
-    queryFn: async () => { const r = await fetch(`${BASE}/api/company-settings`); return r.json(); },
-  });
+  const { data: companySettings } = useCompanySettings<CompanySettings>();
 
   const { data: existingInvoice, isLoading } = useQuery<Invoice>({
     queryKey: ["/api/invoices", id],

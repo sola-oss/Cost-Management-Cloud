@@ -1,22 +1,12 @@
 import { Link, useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
 import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, CreditCard, Calculator, Users, Layers, FileText, Wrench, Settings, Receipt, ClipboardList, DollarSign } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarProvider, SidebarRail, SidebarTrigger, SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from "./ui/sidebar";
-
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+import { useCompanySettings } from "@/hooks/use-company-settings";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
 
-  const { data: companySettings } = useQuery({
-    queryKey: ["company-settings"],
-    queryFn: async () => {
-      const res = await fetch(`${BASE}/api/company-settings`);
-      if (!res.ok) return null;
-      return res.json() as Promise<{ companyName?: string }>;
-    },
-    staleTime: 60_000,
-  });
+  const { data: companySettings } = useCompanySettings<{ companyName?: string }>();
 
   const companyDisplayName = companySettings?.companyName || "会社名未設定";
 
