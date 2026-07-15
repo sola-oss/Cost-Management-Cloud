@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, CreditCard, Calculator, Users, Layers, FileText, Wrench, Settings, Receipt, ClipboardList, DollarSign, KeyRound, LogOut, UserCircle } from "lucide-react";
+import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, CreditCard, Calculator, Users, Layers, FileText, Wrench, Settings, Receipt, ClipboardList, DollarSign, KeyRound, LogOut, UserCircle, Tags, UserRound } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarProvider, SidebarRail, SidebarTrigger, SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from "./ui/sidebar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { useCompanySettings } from "@/hooks/use-company-settings";
@@ -34,6 +34,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   const masterNav = [
     { title: "得意先マスタ", icon: Users, url: "/master/clients" },
+    { title: "工事分類マスタ", icon: Tags, url: "/master/construction-categories" },
+    { title: "担当者マスタ", icon: UserRound, url: "/master/staff" },
     { title: "工種マスタ", icon: Wrench, url: "/master/work-types" },
     { title: "単価マスタ", icon: DollarSign, url: "/master/unit-prices" },
     { title: "仕入先マスタ", icon: Building2, url: "/master/suppliers" },

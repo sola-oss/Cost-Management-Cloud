@@ -15,3 +15,5 @@ export * from "./purchase-orders";
 export * from "./purchase-invoices";
 export * from "./unit-prices";
 export * from "./users";
+export * from "./construction-categories";
+export * from "./staff-members";

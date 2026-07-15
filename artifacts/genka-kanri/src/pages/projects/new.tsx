@@ -17,6 +17,9 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { MasterSelect } from "@/components/master-select";
+import { useConstructionCategories } from "@/hooks/use-construction-categories";
+import { useStaffMembers } from "@/hooks/use-staff-members";
 import { ArrowLeft, Save, Calculator, FolderSearch, ClipboardList, Plus, Trash2 } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -153,6 +156,10 @@ export default function NewProject() {
   const { toast } = useToast();
   const createProject = useCreateProject();
   const clients = useClients();
+  const { data: constructionCategories = [] } = useConstructionCategories();
+  const { data: staffMembers = [] } = useStaffMembers();
+  const categoryNames = constructionCategories.map((c) => c.name);
+  const staffNames = staffMembers.map((s) => s.name);
   const estimates = useEstimates();
   const nextCode = useNextProjectCode();
 
@@ -756,7 +763,13 @@ export default function NewProject() {
                       <FormItem>
                         <FormLabel className="text-xs text-slate-600">工事担当</FormLabel>
                         <FormControl>
-                          <Input className="text-sm" placeholder="担当者名" {...field} />
+                          <MasterSelect
+                            className="text-sm"
+                            value={field.value}
+                            onChange={field.onChange}
+                            options={staffNames}
+                            placeholder="担当者を選択"
+                          />
                         </FormControl>
                       </FormItem>
                     )}
@@ -795,7 +808,13 @@ export default function NewProject() {
                         <FormItem>
                           <FormLabel className="text-xs text-slate-600">工事分類1</FormLabel>
                           <FormControl>
-                            <Input className="text-sm" placeholder="例: 民間" {...field} />
+                            <MasterSelect
+                              className="text-sm"
+                              value={field.value}
+                              onChange={field.onChange}
+                              options={categoryNames}
+                              placeholder="分類を選択"
+                            />
                           </FormControl>
                         </FormItem>
                       )}

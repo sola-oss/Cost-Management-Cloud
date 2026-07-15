@@ -37,6 +37,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { MasterSelect } from "@/components/master-select";
+import { useConstructionCategories } from "@/hooks/use-construction-categories";
+import { useStaffMembers } from "@/hooks/use-staff-members";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -690,6 +693,10 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
   const [deleting, setDeleting] = useState(false);
   const updateProject = useUpdateProject();
   const clients = useClients();
+  const { data: constructionCategories = [] } = useConstructionCategories();
+  const { data: staffMembers = [] } = useStaffMembers();
+  const categoryNames = constructionCategories.map((c) => c.name);
+  const staffNames = staffMembers.map((s) => s.name);
 
   async function handleDeleteProject() {
     if (!window.confirm(
@@ -1134,7 +1141,14 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>工事担当</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
+                      <FormControl>
+                        <MasterSelect
+                          value={field.value}
+                          onChange={field.onChange}
+                          options={staffNames}
+                          placeholder="担当者を選択"
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -1173,7 +1187,14 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>工事分類1</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
+                      <FormControl>
+                        <MasterSelect
+                          value={field.value}
+                          onChange={field.onChange}
+                          options={categoryNames}
+                          placeholder="分類を選択"
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
