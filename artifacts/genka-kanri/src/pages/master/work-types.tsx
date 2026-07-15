@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useHighlightNew } from "@/hooks/use-highlight-new";
 import { useVendors } from "@/hooks/use-vendors";
+import { useWorkTypes, WORK_TYPES_QUERY_KEY } from "@/hooks/use-work-types";
 import { cn } from "@/lib/utils";
 import { Plus, Pencil, Trash2, Loader2, Wrench } from "lucide-react";
 
@@ -41,13 +42,7 @@ const CONSTRUCTION_TYPE_COLORS: Record<string, string> = {
   "その他": "bg-slate-100 text-slate-700 border-slate-200",
 };
 
-const QUERY_KEY = ["/api/work-types"];
-
-async function fetchWorkTypes(): Promise<WorkType[]> {
-  const res = await fetch("/api/work-types");
-  if (!res.ok) throw new Error("Failed to fetch work types");
-  return res.json();
-}
+const QUERY_KEY = WORK_TYPES_QUERY_KEY;
 
 
 type FormValues = {
@@ -69,10 +64,7 @@ export default function WorkTypeMaster() {
   const queryClient = useQueryClient();
   const { mark, isNew } = useHighlightNew();
 
-  const { data: workTypes = [], isLoading } = useQuery({
-    queryKey: QUERY_KEY,
-    queryFn: fetchWorkTypes,
-  });
+  const { data: workTypes = [], isLoading } = useWorkTypes<WorkType>();
   const { data: vendors = [] } = useVendors<VendorLite>();
 
   const [dialogOpen, setDialogOpen] = useState(false);

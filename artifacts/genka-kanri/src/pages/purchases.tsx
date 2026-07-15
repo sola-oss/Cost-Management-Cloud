@@ -3,6 +3,7 @@ import { Link, useSearch, useLocation } from "wouter";
 import { useListProjects, getListProjectsQueryKey } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useVendors } from "@/hooks/use-vendors";
+import { useWorkTypes } from "@/hooks/use-work-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
@@ -78,17 +79,6 @@ function WorkTypeSelect({
       </SelectContent>
     </Select>
   );
-}
-
-function useWorkTypes() {
-  return useQuery({
-    queryKey: ["/api/work-types"],
-    queryFn: async () => {
-      const res = await fetch("/api/work-types");
-      if (!res.ok) throw new Error("Failed to fetch work types");
-      return res.json() as Promise<WorkTypeItem[]>;
-    },
-  });
 }
 
 // ── 定数 ─────────────────────────────────────────────────────────────────────
@@ -265,7 +255,7 @@ export default function Purchases() {
   });
   const projects = projectsData?.items ?? [];
   const { data: vendors = [] } = useVendors<VendorItem>();
-  const { data: workTypesData } = useWorkTypes();
+  const { data: workTypesData } = useWorkTypes<WorkTypeItem>();
   const workTypes = workTypesData ?? [];
   const [saving, setSaving] = useState(false);
 

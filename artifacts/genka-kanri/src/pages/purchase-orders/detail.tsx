@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useWorkTypes } from "@/hooks/use-work-types";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -93,14 +94,7 @@ export default function PurchaseOrderDetail({ id }: { id: number }) {
     },
   });
 
-  const { data: workTypes = [] } = useQuery<{ id: number; name: string }[]>({
-    queryKey: ["/api/work-types"],
-    queryFn: async () => {
-      const res = await fetch(`${BASE}/api/work-types`);
-      if (!res.ok) return [];
-      return res.json();
-    },
-  });
+  const { data: workTypes = [] } = useWorkTypes<{ id: number; name: string }>();
   const workTypeName = (id: number | null) =>
     id ? workTypes.find((w) => w.id === id)?.name ?? "—" : "—";
 

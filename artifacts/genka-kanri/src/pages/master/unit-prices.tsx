@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useHighlightNew } from "@/hooks/use-highlight-new";
 import { useVendors } from "@/hooks/use-vendors";
+import { useWorkTypes } from "@/hooks/use-work-types";
 import { cn } from "@/lib/utils";
 import { Plus, Pencil, Trash2, Loader2, DollarSign, Search } from "lucide-react";
 
@@ -52,13 +53,6 @@ async function fetchUnitPrices(vendorId?: string, workTypeId?: string, q?: strin
   const res = await fetch(`${BASE}/api/unit-prices?${params}`);
   if (!res.ok) throw new Error("Failed to fetch unit prices");
   return res.json();
-}
-
-async function fetchWorkTypes(): Promise<WorkType[]> {
-  const res = await fetch(`${BASE}/api/work-types`);
-  if (!res.ok) throw new Error("Failed to fetch work types");
-  const data = await res.json();
-  return Array.isArray(data) ? data : (data.items ?? []);
 }
 
 /* ── フォーム型 ── */
@@ -108,10 +102,7 @@ export default function UnitPriceMaster() {
 
   const { data: vendors = [] } = useVendors<Vendor>();
 
-  const { data: workTypes = [] } = useQuery({
-    queryKey: ["/api/work-types"],
-    queryFn: fetchWorkTypes,
-  });
+  const { data: workTypes = [] } = useWorkTypes<WorkType>();
 
   const items = data?.items ?? [];
 

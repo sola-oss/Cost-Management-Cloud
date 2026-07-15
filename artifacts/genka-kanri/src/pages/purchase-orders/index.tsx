@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useListProjects, getListProjectsQueryKey } from "@workspace/api-client-react";
 import { useVendors } from "@/hooks/use-vendors";
+import { useWorkTypes } from "@/hooks/use-work-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
@@ -90,17 +91,6 @@ function fmt(n: number): string {
   return n.toLocaleString("ja-JP", { style: "currency", currency: "JPY" });
 }
 
-function useWorkTypes() {
-  return useQuery({
-    queryKey: ["/api/work-types"],
-    queryFn: async () => {
-      const res = await fetch(`${BASE}/api/work-types`);
-      if (!res.ok) throw new Error("Failed");
-      return res.json() as Promise<WorkTypeItem[]>;
-    },
-  });
-}
-
 function usePurchaseOrders(projectId: string, status: string) {
   const params = new URLSearchParams();
   const pId = projectId !== "__all__" ? projectId : "";
@@ -167,7 +157,7 @@ export default function PurchaseOrders() {
   });
   const projects = projectsData?.items ?? [];
   const { data: vendors = [] } = useVendors<VendorItem>();
-  const { data: workTypes = [] } = useWorkTypes();
+  const { data: workTypes = [] } = useWorkTypes<WorkTypeItem>();
   const { data: ordersData, isLoading } = usePurchaseOrders(filterProject, filterStatus);
   const orders = ordersData?.items ?? [];
 
