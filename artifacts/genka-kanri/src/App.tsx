@@ -27,6 +27,7 @@ import EstimatePrint from "@/pages/estimates/print";
 import WorkTypeMaster from "@/pages/master/work-types";
 import ConstructionCategoryMaster from "@/pages/master/construction-categories";
 import StaffMemberMaster from "@/pages/master/staff-members";
+import UserMaster from "@/pages/master/users";
 import UnitPriceMaster from "@/pages/master/unit-prices";
 import ClientMaster from "@/pages/master/clients";
 import CompanySettings from "@/pages/settings/index";
@@ -100,6 +101,7 @@ function Router() {
         <Route path="/master/work-types" component={WorkTypeMaster} />
         <Route path="/master/construction-categories" component={ConstructionCategoryMaster} />
         <Route path="/master/staff" component={StaffMemberMaster} />
+        <Route path="/master/users" component={UserMaster} />
         <Route path="/master/unit-prices" component={UnitPriceMaster} />
         <Route path="/master/clients" component={ClientMaster} />
         <Route path="/settings" component={CompanySettings} />

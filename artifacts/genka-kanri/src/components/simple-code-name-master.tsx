@@ -33,6 +33,8 @@ interface SimpleCodeNameMasterProps {
   entityLabel: string; // 例: "工事分類"
   nameLabel: string; // 例: "名称" / "名前"
   namePlaceholder?: string;
+  /** 操作列の先頭に行ごとの追加アクションを描画する（例: 担当者マスタの「ログイン発行」） */
+  renderExtraAction?: (row: CodeNameRow) => React.ReactNode;
 }
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -48,6 +50,7 @@ export function SimpleCodeNameMaster({
   entityLabel,
   nameLabel,
   namePlaceholder,
+  renderExtraAction,
 }: SimpleCodeNameMasterProps) {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -164,6 +167,7 @@ export function SimpleCodeNameMaster({
                     <TableCell className="font-medium">{row.name}</TableCell>
                     <TableCell>
                       <div className="flex items-center justify-center gap-1">
+                        {renderExtraAction?.(row)}
                         <Button
                           size="sm"
                           variant="ghost"

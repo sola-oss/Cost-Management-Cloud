@@ -2,6 +2,8 @@ import { Router, type IRouter } from "express";
 import { eq, asc } from "drizzle-orm";
 import { db, constructionCategoriesTable } from "@workspace/db";
 
+import { isUniqueViolation } from "../lib/db-errors";
+
 const router: IRouter = Router();
 
 router.get("/", async (req, res) => {
@@ -27,7 +29,7 @@ router.post("/", async (req, res) => {
       .returning();
     return res.status(201).json(row);
   } catch (err: unknown) {
-    if (err instanceof Error && "code" in err && (err as { code?: string }).code === "23505") {
+    if (isUniqueViolation(err)) {
       return res.status(409).json({ message: "同じコードの工事分類が既にあります" });
     }
     req.log.error({ err }, "Failed to create construction category");
@@ -48,7 +50,7 @@ router.patch("/:id", async (req, res) => {
     if (!row) return res.status(404).json({ message: "工事分類が見つかりません" });
     return res.json(row);
   } catch (err: unknown) {
-    if (err instanceof Error && "code" in err && (err as { code?: string }).code === "23505") {
+    if (isUniqueViolation(err)) {
       return res.status(409).json({ message: "同じコードの工事分類が既にあります" });
     }
     req.log.error({ err }, "Failed to update construction category");
