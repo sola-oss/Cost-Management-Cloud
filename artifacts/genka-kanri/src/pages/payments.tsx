@@ -983,7 +983,9 @@ export default function Payments() {
                         </TableCell>
                         <TableCell className="text-right font-bold text-slate-900">
                           {formatCurrency(item.amount)}
-                          {item.paidAmount && item.paidAmount < item.amount && (
+                          {/* paidAmount が 0 のとき `0 && …` が 0 になり、Reactがその0を金額の後ろに
+                              描いてしまう（「¥671,0000」と見える）。> 0 で明示的に真偽値にする */}
+                          {!!item.paidAmount && item.paidAmount > 0 && item.paidAmount < item.amount && (
                             <div className="text-xs text-slate-400">
                               支払済 {formatCurrency(item.paidAmount)}
                             </div>
