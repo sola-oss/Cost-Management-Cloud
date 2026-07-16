@@ -167,6 +167,7 @@ const SelectContent = React.forwardRef<
   // 閉じると SelectContent はアンマウントされるので、検索文字列は自動でリセットされる
   const [search, setSearch] = React.useState("")
   const searchInputRef = React.useRef<HTMLInputElement>(null)
+  const contentRef = React.useRef<HTMLDivElement | null>(null)
 
   const flat = React.Children.toArray(children)
   const isItem = (c: React.ReactNode): boolean =>
@@ -187,6 +188,14 @@ const SelectContent = React.forwardRef<
     })
     matched = visible.filter(isItem).length
   }
+
+  // 開いた直後に必ず検索欄が見える位置（先頭）へスクロールする
+  // （Radixが選択中の項目まで自動スクロールし、検索欄が画面外に出てしまうため）。
+  React.useEffect(() => {
+    if (!showSearch) return
+    const t = setTimeout(() => contentRef.current?.scrollTo({ top: 0 }), 60)
+    return () => clearTimeout(t)
+  }, [showSearch])
 
   // 検索欄にフォーカスを移す（IME入力は焦点のある編集要素にしか入らないため必須）。
   // Radixは開く過程で何度か選択肢へフォーカスを移すため、開いてから一定時間は
@@ -238,11 +247,18 @@ const SelectContent = React.forwardRef<
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
-        ref={ref}
+        ref={(node) => {
+          contentRef.current = node
+          if (typeof ref === "function") ref(node)
+          else if (ref) (ref as React.MutableRefObject<HTMLDivElement | null>).current = node
+        }}
         className={cn(
           "relative z-50 max-h-[--radix-select-content-available-height] min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-[--radix-select-content-transform-origin]",
           position === "popper" &&
             "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
+          // 検索付きは高さを一定に固定する：巨大リストが画面を覆うのを防ぎ、
+          // 絞り込みで高さが変わって開く向きがパタパタ切り替わるのも防ぐ
+          showSearch && "h-[min(360px,var(--radix-select-content-available-height))]",
           className
         )}
         position={position}
