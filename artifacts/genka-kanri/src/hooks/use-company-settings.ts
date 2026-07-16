@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
  * 重要: 以前は同じ /api/company-settings を
  *   ["/api/company-settings"] / ["company-settings"] / ["company-settings-print"]
  * の3種類のキーで別々にキャッシュしていたため、設定画面で保存しても
- * ヘッダーの社名や見積・請求書・発注書の印刷ページに旧情報が残ることがあった。
+ * ヘッダーの社名や見積・請求書・注文書の印刷ページに旧情報が残ることがあった。
  * ここで queryKey を1つに統一し、保存時の invalidate が全画面に届くようにする。
  *
  * 各ページ固有の型は型引数で指定する:

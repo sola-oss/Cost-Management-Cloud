@@ -22,7 +22,7 @@ tags:
   - name: invoices
     description: 請求管理
   - name: purchase-orders
-    description: 発注書管理
+    description: 注文書管理
   - name: purchase-invoices
     description: 仕入伝票管理
 
@@ -357,7 +357,7 @@ paths:
     post:
       operationId: bulkCreatePurchaseOrders
       tags: [budget-items]
-      summary: 実行予算明細から発注書一括作成
+      summary: 実行予算明細から注文書一括作成
       parameters:
         - in: path
           name: id
@@ -1737,11 +1737,11 @@ components:
         purchaseOrderId:
           type: integer
           nullable: true
-          description: 発注書ID（発注済みの場合に設定）
+          description: 注文書ID（発注済みの場合に設定）
         purchaseOrderItemId:
           type: integer
           nullable: true
-          description: 発注書明細ID（発注済みの場合に設定）
+          description: 注文書明細ID（発注済みの場合に設定）
         createdAt:
           type: string
           format: date-time

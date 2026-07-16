@@ -479,9 +479,9 @@ export default function BudgetManagement() {
       // 原価モニターの発注済・KPIも更新する
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "budget-items", "monitor"] });
       queryClient.invalidateQueries({ queryKey: getGetProjectSummaryQueryKey(projectId) });
-      toast({ title: "発注書を作成しました", description: `${computedVendorGroups.length} 社向けの発注書を作成しました。` });
+      toast({ title: "注文書を作成しました", description: `${computedVendorGroups.length} 社向けの注文書を作成しました。` });
     } catch {
-      toast({ title: "発注書の作成に失敗しました", variant: "destructive" });
+      toast({ title: "注文書の作成に失敗しました", variant: "destructive" });
     } finally {
       setBulkSubmitting(false);
     }
@@ -843,7 +843,7 @@ export default function BudgetManagement() {
                     disabled={computedVendorGroups.length === 0}
                   >
                     <ShoppingCart className="w-3.5 h-3.5" />
-                    発注書を作成
+                    注文書を作成
                     {selectedRows.size > 0 && computedVendorGroups.length > 0 && (
                       <span className="ml-1 bg-white/20 rounded px-1">{computedVendorGroups.reduce((s,g)=>s+g.items.length,0)}行・{computedVendorGroups.length}社</span>
                     )}
@@ -879,7 +879,7 @@ export default function BudgetManagement() {
                 <table className="w-full border-collapse text-xs">
                   <thead>
                     <tr className="bg-teal-700 text-white">
-                      <th className="border border-teal-600 px-1 py-1.5 w-8 text-center" title="行を選択（削除・発注書作成に使用）">
+                      <th className="border border-teal-600 px-1 py-1.5 w-8 text-center" title="行を選択（削除・注文書作成に使用）">
                         <Checkbox className="h-3.5 w-3.5 border-white"
                           checked={selectedRows.size === rows.length && rows.length > 0}
                           onCheckedChange={v => setSelectedRows(v ? new Set(rows.map((_, i) => i)) : new Set())}
@@ -1268,13 +1268,13 @@ export default function BudgetManagement() {
         </Button>
       </div>
 
-      {/* ── 一括発注書作成 ダイアログ ── */}
+      {/* ── 一括注文書作成 ダイアログ ── */}
       <Dialog open={bulkOrderOpen} onOpenChange={open => { if (!open) setBulkOrderOpen(false); }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ShoppingCart className="w-5 h-5 text-emerald-600" />
-              発注書を一括作成
+              注文書を一括作成
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -1336,7 +1336,7 @@ export default function BudgetManagement() {
                             });
                           }}
                           className="h-7 text-xs"
-                          placeholder="発注書に記載する備考（任意）"
+                          placeholder="注文書に記載する備考（任意）"
                         />
                       </div>
                     </div>
@@ -1347,7 +1347,7 @@ export default function BudgetManagement() {
 
             <div className="bg-slate-50 border rounded p-3 text-sm text-slate-600">
               <span className="font-semibold text-slate-800">{computedVendorGroups.length}社</span> の仕入先向けに
-              <span className="font-semibold text-slate-800"> {computedVendorGroups.reduce((s,g)=>s+g.items.length,0)}件</span> の明細をまとめて発注書を作成します。
+              <span className="font-semibold text-slate-800"> {computedVendorGroups.reduce((s,g)=>s+g.items.length,0)}件</span> の明細をまとめて注文書を作成します。
             </div>
           </div>
 
@@ -1361,7 +1361,7 @@ export default function BudgetManagement() {
               disabled={bulkSubmitting}
             >
               {bulkSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShoppingCart className="w-4 h-4" />}
-              発注書を作成する
+              注文書を作成する
             </Button>
           </DialogFooter>
         </DialogContent>

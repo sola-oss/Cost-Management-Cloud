@@ -268,7 +268,7 @@ export default function Purchases() {
     usePurchaseInvoiceList(filterInvoiceProject, filterInvoiceStatus);
   const invoiceList = invoiceListData?.items ?? [];
 
-  // ── 発注書取込モーダル状態 ──────────────────────────────────────────────
+  // ── 注文書取込モーダル状態 ──────────────────────────────────────────────
   const [importPOOpen, setImportPOOpen] = useState(false);
   const [importingPO, setImportingPO] = useState(false);
   const { data: availablePOs } = useQuery({
@@ -571,9 +571,9 @@ export default function Purchases() {
     }
   };
 
-  // ── 発注書取込 ──────────────────────────────────────────────────────────
+  // ── 注文書取込 ──────────────────────────────────────────────────────────
   const handleImportFromPO = async (po: AvailablePurchaseOrder) => {
-    if (!window.confirm(`発注書 ${po.orderNumber} から仕入伝票を作成しますか？`)) return;
+    if (!window.confirm(`注文書 ${po.orderNumber} から仕入伝票を作成しますか？`)) return;
     setImportingPO(true);
     try {
       const res = await fetch(`/api/purchase-invoices/from-order/${po.id}`, {
@@ -661,7 +661,7 @@ export default function Purchases() {
               className="text-teal-700 border-teal-300 hover:bg-teal-50"
             >
               <ClipboardList className="w-3.5 h-3.5 mr-1" />
-              発注書から取込
+              注文書から取込
             </Button>
           )}
           <Button
@@ -1248,17 +1248,17 @@ export default function Purchases() {
         </div>
       </div>
 
-      {/* ── 発注書取込モーダル ── */}
+      {/* ── 注文書取込モーダル ── */}
       <Dialog open={importPOOpen} onOpenChange={setImportPOOpen}>
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ClipboardList className="w-4 h-4" />
-              発注書から仕入伝票を作成
+              注文書から仕入伝票を作成
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-slate-500 mb-3">
-            発注済・一部納品の発注書から仕入伝票を作成します。未納品数量が自動的に取り込まれます。
+            発注済・一部納品の注文書から仕入伝票を作成します。未納品数量が自動的に取り込まれます。
           </p>
           <Table>
             <TableHeader>
@@ -1275,7 +1275,7 @@ export default function Purchases() {
               {!availablePOs || availablePOs.items.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center py-6 text-slate-400 text-sm">
-                    取込可能な発注書がありません（発注済または一部納品のものが対象です）
+                    取込可能な注文書がありません（発注済または一部納品のものが対象です）
                   </TableCell>
                 </TableRow>
               ) : (

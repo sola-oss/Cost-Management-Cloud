@@ -546,9 +546,9 @@ export interface BudgetItem {
   originalBudgetAmount: number;
   /** 仕入先ID（仕入先マスタ連携） */
   vendorId?: number | null;
-  /** 発注書ID（発注済みの場合に設定） */
+  /** 注文書ID（発注済みの場合に設定） */
   purchaseOrderId?: number | null;
-  /** 発注書明細ID（発注済みの場合に設定） */
+  /** 注文書明細ID（発注済みの場合に設定） */
   purchaseOrderItemId?: number | null;
   createdAt: string;
   updatedAt: string;

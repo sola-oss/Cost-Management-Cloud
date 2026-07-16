@@ -121,8 +121,8 @@ export default function PurchaseOrderDetail({ id }: { id: number }) {
     if (!order) return;
     const linkedInvoices = (order as any).linkedInvoiceCount ?? 0;
     const message = linkedInvoices > 0
-      ? `この発注書には仕入伝票が ${linkedInvoices} 件紐づいています。\n削除すると仕入伝票との紐付けが外れます（仕入伝票・実績原価は残ります）。\n\n発注書 ${order.orderNumber} を削除しますか？`
-      : `発注書 ${order.orderNumber} を削除しますか？`;
+      ? `この注文書には仕入伝票が ${linkedInvoices} 件紐づいています。\n削除すると仕入伝票との紐付けが外れます（仕入伝票・実績原価は残ります）。\n\n注文書 ${order.orderNumber} を削除しますか？`
+      : `注文書 ${order.orderNumber} を削除しますか？`;
     if (!window.confirm(message)) return;
     try {
       await fetch(`${BASE}/api/purchase-orders/${id}`, { method: "DELETE" });
@@ -149,7 +149,7 @@ export default function PurchaseOrderDetail({ id }: { id: number }) {
   if (!order) {
     return (
       <div className="p-6 flex items-center justify-center text-red-500">
-        発注書が見つかりません
+        注文書が見つかりません
       </div>
     );
   }

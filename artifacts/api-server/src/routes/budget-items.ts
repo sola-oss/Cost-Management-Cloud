@@ -280,7 +280,7 @@ router.post("/bulk-create-purchase-orders", async (req, res) => {
         }
         if (bi && bi.vendorId === null) {
           return res.status(400).json({
-            message: `実行予算明細 ID ${biId} に仕入先が設定されていません。発注書作成前に仕入先を設定してください`,
+            message: `実行予算明細 ID ${biId} に仕入先が設定されていません。注文書作成前に仕入先を設定してください`,
           });
         }
       }

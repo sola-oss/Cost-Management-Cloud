@@ -608,11 +608,11 @@ export const ListBudgetItemsResponse = zod.object({
       purchaseOrderId: zod
         .number()
         .nullish()
-        .describe("発注書ID（発注済みの場合に設定）"),
+        .describe("注文書ID（発注済みの場合に設定）"),
       purchaseOrderItemId: zod
         .number()
         .nullish()
-        .describe("発注書明細ID（発注済みの場合に設定）"),
+        .describe("注文書明細ID（発注済みの場合に設定）"),
       createdAt: zod.coerce.date(),
       updatedAt: zod.coerce.date(),
     }),
@@ -642,7 +642,7 @@ export const CreateBudgetItemBody = zod.object({
 });
 
 /**
- * @summary 実行予算明細から発注書一括作成
+ * @summary 実行予算明細から注文書一括作成
  */
 export const BulkCreatePurchaseOrdersParams = zod.object({
   id: zod.coerce.number(),
@@ -708,11 +708,11 @@ export const UpdateBudgetItemResponse = zod.object({
   purchaseOrderId: zod
     .number()
     .nullish()
-    .describe("発注書ID（発注済みの場合に設定）"),
+    .describe("注文書ID（発注済みの場合に設定）"),
   purchaseOrderItemId: zod
     .number()
     .nullish()
-    .describe("発注書明細ID（発注済みの場合に設定）"),
+    .describe("注文書明細ID（発注済みの場合に設定）"),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });

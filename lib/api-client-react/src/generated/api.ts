@@ -1464,7 +1464,7 @@ export const useCreateBudgetItem = <
 };
 
 /**
- * @summary 実行予算明細から発注書一括作成
+ * @summary 実行予算明細から注文書一括作成
  */
 export const getBulkCreatePurchaseOrdersUrl = (id: number) => {
   return `/api/projects/${id}/budget-items/bulk-create-purchase-orders`;
@@ -1532,7 +1532,7 @@ export type BulkCreatePurchaseOrdersMutationBody =
 export type BulkCreatePurchaseOrdersMutationError = ErrorType<ErrorResponse>;
 
 /**
- * @summary 実行予算明細から発注書一括作成
+ * @summary 実行予算明細から注文書一括作成
  */
 export const useBulkCreatePurchaseOrders = <
   TError = ErrorType<ErrorResponse>,

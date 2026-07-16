@@ -342,7 +342,7 @@ router.post("/from-order/:orderId", async (req, res) => {
       .select()
       .from(purchaseOrdersTable)
       .where(eq(purchaseOrdersTable.id, orderId));
-    if (!order) return res.status(404).json({ message: "発注書が見つかりません" });
+    if (!order) return res.status(404).json({ message: "注文書が見つかりません" });
 
     const [vendorRow] = await db
       .select({ name: vendorsTable.name })
@@ -610,7 +610,7 @@ router.delete("/:id", async (req, res) => {
       // 2. 仕入伝票削除（CASCADE で明細も削除）
       await tx.delete(purchaseInvoicesTable).where(eq(purchaseInvoicesTable.id, id));
 
-      // 3. 発注書の納品数量を再計算
+      // 3. 注文書の納品数量を再計算
       if (orderId) {
         await syncDeliveredQuantity(tx, orderId);
       }
