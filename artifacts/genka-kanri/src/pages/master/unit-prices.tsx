@@ -171,18 +171,34 @@ export default function UnitPriceMaster() {
         toast({ title: "更新しました" });
         mark(editingItem.id);
       } else {
-        const res = await fetch(`${BASE}/api/unit-prices`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.message ?? "登録に失敗しました");
+        const post = (forceUpdate: boolean) =>
+          fetch(`${BASE}/api/unit-prices`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...body, forceUpdate }),
+          });
+        let res = await post(false);
+        let data = await res.json().catch(() => ({}));
+
+        // 同じ仕入先・工種・品名で単価違いが既にある場合は上書き確認
+        if (res.status === 409 && data?.status === "conflict") {
+          const oldPrice = Number(data.existing?.unitPrice ?? 0);
+          const newPrice = Number(form.unitPrice || 0);
+          const ok = window.confirm(
+            `「${form.itemName.trim()}」は既に ${oldPrice.toLocaleString()}円 で登録されています。\n` +
+            `${newPrice.toLocaleString()}円 に更新しますか？`,
+          );
+          if (!ok) { setSubmitting(false); return; }
+          res = await post(true);
+          data = await res.json().catch(() => ({}));
         }
-        const created = await res.json().catch(() => null);
-        toast({ title: "登録しました" });
-        mark(created?.id);
+        if (!res.ok) throw new Error(data.message ?? "登録に失敗しました");
+        toast({
+          title:
+            data?.status === "unchanged" ? "登録済みです（同じ単価）" :
+            data?.status === "updated" ? "単価を更新しました" : "登録しました",
+        });
+        mark(data?.row?.id);
       }
       queryClient.invalidateQueries({ queryKey: ["/api/unit-prices"] });
       closeDialog();

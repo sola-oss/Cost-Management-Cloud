@@ -376,22 +376,47 @@ export default function Purchases() {
     const workTypeId = row.workTypeCode
       ? (workTypes.find(w => w.code === row.workTypeCode)?.id ?? null)
       : null;
+    const name = row.productName.trim();
     setRegisteringRow(row.id);
     try {
-      const res = await fetch("/api/unit-prices", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          vendorId: parseInt(vendorId),
-          workTypeId,
-          itemName: row.productName.trim(),
-          unit: row.unit || "式",
-          unitPrice: price,
-        }),
-      });
+      const post = (forceUpdate: boolean) =>
+        fetch("/api/unit-prices", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            vendorId: parseInt(vendorId),
+            workTypeId,
+            itemName: name,
+            unit: row.unit || "式",
+            unitPrice: price,
+            forceUpdate,
+          }),
+        });
+
+      let res = await post(false);
+      let data = await res.json().catch(() => ({}));
+
+      // 同じ仕入先・工種・品名で単価違いが既にある場合は、上書き更新するか確認する
+      if (res.status === 409 && data?.status === "conflict") {
+        const oldPrice = Number(data.existing?.unitPrice ?? 0);
+        const ok = window.confirm(
+          `「${name}」は既に ${oldPrice.toLocaleString()}円 で単価マスタに登録されています。\n` +
+          `${price.toLocaleString()}円 に更新しますか？`,
+        );
+        if (!ok) return;
+        res = await post(true);
+        data = await res.json().catch(() => ({}));
+      }
+
       if (!res.ok) throw new Error("failed");
       queryClient.invalidateQueries({ queryKey: ["/api/unit-prices"] });
-      toast({ title: "単価マスタに登録しました", description: `${row.productName.trim()}（${price.toLocaleString()}円）` });
+      if (data?.status === "unchanged") {
+        toast({ title: "登録済みです", description: `${name}（${price.toLocaleString()}円）は既に同じ単価で登録されています` });
+      } else if (data?.status === "updated") {
+        toast({ title: "単価マスタを更新しました", description: `${name}（${price.toLocaleString()}円）` });
+      } else {
+        toast({ title: "単価マスタに登録しました", description: `${name}（${price.toLocaleString()}円）` });
+      }
     } catch {
       toast({ title: "登録に失敗しました", variant: "destructive" });
     } finally {
