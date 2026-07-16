@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useCompanySettings } from "@/hooks/use-company-settings";
+import { useCompanyBankAccounts, formatBankAccount } from "@/hooks/use-company-bank-accounts";
 import { Printer } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -88,6 +89,7 @@ export default function InvoicePrint({ id }: { id: number }) {
   });
 
   const { data: company, isLoading: loadingCompany } = useCompanySettings<CompanySettings>();
+  const { data: bankAccounts = [], isLoading: loadingBanks } = useCompanyBankAccounts();
 
   const projectId = invoice?.projectId ?? null;
   const { data: project, isLoading: loadingProject } = useQuery<Project>({
@@ -107,7 +109,7 @@ export default function InvoicePrint({ id }: { id: number }) {
     }
   }, [loadingInvoice, loadingCompany, invoice]);
 
-  if (loadingInvoice || loadingCompany || (projectId && loadingProject)) {
+  if (loadingInvoice || loadingCompany || loadingBanks || (projectId && loadingProject)) {
     return (
       <div className="flex items-center justify-center h-screen text-slate-500">
         読み込み中…
@@ -130,17 +132,9 @@ export default function InvoicePrint({ id }: { id: number }) {
   const billedToDate = invoice.billedToDate ?? 0;
   const progressRemainder = contractAmount - billedToDate - invoice.totalAmount;
 
-  const bankLine = company?.bankName
-    ? [
-        company.bankName,
-        company.bankBranch,
-        company.bankAccountType,
-        company.bankAccountNumber,
-        company.bankAccountName,
-      ]
-        .filter(Boolean)
-        .join("　")
-    : "";
+  // 振込先は会社設定の銀行欄ではなく専用の振込先口座マスタから出す。
+  // 会社設定側は全銀ファイルの引落口座（＝こちらの出金元）で、別の口座のことがある
+  const bankLines = bankAccounts.map(formatBankAccount).filter(Boolean);
 
   const registrationNumber =
     company?.invoiceRegistrationNumber || invoice.invoiceRegistrationNumber;
@@ -384,11 +378,13 @@ export default function InvoicePrint({ id }: { id: number }) {
             </div>
           )}
 
-          {/* 振込先 */}
-          {bankLine && (
+          {/* 振込先（複数口座に対応） */}
+          {bankLines.length > 0 && (
             <div className="border-t border-slate-200 pt-3">
               <div className="text-[10px] text-slate-500 font-medium mb-1">お振込先</div>
-              <div className="text-[10px] text-slate-700">{bankLine}</div>
+              {bankLines.map((line) => (
+                <div key={line} className="text-[10px] text-slate-700">{line}</div>
+              ))}
             </div>
           )}
         </div>

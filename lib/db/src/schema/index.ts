@@ -9,6 +9,7 @@ export * from "./estimates";
 export * from "./estimate-print-logs";
 export * from "./clients";
 export * from "./company-settings";
+export * from "./company-bank-accounts";
 export * from "./invoices";
 export * from "./construction-histories";
 export * from "./purchase-orders";
