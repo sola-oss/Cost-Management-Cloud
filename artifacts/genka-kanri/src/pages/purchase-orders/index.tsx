@@ -11,6 +11,7 @@ import { DateInput } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -166,6 +167,9 @@ export default function PurchaseOrders() {
   const [formVendorId, setFormVendorId] = useState("");
   const [formOrderDate, setFormOrderDate] = useState(new Date().toISOString().split("T")[0]);
   const [formDeliveryDate, setFormDeliveryDate] = useState("");
+  const [formOrderName, setFormOrderName] = useState("");
+  const [formStartDate, setFormStartDate] = useState("");
+  const [formRecycling, setFormRecycling] = useState(false);
   const [formStatus, setFormStatus] = useState("ordered");
   const [formNotes, setFormNotes] = useState("");
   const [formRows, setFormRows] = useState<ItemRow[]>([createItemRow()]);
@@ -191,6 +195,9 @@ export default function PurchaseOrders() {
     setFormVendorId("");
     setFormOrderDate(new Date().toISOString().split("T")[0]);
     setFormDeliveryDate("");
+    setFormOrderName("");
+    setFormStartDate("");
+    setFormRecycling(false);
     setFormStatus("ordered");
     setFormNotes("");
     setFormRows([createItemRow()]);
@@ -216,6 +223,9 @@ export default function PurchaseOrders() {
           vendorId: parseInt(formVendorId),
           orderDate: formOrderDate,
           expectedDeliveryDate: formDeliveryDate || null,
+          orderName: formOrderName || null,
+          startDate: formStartDate || null,
+          recyclingLawApplicable: formRecycling,
           status: formStatus,
           notes: formNotes || null,
           items: validRows.map((r, idx) => ({
@@ -234,7 +244,7 @@ export default function PurchaseOrders() {
       });
       if (!res.ok) throw new Error("Failed");
       const order = await res.json() as PurchaseOrder;
-      toast({ title: "登録完了", description: `発注書 ${order.orderNumber} を登録しました。` });
+      toast({ title: "登録完了", description: `注文書 ${order.orderNumber} を登録しました。` });
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
       setCreateOpen(false);
       resetForm();
@@ -261,7 +271,7 @@ export default function PurchaseOrders() {
 
   const handleDelete = async (e: React.MouseEvent, id: number, num: string) => {
     e.stopPropagation();
-    if (!window.confirm(`発注書 ${num} を削除しますか？`)) return;
+    if (!window.confirm(`注文書 ${num} を削除しますか？`)) return;
     try {
       await fetch(`${BASE}/api/purchase-orders/${id}`, { method: "DELETE" });
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
@@ -276,7 +286,7 @@ export default function PurchaseOrders() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <ClipboardList className="w-5 h-5 text-teal-700" />
-          <h1 className="text-xl font-bold text-slate-900">発注書一覧</h1>
+          <h1 className="text-xl font-bold text-slate-900">注文書一覧</h1>
           {ordersData && (
             <span className="text-sm text-slate-500">{ordersData.total}件</span>
           )}
@@ -287,7 +297,7 @@ export default function PurchaseOrders() {
           onClick={() => { resetForm(); setCreateOpen(true); }}
         >
           <Plus className="w-4 h-4 mr-1" />
-          新規発注書
+          新規注文書
         </Button>
       </div>
 
@@ -349,7 +359,7 @@ export default function PurchaseOrders() {
                 </TableRow>
               ) : orders.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-slate-400">発注書がありません</TableCell>
+                  <TableCell colSpan={7} className="text-center py-8 text-slate-400">注文書がありません</TableCell>
                 </TableRow>
               ) : (
                 orders.map((order) => (
@@ -422,7 +432,7 @@ export default function PurchaseOrders() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="w-4 h-4" />
-              新規発注書
+              新規注文書
             </DialogTitle>
           </DialogHeader>
 
@@ -461,7 +471,20 @@ export default function PurchaseOrders() {
                 <DateInput value={formOrderDate} onChange={(e) => setFormOrderDate(e.target.value)} className="text-sm" />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-slate-600">納期予定</Label>
+                <Label className="text-xs text-slate-600">発注名</Label>
+                <Input
+                  value={formOrderName}
+                  onChange={(e) => setFormOrderName(e.target.value)}
+                  placeholder="例: 3階トイレ改修工事"
+                  className="text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-600">工期開始</Label>
+                <DateInput value={formStartDate} onChange={(e) => setFormStartDate(e.target.value)} className="text-sm" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-600">工期終了（納期）</Label>
                 <DateInput value={formDeliveryDate} onChange={(e) => setFormDeliveryDate(e.target.value)} className="text-sm" />
               </div>
               <div className="space-y-1">
@@ -479,6 +502,16 @@ export default function PurchaseOrders() {
               <div className="space-y-1">
                 <Label className="text-xs text-slate-600">備考</Label>
                 <Input value={formNotes} onChange={(e) => setFormNotes(e.target.value)} placeholder="備考" className="text-sm" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-slate-600">建設リサイクル法</Label>
+                <label className="flex items-center gap-2 h-9 text-sm text-slate-700 cursor-pointer">
+                  <Checkbox
+                    checked={formRecycling}
+                    onCheckedChange={(v) => setFormRecycling(v === true)}
+                  />
+                  対象建設工事に該当する
+                </label>
               </div>
             </div>
 

@@ -181,15 +181,17 @@ router.get("/:id", async (req, res) => {
       .select({
         order: purchaseOrdersTable,
         vendorName: vendorsTable.name,
+        vendorAddress: vendorsTable.address,
         projectCode: projectsTable.projectCode,
         projectName: projectsTable.name,
+        projectLocation: projectsTable.location,
       })
       .from(purchaseOrdersTable)
       .leftJoin(vendorsTable, eq(purchaseOrdersTable.vendorId, vendorsTable.id))
       .leftJoin(projectsTable, eq(purchaseOrdersTable.projectId, projectsTable.id))
       .where(eq(purchaseOrdersTable.id, id));
 
-    if (!row) return res.status(404).json({ message: "発注書が見つかりません" });
+    if (!row) return res.status(404).json({ message: "注文書が見つかりません" });
 
     const items = await db
       .select()
@@ -197,7 +199,7 @@ router.get("/:id", async (req, res) => {
       .where(eq(purchaseOrderItemsTable.purchaseOrderId, id))
       .orderBy(purchaseOrderItemsTable.lineNumber);
 
-    // この発注書に紐づく仕入伝票の件数（削除時の警告に使う）
+    // この注文書に紐づく仕入伝票の件数（削除時の警告に使う）
     const [invCount] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(purchaseInvoicesTable)
@@ -206,8 +208,10 @@ router.get("/:id", async (req, res) => {
     return res.json({
       ...formatOrder(row.order),
       vendorName: row.vendorName ?? "",
+      vendorAddress: row.vendorAddress ?? "",
       projectCode: row.projectCode ?? "",
       projectName: row.projectName ?? "",
+      projectLocation: row.projectLocation ?? "",
       linkedInvoiceCount: invCount?.count ?? 0,
       items: items.map(formatItem),
     });
@@ -220,7 +224,8 @@ router.get("/:id", async (req, res) => {
 // POST /api/purchase-orders
 router.post("/", async (req, res) => {
   try {
-    const { projectId, vendorId, orderDate, expectedDeliveryDate, status, notes, items } = req.body;
+    const { projectId, vendorId, orderDate, expectedDeliveryDate, status, notes, items,
+            orderName, startDate, recyclingLawApplicable } = req.body;
 
     if (!projectId || !vendorId || !orderDate) {
       return res.status(400).json({ message: "projectId, vendorId, orderDate は必須です" });
@@ -238,6 +243,9 @@ router.post("/", async (req, res) => {
         vendorId: parseInt(vendorId),
         orderDate,
         expectedDeliveryDate: expectedDeliveryDate ?? null,
+        orderName: orderName ?? null,
+        startDate: startDate ?? null,
+        recyclingLawApplicable: recyclingLawApplicable ?? false,
         status: (status ?? "draft") as PurchaseOrderStatus,
         subtotal: String(subtotal),
         taxAmount: String(taxAmount),
@@ -282,18 +290,22 @@ router.post("/", async (req, res) => {
 router.patch("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { vendorId, orderDate, expectedDeliveryDate, status, notes, items } = req.body;
+    const { vendorId, orderDate, expectedDeliveryDate, status, notes, items,
+            orderName, startDate, recyclingLawApplicable } = req.body;
 
     const [existing] = await db
       .select()
       .from(purchaseOrdersTable)
       .where(eq(purchaseOrdersTable.id, id));
-    if (!existing) return res.status(404).json({ message: "発注書が見つかりません" });
+    if (!existing) return res.status(404).json({ message: "注文書が見つかりません" });
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (vendorId !== undefined) updates.vendorId = parseInt(vendorId);
     if (orderDate !== undefined) updates.orderDate = orderDate;
     if (expectedDeliveryDate !== undefined) updates.expectedDeliveryDate = expectedDeliveryDate ?? null;
+    if (orderName !== undefined) updates.orderName = orderName ?? null;
+    if (startDate !== undefined) updates.startDate = startDate ?? null;
+    if (recyclingLawApplicable !== undefined) updates.recyclingLawApplicable = !!recyclingLawApplicable;
     if (status !== undefined) updates.status = status;
     if (notes !== undefined) updates.notes = notes ?? null;
 
@@ -370,7 +382,7 @@ router.delete("/:id", async (req, res) => {
       .select({ id: purchaseOrdersTable.id })
       .from(purchaseOrdersTable)
       .where(eq(purchaseOrdersTable.id, id));
-    if (!existing) return res.status(404).json({ message: "発注書が見つかりません" });
+    if (!existing) return res.status(404).json({ message: "注文書が見つかりません" });
 
     // Explicitly clear purchase order links on budget_items before deletion
     // (ON DELETE SET NULL on the FK also handles this, but we do it explicitly for consistency)

@@ -1,4 +1,4 @@
-import { pgTable, serial, text, numeric, date, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, numeric, date, integer, boolean, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { projectsTable } from "./projects";
@@ -17,6 +17,14 @@ export const purchaseOrdersTable = pgTable("purchase_orders", {
   orderDate: date("order_date").notNull(),
   expectedDeliveryDate: date("expected_delivery_date"),
   status: text("status").$type<PurchaseOrderStatus>().notNull().default("draft"),
+
+  // ─── 注文書（おおつか様仕様）の印刷に使う項目 ───────────────────────────
+  // 発注名：施工内容欄の見出し（例「3階トイレ改修工事」）
+  orderName: text("order_name"),
+  // 工期：開始日。終了日は expectedDeliveryDate（納期）を使う
+  startDate: date("start_date"),
+  // 建設リサイクル法の対象建設工事に該当するか（既定は該当しない）
+  recyclingLawApplicable: boolean("recycling_law_applicable").notNull().default(false),
   subtotal: numeric("subtotal", { precision: 15, scale: 2 }).notNull().default("0"),
   taxAmount: numeric("tax_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   totalAmount: numeric("total_amount", { precision: 15, scale: 2 }).notNull().default("0"),
