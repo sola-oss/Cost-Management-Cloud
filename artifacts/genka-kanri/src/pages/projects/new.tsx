@@ -29,6 +29,7 @@ interface ClientMaster {
   id: number;
   clientCode: string;
   name: string;
+  kana: string | null;
   address: string | null;
   tel: string | null;
   contactName: string | null;
@@ -533,7 +534,7 @@ export default function NewProject() {
                             <SelectContent>
                               <SelectItem value="__manual__">— 直接入力 —</SelectItem>
                               {clients.map((c) => (
-                                <SelectItem key={c.id} value={c.clientCode}>
+                                <SelectItem key={c.id} value={c.clientCode} data-search-text={c.kana ?? ""}>
                                   <span className="font-mono text-slate-500 mr-1 text-xs">{c.clientCode}</span>
                                   {c.name}
                                 </SelectItem>

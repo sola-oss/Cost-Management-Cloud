@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, clientsTable } from "@workspace/db";
+import { isUniqueViolation } from "../lib/db-errors";
 
 const router: IRouter = Router();
 
@@ -16,23 +17,24 @@ router.get("/", async (req, res) => {
 
 router.post("/", async (req, res) => {
   try {
-    const { clientCode, name, address, tel, contactName } = req.body;
+    const { clientCode, name, kana, address, tel, contactName } = req.body;
     if (!clientCode || !name) {
       return res.status(400).json({ message: "得意先コードと得意先名は必須です" });
     }
     const [client] = await db.insert(clientsTable).values({
       clientCode,
       name,
+      kana: kana ?? null,
       address: address ?? null,
       tel: tel ?? null,
       contactName: contactName ?? null,
     }).returning();
     return res.status(201).json(client);
   } catch (err: unknown) {
-    req.log.error({ err }, "Failed to create client");
-    if (err instanceof Error && (err as NodeJS.ErrnoException & { code?: string }).code === "23505") {
+    if (isUniqueViolation(err)) {
       return res.status(409).json({ message: "その得意先コードはすでに使用されています" });
     }
+    req.log.error({ err }, "Failed to create client");
     return res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -41,13 +43,14 @@ router.put("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ message: "Invalid id" });
-    const { clientCode, name, address, tel, contactName } = req.body;
+    const { clientCode, name, kana, address, tel, contactName } = req.body;
     if (!clientCode || !name) {
       return res.status(400).json({ message: "得意先コードと得意先名は必須です" });
     }
     const [updated] = await db.update(clientsTable).set({
       clientCode,
       name,
+      kana: kana ?? null,
       address: address ?? null,
       tel: tel ?? null,
       contactName: contactName ?? null,
@@ -56,10 +59,10 @@ router.put("/:id", async (req, res) => {
     if (!updated) return res.status(404).json({ message: "得意先が見つかりません" });
     return res.json(updated);
   } catch (err: unknown) {
-    req.log.error({ err }, "Failed to update client");
-    if (err instanceof Error && (err as NodeJS.ErrnoException & { code?: string }).code === "23505") {
+    if (isUniqueViolation(err)) {
       return res.status(409).json({ message: "その得意先コードはすでに使用されています" });
     }
+    req.log.error({ err }, "Failed to update client");
     return res.status(500).json({ message: "Internal server error" });
   }
 });

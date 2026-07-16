@@ -16,7 +16,7 @@ import { generateInvoicePDF } from "./pdf";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
-interface Client { id: number; name: string; address: string | null; }
+interface Client { id: number; name: string; kana: string | null; address: string | null; }
 interface Project { id: number; name: string; projectCode: string; contractAmount?: number; }
 interface CompanySettings {
   companyName: string; postalCode: string; address: string; tel: string; fax: string;
@@ -506,7 +506,7 @@ export default function InvoiceEditor({ id }: Props) {
                 </SelectTrigger>
                 <SelectContent>
                   {clients?.items.map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                    <SelectItem key={c.id} value={String(c.id)} data-search-text={c.kana ?? ""}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

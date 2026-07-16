@@ -15,6 +15,7 @@ interface Client {
   id: number;
   clientCode: string;
   name: string;
+  kana: string | null;
   address: string | null;
   tel: string | null;
   contactName: string | null;
@@ -32,6 +33,7 @@ async function fetchClients(): Promise<{ items: Client[] }> {
 type FormValues = {
   clientCode: string;
   name: string;
+  kana: string;
   address: string;
   tel: string;
   contactName: string;
@@ -40,6 +42,7 @@ type FormValues = {
 const defaultForm: FormValues = {
   clientCode: "",
   name: "",
+  kana: "",
   address: "",
   tel: "",
   contactName: "",
@@ -74,6 +77,7 @@ export default function ClientMaster() {
     setForm({
       clientCode: item.clientCode,
       name: item.name,
+      kana: item.kana ?? "",
       address: item.address ?? "",
       tel: item.tel ?? "",
       contactName: item.contactName ?? "",
@@ -97,6 +101,7 @@ export default function ClientMaster() {
       const body = {
         clientCode: form.clientCode.trim(),
         name: form.name.trim(),
+        kana: form.kana.trim() || null,
         address: form.address.trim() || null,
         tel: form.tel.trim() || null,
         contactName: form.contactName.trim() || null,
@@ -266,6 +271,14 @@ export default function ClientMaster() {
                 placeholder="例: エステート住建株式会社"
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-slate-700">フリガナ</label>
+              <Input
+                placeholder="例: ｴｽﾃｰﾄｼﾞｭｳｹﾝ（プルダウンの読みがな検索に使われます）"
+                value={form.kana}
+                onChange={(e) => setForm((f) => ({ ...f, kana: e.target.value }))}
               />
             </div>
             <div className="space-y-1.5">

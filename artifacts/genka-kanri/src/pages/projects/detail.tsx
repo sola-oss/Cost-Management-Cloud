@@ -128,7 +128,7 @@ const costItemSchema = z.object({
 
 // ─── 得意先マスタ hook ────────────────────────────────────────────────────
 
-type ClientMasterItem = { id: number; clientCode: string; name: string; address: string | null; tel: string | null; contactName: string | null };
+type ClientMasterItem = { id: number; clientCode: string; name: string; kana: string | null; address: string | null; tel: string | null; contactName: string | null };
 
 function useClients() {
   const { data } = useQuery<{ items: ClientMasterItem[] }>({
@@ -945,7 +945,7 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
                           <SelectContent>
                             <SelectItem value="__manual__">— 直接入力 —</SelectItem>
                             {clients.map((c) => (
-                              <SelectItem key={c.id} value={c.clientCode}>
+                              <SelectItem key={c.id} value={c.clientCode} data-search-text={c.kana ?? ""}>
                                 <span className="font-mono text-slate-500 mr-1 text-xs">{c.clientCode}</span>
                                 {c.name}
                               </SelectItem>

@@ -69,7 +69,7 @@ interface EstimateForm {
 
 interface Project { id: number; name: string; projectCode: string; clientName: string; location: string; }
 interface WorkType { id: number; code: string; name: string; }
-interface Client { id: number; clientCode: string; name: string; address: string | null; }
+interface Client { id: number; clientCode: string; name: string; kana: string | null; address: string | null; }
 
 const LEVEL_LABELS: Record<number, string> = { 1: "大", 2: "中", 3: "小", 4: "細", 5: "商品" };
 const ROW_TYPE_LABELS: Record<string, string> = {
@@ -717,7 +717,7 @@ export default function EstimateEditor({ id }: { id?: number }) {
                   <SelectContent>
                     <SelectItem value="__manual__">— 直接入力 —</SelectItem>
                     {clients.map((c) => (
-                      <SelectItem key={c.id} value={c.clientCode}>
+                      <SelectItem key={c.id} value={c.clientCode} data-search-text={c.kana ?? ""}>
                         {c.name}
                       </SelectItem>
                     ))}

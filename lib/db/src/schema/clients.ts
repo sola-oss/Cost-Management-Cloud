@@ -6,6 +6,8 @@ export const clientsTable = pgTable("clients", {
   id: serial("id").primaryKey(),
   clientCode: text("client_code").notNull().unique(),
   name: text("name").notNull(),
+  // フリガナ（レッツの得意先一覧由来。プルダウンの読みがな検索に使用）
+  kana: text("kana"),
   address: text("address"),
   tel: text("tel"),
   contactName: text("contact_name"),
