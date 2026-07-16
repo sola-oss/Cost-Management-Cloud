@@ -17,3 +17,4 @@ export * from "./unit-prices";
 export * from "./users";
 export * from "./construction-categories";
 export * from "./staff-members";
+export * from "./zengin-exports";

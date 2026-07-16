@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   CreditCard, Save, Loader2, CheckCircle2, Clock, AlertCircle,
-  RefreshCw, Trash2, RotateCcw, Upload, AlertTriangle, ExternalLink,
+  RefreshCw, Trash2, RotateCcw, Upload, AlertTriangle, ExternalLink, History,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -38,6 +38,7 @@ interface PaymentItem {
   invoiceNumber: string | null;
   notes: string | null;
   createdAt: string;
+  lastExportedAt: string | null;
 }
 
 interface PaymentsResponse {
@@ -422,6 +423,84 @@ function ZenginExportDialog({ open, onClose, selectedItems, vendors, defaultDate
 
 // ─── メインページ ──────────────────────────────────────────────────────────────
 
+
+// ─── 振込データ出力履歴ダイアログ ─────────────────────────────────────────────
+
+interface ZenginExportHistory {
+  id: number;
+  fileName: string;
+  executionDate: string;
+  paymentCount: number;
+  totalAmount: number;
+  exportedAt: string;
+  payments: { id: number; vendorName: string; amount: number }[];
+}
+
+function ZenginHistoryDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["/api/payments/zengin-exports"],
+    queryFn: async () => {
+      const res = await fetch("/api/payments/zengin-exports");
+      if (!res.ok) throw new Error("Failed to fetch zengin exports");
+      return res.json() as Promise<{ items: ZenginExportHistory[] }>;
+    },
+    enabled: open,
+  });
+  const items = data?.items ?? [];
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <History className="w-4 h-4" />
+            振込データ出力履歴
+          </DialogTitle>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="py-8 text-center text-slate-400">
+            <Loader2 className="w-5 h-5 animate-spin inline mr-2" />読み込み中...
+          </div>
+        ) : items.length === 0 ? (
+          <div className="py-8 text-center text-slate-400 text-sm">
+            出力履歴はまだありません。支払管理で支払を選択して「振込データを出力」すると記録されます。
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {items.map((e) => (
+              <details key={e.id} className="border rounded-md group">
+                <summary className="flex items-center gap-3 px-3 py-2 cursor-pointer select-none hover:bg-slate-50 text-sm list-none [&::-webkit-details-marker]:hidden">
+                  <svg className="w-3 h-3 shrink-0 transition-transform group-open:rotate-90" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
+                  <span className="font-medium text-slate-700 whitespace-nowrap">
+                    {new Date(e.exportedAt).toLocaleString("ja-JP", { year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                  <span className="text-slate-500 whitespace-nowrap">取組日 {e.executionDate}</span>
+                  <span className="text-slate-500 whitespace-nowrap">{e.paymentCount}件</span>
+                  <span className="font-bold text-slate-900 ml-auto whitespace-nowrap">{formatCurrency(e.totalAmount)}</span>
+                </summary>
+                <div className="px-3 pb-3 pt-1 border-t bg-slate-50/50">
+                  <div className="text-xs text-slate-400 mb-2 font-mono">{e.fileName}</div>
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {e.payments.map((pmt) => (
+                        <tr key={pmt.id} className="border-b border-slate-100 last:border-0">
+                          <td className="py-1 text-slate-700">{pmt.vendorName}</td>
+                          <td className="py-1 text-right text-slate-900">{formatCurrency(pmt.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Payments() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
@@ -429,6 +508,7 @@ export default function Payments() {
   const [projectFilter, setProjectFilter] = useState("all");
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [zenginOpen, setZenginOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const { data: payments, isLoading, refetch } = usePayments(statusFilter, projectFilter);
@@ -769,6 +849,15 @@ export default function Payments() {
                 <Upload className="w-3.5 h-3.5" />
                 振込データを出力
               </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs gap-1"
+                onClick={() => setHistoryOpen(true)}
+              >
+                <History className="w-3.5 h-3.5" />
+                出力履歴
+              </Button>
             </div>
           </div>
         </CardHeader>
@@ -864,6 +953,16 @@ export default function Payments() {
                                 今週期限
                               </Badge>
                             )}
+                            {item.lastExportedAt && (
+                              <Badge
+                                variant="outline"
+                                className="bg-sky-50 text-sky-700 border-sky-200 gap-1 text-xs w-fit"
+                                title={`振込データ出力済み: ${new Date(item.lastExportedAt).toLocaleString("ja-JP")}`}
+                              >
+                                <Upload className="w-3 h-3" />
+                                出力済 {new Date(item.lastExportedAt).toLocaleDateString("ja-JP", { month: "numeric", day: "numeric" })}
+                              </Badge>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell>
@@ -954,6 +1053,7 @@ export default function Payments() {
       </Card>
 
       {/* 全銀データ出力ダイアログ */}
+      <ZenginHistoryDialog open={historyOpen} onClose={() => setHistoryOpen(false)} />
       {zenginOpen && (
         <ZenginExportDialog
           open={zenginOpen}

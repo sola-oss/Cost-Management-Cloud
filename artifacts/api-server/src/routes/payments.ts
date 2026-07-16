@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, and, desc, inArray, gte, lte, isNotNull, sql } from "drizzle-orm";
 import iconv from "iconv-lite";
-import { db, paymentsTable, projectsTable, companySettingsTable, vendorsTable, purchaseInvoicesTable } from "@workspace/db";
+import { db, paymentsTable, projectsTable, companySettingsTable, vendorsTable, purchaseInvoicesTable, zenginExportsTable, zenginExportItemsTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -121,11 +121,30 @@ router.get("/", async (req, res) => {
     const totalAmount = parseNumeric(agg?.totalAmount);
     const paidAmount = parseNumeric(agg?.paidAmount);
 
+    // 振込データへの最終出力日時（出力済みバッジ用）
+    const paymentIds = rows.map((r) => r.payment.id);
+    const lastExportMap = new Map<number, string>();
+    if (paymentIds.length > 0) {
+      const exportRows = await db
+        .select({
+          paymentId: zenginExportItemsTable.paymentId,
+          exportedAt: sql<string>`max(${zenginExportsTable.exportedAt})`,
+        })
+        .from(zenginExportItemsTable)
+        .innerJoin(zenginExportsTable, eq(zenginExportItemsTable.exportId, zenginExportsTable.id))
+        .where(inArray(zenginExportItemsTable.paymentId, paymentIds))
+        .groupBy(zenginExportItemsTable.paymentId);
+      for (const r of exportRows) {
+        if (r.paymentId != null) lastExportMap.set(r.paymentId, r.exportedAt);
+      }
+    }
+
     res.json({
       items: rows.map((r) => ({
         ...formatPayment(r.payment),
         projectCode: r.projectCode,
         projectName: r.projectName,
+        lastExportedAt: lastExportMap.get(r.payment.id) ?? null,
       })),
       total: Number(agg?.count ?? 0),
       totalAmount,
@@ -262,6 +281,7 @@ router.post("/zengin", async (req, res) => {
     // データレコード
     // 1+4+15+3+15+4+1+7+30+10+1+10+10+1+1+7 = 120
     const dataRecords: { vendor: string; line: string }[] = [];
+    const exportItems: { paymentId: number; vendorName: string; amount: number }[] = [];
     let totalAmount = 0;
 
     for (const payment of payments) {
@@ -269,6 +289,7 @@ router.post("/zengin", async (req, res) => {
       const amt = parseNumeric(payment.amount) - (payment.paidAmount ? parseNumeric(payment.paidAmount) : 0);
       const amtInt = Math.max(0, Math.round(amt));
       totalAmount += amtInt;
+      exportItems.push({ paymentId: payment.id, vendorName: payment.vendor, amount: amtInt });
 
       const dataRecord =
         "2" +
@@ -343,12 +364,66 @@ router.post("/zengin", async (req, res) => {
       String(now.getSeconds()).padStart(2, "0");
     const filename = `furikomi_${ts}.txt`;
 
+    // 出力履歴を記録してからファイルを返す（記録できない場合はファイルも出さない＝証跡なしの出力を防ぐ）
+    const [exportRow] = await db
+      .insert(zenginExportsTable)
+      .values({
+        fileName: filename,
+        executionDate,
+        paymentCount: dataRecords.length,
+        totalAmount: String(totalAmount),
+      })
+      .returning();
+    if (exportItems.length > 0) {
+      await db.insert(zenginExportItemsTable).values(
+        exportItems.map((i) => ({
+          exportId: exportRow.id,
+          paymentId: i.paymentId,
+          vendorName: i.vendorName,
+          amount: String(i.amount),
+        })),
+      );
+    }
+
     res.setHeader("Content-Type", "text/plain; charset=Shift_JIS");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     return res.send(buffer);
   } catch (err) {
     req.log.error({ err }, "Failed to generate zengin file");
     return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// ─── GET /api/payments/zengin-exports ────────────────────────────────────────
+// 振込データの出力履歴（新しい順・直近100件）。明細は出力時点のスナップショット。
+router.get("/zengin-exports", async (req, res) => {
+  try {
+    const exports = await db
+      .select()
+      .from(zenginExportsTable)
+      .orderBy(desc(zenginExportsTable.exportedAt))
+      .limit(100);
+    const ids = exports.map((e) => e.id);
+    const items =
+      ids.length > 0
+        ? await db
+            .select()
+            .from(zenginExportItemsTable)
+            .where(inArray(zenginExportItemsTable.exportId, ids))
+        : [];
+    res.json({
+      items: exports.map((e) => ({
+        ...e,
+        totalAmount: parseNumeric(e.totalAmount),
+        payments: items
+          .filter((i) => i.exportId === e.id)
+          .map((i) => ({ ...i, amount: parseNumeric(i.amount) })),
+      })),
+      total: exports.length,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Failed to list zengin exports");
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 
