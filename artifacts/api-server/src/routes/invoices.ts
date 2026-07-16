@@ -149,6 +149,7 @@ router.post("/", async (req, res) => {
       dueDate: b.dueDate || null,
       clientId: b.clientId ? parseInt(b.clientId) : null,
       clientName: b.clientName ?? "",
+      clientHonorific: b.clientHonorific ?? "御中",
       clientAddress: b.clientAddress ?? "",
       projectId: b.projectId ? parseInt(b.projectId) : null,
       projectName: b.projectName ?? "",
@@ -213,7 +214,7 @@ router.patch("/:id", async (req, res) => {
     const updates: Record<string, any> = { updatedAt: new Date() };
 
     const fields = [
-      "invoiceDate", "dueDate", "clientName", "clientAddress",
+      "invoiceDate", "dueDate", "clientName", "clientHonorific", "clientAddress",
       "projectName", "invoiceRegistrationNumber", "notes",
     ];
     for (const f of fields) {

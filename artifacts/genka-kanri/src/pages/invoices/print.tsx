@@ -1,10 +1,18 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useCompanySettings } from "@/hooks/use-company-settings";
-import { useCompanyBankAccounts, formatBankAccount } from "@/hooks/use-company-bank-accounts";
+import { useCompanyBankAccounts } from "@/hooks/use-company-bank-accounts";
 import { Printer } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+// 様式の塗りつぶし色（支給Excelの実測値）
+const TITLE_BG = "#A4C2F4";   // 「御請求書」の帯
+const AMOUNT_BG = "#9FC5E8";  // 「御請求金額」の帯
+const HEAD_BG = "#EDEDED";    // 明細の見出し行
+
+// 様式は明細4行ぶんの枠があるので、少ないときは空行で埋めて見た目を合わせる
+const MIN_ITEM_ROWS = 4;
 
 interface InvoiceItem {
   id?: number;
@@ -23,6 +31,7 @@ interface Invoice {
   invoiceDate: string;
   dueDate: string | null;
   clientName: string;
+  clientHonorific: string;
   clientAddress: string;
   projectName: string;
   projectId?: number | null;
@@ -60,22 +69,18 @@ interface CompanySettings {
   bankAccountName: string;
 }
 
-interface Project {
-  id: number;
-  name: string;
-  location: string;
-  startDate: string;
-  endDate: string;
-}
-
 function fmtMoney(n: number) {
   return `¥${Math.round(n).toLocaleString("ja-JP")}`;
 }
 
-function fmtDate(d: string | null) {
+/** 様式が和暦なので「令和8年5月29日」の形にする。令和より前は西暦のまま */
+function fmtWareki(d: string | null) {
   if (!d) return "";
-  const [y, m, day] = d.split("-");
-  return `${y}/${m}/${day}`;
+  const [ys, ms, ds] = d.split("-");
+  const y = parseInt(ys), m = parseInt(ms), day = parseInt(ds);
+  const reiwaYear = y - 2018;
+  if (reiwaYear < 1 || (y === 2019 && m < 5)) return `${y}年${m}月${day}日`;
+  return `令和${reiwaYear === 1 ? "元" : reiwaYear}年${m}月${day}日`;
 }
 
 export default function InvoicePrint({ id }: { id: number }) {
@@ -91,25 +96,14 @@ export default function InvoicePrint({ id }: { id: number }) {
   const { data: company, isLoading: loadingCompany } = useCompanySettings<CompanySettings>();
   const { data: bankAccounts = [], isLoading: loadingBanks } = useCompanyBankAccounts();
 
-  const projectId = invoice?.projectId ?? null;
-  const { data: project, isLoading: loadingProject } = useQuery<Project>({
-    queryKey: ["project-print", projectId],
-    queryFn: async () => {
-      const r = await fetch(`${BASE}/api/projects/${projectId}`);
-      if (!r.ok) return null;
-      return r.json();
-    },
-    enabled: !!projectId,
-  });
-
   useEffect(() => {
     // 印刷は手動ボタンから実行する。見積・発注の印刷と挙動を統一し、自動でダイアログは開かない
-    if (!loadingInvoice && !loadingCompany && !loadingProject && invoice) {
+    if (!loadingInvoice && !loadingCompany && invoice) {
       document.title = `請求書_${invoice.invoiceNumber}`;
     }
   }, [loadingInvoice, loadingCompany, invoice]);
 
-  if (loadingInvoice || loadingCompany || loadingBanks || (projectId && loadingProject)) {
+  if (loadingInvoice || loadingCompany || loadingBanks) {
     return (
       <div className="flex items-center justify-center h-screen text-slate-500">
         読み込み中…
@@ -132,9 +126,11 @@ export default function InvoicePrint({ id }: { id: number }) {
   const billedToDate = invoice.billedToDate ?? 0;
   const progressRemainder = contractAmount - billedToDate - invoice.totalAmount;
 
-  // 振込先は会社設定の銀行欄ではなく専用の振込先口座マスタから出す。
-  // 会社設定側は全銀ファイルの引落口座（＝こちらの出金元）で、別の口座のことがある
-  const bankLines = bankAccounts.map(formatBankAccount).filter(Boolean);
+  // 明細は様式の枠数（4行）に満たなければ空行を足す
+  const printRows: (InvoiceItem | null)[] = [
+    ...items,
+    ...Array(Math.max(0, MIN_ITEM_ROWS - items.length)).fill(null),
+  ];
 
   const registrationNumber =
     company?.invoiceRegistrationNumber || invoice.invoiceRegistrationNumber;
@@ -168,225 +164,208 @@ export default function InvoicePrint({ id }: { id: number }) {
 
       {/* 印刷コンテンツ */}
       <div className="text-black font-sans text-[11px]">
-        <div className="print-page w-[210mm] min-h-[297mm] p-[15mm] box-border">
+        {/* 支給テンプレート「請求書A_縦【おおつか】2025(2).02.13～.xlsx」の寸法をそのまま写している。
+            横位置の % は元Excelの列位置（A〜AGの33列を100%とした割合）。 */}
+        <div className="print-page w-[210mm] min-h-[297mm] px-[12mm] py-[10mm] box-border">
 
-          {/* ヘッダー：請求番号（左）・日付（右） */}
-          <div className="flex justify-between text-[10px] text-slate-500 mb-4">
-            <span>請求番号: {invoice.invoiceNumber}</span>
-            <div className="text-right space-y-0.5">
-              <div>請求日: {fmtDate(invoice.invoiceDate)}</div>
-              {invoice.dueDate && <div>入金期限: {fmtDate(invoice.dueDate)}</div>}
+          {/* 請求日（和暦・右上） */}
+          <div className="text-right text-[10pt]">請求日　{fmtWareki(invoice.invoiceDate)}</div>
+
+          {/* タイトル（水色の帯） */}
+          <h1
+            className="mt-2 py-1 text-center text-[18pt] tracking-[0.4em]"
+            style={{ backgroundColor: TITLE_BG }}
+          >
+            御請求書
+          </h1>
+
+          {/* 宛名（左）・ロゴ＋社印＋自社情報（右） */}
+          <div className="mt-5 flex">
+            <div className="w-[57.6%] shrink-0">
+              {/* 得意先名＋敬称 */}
+              <div className="flex items-end">
+                <span className="flex-1 border-b border-black text-[14pt] pb-1 min-h-[24pt]">
+                  {invoice.clientName}
+                </span>
+                <span className="w-[16%] shrink-0 border-b border-black text-[14pt] pb-1 text-center">
+                  {invoice.clientHonorific ?? "御中"}
+                </span>
+              </div>
+
+              {/* 工事名 */}
+              <div className="mt-6 flex items-end">
+                <span className="w-[21%] shrink-0 border-b border-black text-[12pt] pb-1">工事名</span>
+                <span className="flex-1 border-b border-black text-[12pt] pb-1 pl-2">
+                  {invoice.projectName}
+                </span>
+              </div>
+
+              <div className="mt-5 text-[11pt]">下記の通り、御請求申し上げます。</div>
+            </div>
+
+            <div className="w-[3%] shrink-0" />
+
+            {/* 会社名はロゴ画像に入っているので文字では出さない（様式どおり） */}
+            <div className="flex-1 text-[10pt] leading-snug">
+              <div className="relative mb-1.5">
+                <img src={`${BASE}/otsuka-logo.png`} alt="株式会社おおつか" className="w-[80%]" />
+                <img
+                  src={`${BASE}/otsuka-seal.png`}
+                  alt="社印"
+                  className="absolute right-0 -top-[26%] w-[26%]"
+                />
+              </div>
+              {company?.postalCode && <div>〒{company.postalCode}</div>}
+              {company?.address && <div>{company.address}</div>}
+              {company?.tel && <div>TEL {company.tel}</div>}
+              {company?.fax && <div>FAX {company.fax}</div>}
+              {registrationNumber && <div>登録番号：{registrationNumber}</div>}
+              {company?.staffName && <div>担当者：{company.staffName}</div>}
             </div>
           </div>
 
-          {/* タイトル */}
-          <div className="text-center mb-5">
-            <h1 className="text-3xl font-bold tracking-widest text-slate-900">請　求　書</h1>
+          {/* 御請求金額（水色の帯） */}
+          <div className="mt-6 flex text-[14pt]" style={{ backgroundColor: AMOUNT_BG }}>
+            <div className="w-[15.2%] shrink-0 text-center py-1.5">御請求金額</div>
+            <div className="w-[42.4%] shrink-0 text-center py-1.5">{fmtMoney(invoice.totalAmount)}-</div>
           </div>
 
-          {/* 2カラム：得意先（左）・自社情報（右） */}
-          <div className="flex gap-6 mb-5">
-            {/* 左：得意先 */}
-            <div className="flex-1">
-              <div className="flex items-end mb-2">
-                <span className="text-xl font-bold flex-1 border-b-2 border-black pb-1">
-                  {invoice.clientName || "\u3000\u3000\u3000\u3000\u3000\u3000\u3000"}
-                </span>
-                <span className="text-base font-bold ml-2 pb-1">御中</span>
-              </div>
-              {invoice.clientAddress && (
-                <div className="text-[10px] text-slate-600 mt-1">{invoice.clientAddress}</div>
-              )}
-              <div className="text-xs mt-3">下記の通り、ご請求申し上げます。</div>
-
-              {/* 請求金額ボックス */}
-              <div className="mt-5 flex items-center">
-                <span className="text-sm font-medium w-28 shrink-0">ご請求金額</span>
-                <span className="text-xl font-extrabold text-slate-900 border border-black px-5 py-1 leading-tight">
-                  {fmtMoney(invoice.totalAmount)}
-                </span>
-              </div>
-              <div className="flex gap-10 text-xs text-slate-600 mt-1 pl-28">
-                <span>税抜合計　{fmtMoney(invoice.taxExcludedTotal)}-</span>
-                <span>消費税　{fmtMoney(invoice.taxTotal)}-</span>
-              </div>
-
-              {/* 工事情報 */}
-              {[
-                { label: "工事名", value: invoice.projectName },
-                { label: "工事場所", value: project?.location },
-                { label: "工事期間", value: project?.startDate && project?.endDate
-                  ? `${fmtDate(project.startDate)}〜${fmtDate(project.endDate)}`
-                  : project?.startDate ? fmtDate(project.startDate) : undefined },
-              ].filter(({ value }) => !!value).map(({ label, value }) => (
-                <div key={label} className="mt-2 flex border-b border-slate-400 py-2 min-h-[28px] text-xs">
-                  <span className="font-medium w-20 shrink-0">{label}</span>
-                  <span className="flex-1 pl-2">{value}</span>
+          {/* お振込先口座（会社設定の「振込先口座」に登録した順） */}
+          <div className="mt-4 text-[10pt]">
+            <div>＜お振込先口座＞</div>
+            {bankAccounts.length > 0 ? (
+              bankAccounts.map((a) => (
+                <div key={a.id} className="flex">
+                  <span className="w-[9.1%] shrink-0">{a.bankName}</span>
+                  <span className="w-[9.1%] shrink-0">{a.bankBranch}</span>
+                  <span className="w-[6.1%] shrink-0">{a.accountType}</span>
+                  <span className="w-[9.1%] shrink-0">{a.accountNumber}</span>
+                  <span>{a.accountHolder}</span>
                 </div>
+              ))
+            ) : (
+              <div className="text-slate-400">（会社設定＞振込先口座 が未登録です）</div>
+            )}
+          </div>
+
+          {/* 明細（様式は5列。税率の列は無く、消費税を表の行として出す） */}
+          <table className="mt-5 w-full border-collapse text-[11pt]">
+            <colgroup>
+              <col style={{ width: "45.45%" }} />
+              <col style={{ width: "9.09%" }} />
+              <col style={{ width: "9.09%" }} />
+              <col style={{ width: "18.18%" }} />
+              <col style={{ width: "18.18%" }} />
+            </colgroup>
+            <thead>
+              <tr className="text-[10pt] font-bold" style={{ backgroundColor: HEAD_BG }}>
+                <th className="border border-black py-1">御請求内容</th>
+                <th className="border border-black py-1">数　量</th>
+                <th className="border border-black py-1">単　位</th>
+                <th className="border border-black py-1">単　価</th>
+                <th className="border border-black py-1">金　額</th>
+              </tr>
+            </thead>
+            <tbody>
+              {printRows.map((it, idx) => (
+                <tr key={idx}>
+                  <td className="border border-black px-2 py-1 h-[28pt]">{it?.itemName ?? ""}</td>
+                  <td className="border border-black px-2 py-1 text-center">
+                    {it ? it.quantity.toLocaleString() : ""}
+                  </td>
+                  <td className="border border-black px-2 py-1 text-center">{it?.unit ?? ""}</td>
+                  <td className="border border-black px-2 py-1 text-right">
+                    {it ? fmtMoney(it.unitPrice) : ""}
+                  </td>
+                  <td className="border border-black px-2 py-1 text-right">
+                    {it ? fmtMoney(it.amount) : ""}
+                  </td>
+                </tr>
               ))}
-            </div>
 
-            {/* 右：自社情報（見積書と同じスタイル） */}
-            <div className="w-52 shrink-0 text-[10px] self-start leading-relaxed">
-              <img src={`${BASE}/otsuka-logo.png`} alt="会社ロゴ" className="w-40 mb-2" />
-              {company?.companyName && (
-                <div className="font-bold mb-0.5">{company.companyName}</div>
-              )}
-              {company?.representativeName && (
-                <div>代表取締役　{company.representativeName}</div>
-              )}
-              {(company?.postalCode || company?.address) && (
-                <div>
-                  {company.postalCode ? `〒${company.postalCode} ` : ""}
-                  {company.address}
-                </div>
-              )}
-              {company?.tel && <div>TEL：{company.tel}</div>}
-              {company?.fax && <div>FAX：{company.fax}</div>}
-              {company?.constructionLicense && (
-                <div className="mt-1">建設業許可 {company.constructionLicense}</div>
-              )}
-              {company?.staffName && (
-                <div className="mt-1">担当者：{company.staffName}</div>
-              )}
-              {company?.staffMobile && <div>携帯番号：{company.staffMobile}</div>}
-              {company?.staffEmail && <div>MAIL：{company.staffEmail}</div>}
-              {registrationNumber && (
-                <div className="mt-1">登録番号：{registrationNumber}</div>
-              )}
-            </div>
-          </div>
+              {/* 10%（様式にある行） */}
+              <tr>
+                <td className="border border-black px-2 py-1">小計（10％対象）</td>
+                <td className="border border-black" />
+                <td className="border border-black" />
+                <td className="border border-black" />
+                <td className="border border-black px-2 py-1 text-right">
+                  {fmtMoney(invoice.taxExcludedAmount10)}
+                </td>
+              </tr>
+              <tr>
+                <td className="border border-black px-2 py-1">消費税</td>
+                <td className="border border-black px-2 py-1 text-center">1</td>
+                <td className="border border-black px-2 py-1 text-center">式</td>
+                <td className="border border-black px-2 py-1 text-right">10.00%</td>
+                <td className="border border-black px-2 py-1 text-right">
+                  {fmtMoney(invoice.taxAmount10)}
+                </td>
+              </tr>
 
-          {/* 出来高請求: 出来高状況サマリー */}
+              {/* 8%（軽減税率。様式には無いが CMC は対応しているので、ある時だけ出す） */}
+              {invoice.taxExcludedAmount8 > 0 && (
+                <>
+                  <tr>
+                    <td className="border border-black px-2 py-1">小計（8％対象）</td>
+                    <td className="border border-black" />
+                    <td className="border border-black" />
+                    <td className="border border-black" />
+                    <td className="border border-black px-2 py-1 text-right">
+                      {fmtMoney(invoice.taxExcludedAmount8)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="border border-black px-2 py-1">消費税</td>
+                    <td className="border border-black px-2 py-1 text-center">1</td>
+                    <td className="border border-black px-2 py-1 text-center">式</td>
+                    <td className="border border-black px-2 py-1 text-right">8.00%</td>
+                    <td className="border border-black px-2 py-1 text-right">
+                      {fmtMoney(invoice.taxAmount8)}
+                    </td>
+                  </tr>
+                </>
+              )}
+
+              <tr>
+                <td className="border border-black px-2 py-1">合　計</td>
+                <td className="border border-black" />
+                <td className="border border-black" />
+                <td className="border border-black" />
+                <td className="border border-black px-2 py-1 text-right">
+                  {fmtMoney(invoice.totalAmount)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          {/* 出来高状況（様式には無いCMC独自。出来高請求のときだけ） */}
           {isProgress && (
-            <div className="mb-4 border border-slate-300 rounded">
-              <div className="bg-slate-100 px-3 py-1.5 text-xs font-semibold border-b border-slate-300">
+            <div className="mt-4 border border-black text-[10pt]">
+              <div className="px-2 py-1 font-bold border-b border-black" style={{ backgroundColor: HEAD_BG }}>
                 出来高状況
               </div>
-              <div className="grid grid-cols-4 divide-x divide-slate-300">
+              <div className="grid grid-cols-4 divide-x divide-black">
                 {[
-                  { label: "今回出来高", value: fmtMoney(invoice.totalAmount) },
+                  { label: "請負金額", value: fmtMoney(contractAmount) },
                   { label: "前回迄累計", value: fmtMoney(billedToDate) },
                   { label: "今回請求額", value: fmtMoney(invoice.totalAmount) },
                   { label: "今後請求残高", value: fmtMoney(Math.max(0, progressRemainder)) },
                 ].map(({ label, value }) => (
-                  <div key={label} className="px-3 py-2 text-center">
-                    <div className="text-[9px] text-slate-500 mb-0.5">{label}</div>
-                    <div className="font-bold text-xs">{value}</div>
+                  <div key={label} className="px-2 py-1.5 text-center">
+                    <div className="text-[8pt] mb-0.5">{label}</div>
+                    <div className="font-bold">{value}</div>
                   </div>
                 ))}
               </div>
             </div>
           )}
-
-          {/* 明細テーブル */}
-          {!isProgress ? (
-            <table className="w-full border-collapse text-[10px] mb-4">
-              <thead>
-                <tr className="bg-slate-100">
-                  <th className="border border-slate-400 px-2 py-2 text-center w-8">No.</th>
-                  <th className="border border-slate-400 px-3 py-2 text-left">品名・内容</th>
-                  <th className="border border-slate-400 px-2 py-2 text-right w-14">数量</th>
-                  <th className="border border-slate-400 px-2 py-2 text-center w-10">単位</th>
-                  <th className="border border-slate-400 px-2 py-2 text-right w-24">単価</th>
-                  <th className="border border-slate-400 px-2 py-2 text-center w-12">税率</th>
-                  <th className="border border-slate-400 px-2 py-2 text-right w-24">金額</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((it, idx) => (
-                  <tr key={idx} className={idx % 2 === 1 ? "bg-slate-50" : ""}>
-                    <td className="border border-slate-300 px-1 py-1.5 text-center text-slate-500">
-                      {idx + 1}
-                    </td>
-                    <td className="border border-slate-300 px-3 py-1.5">{it.itemName}</td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-right">
-                      {it.quantity.toLocaleString()}
-                    </td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-center">{it.unit}</td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-right">
-                      {fmtMoney(it.unitPrice)}
-                    </td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-center">
-                      {it.taxRate}%
-                    </td>
-                    <td className="border border-slate-300 px-2 py-1.5 text-right font-medium">
-                      {fmtMoney(it.amount)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div className="mb-4 border border-slate-300 rounded text-[10px]">
-              <div className="bg-slate-100 px-3 py-1.5 text-xs font-semibold border-b border-slate-300">
-                請求内容
-              </div>
-              <div className="px-4 py-3 text-slate-700">
-                出来高請求（今回請求額: {fmtMoney(invoice.totalAmount)}）
-              </div>
-            </div>
-          )}
-
-          {/* 税区分別内訳（右寄せ） */}
-          <div className="flex justify-end mb-6">
-            <div className="w-64">
-              {invoice.taxExcludedAmount10 > 0 && (
-                <>
-                  <div className="flex justify-between py-1 text-[10px] text-slate-600">
-                    <span>10%対象額</span>
-                    <span>{fmtMoney(invoice.taxExcludedAmount10)}</span>
-                  </div>
-                  <div className="flex justify-between py-1 text-[10px] text-slate-600">
-                    <span>消費税（10%）</span>
-                    <span>{fmtMoney(invoice.taxAmount10)}</span>
-                  </div>
-                </>
-              )}
-              {invoice.taxExcludedAmount8 > 0 && (
-                <>
-                  <div className="flex justify-between py-1 text-[10px] text-slate-600">
-                    <span>8%対象額（軽減税率）</span>
-                    <span>{fmtMoney(invoice.taxExcludedAmount8)}</span>
-                  </div>
-                  <div className="flex justify-between py-1 text-[10px] text-slate-600">
-                    <span>消費税（8%）</span>
-                    <span>{fmtMoney(invoice.taxAmount8)}</span>
-                  </div>
-                </>
-              )}
-              <div className="flex justify-between py-1 text-[10px] text-slate-600 border-t border-slate-200 mt-1">
-                <span>税抜合計</span>
-                <span>{fmtMoney(invoice.taxExcludedTotal)}</span>
-              </div>
-              <div className="flex justify-between py-1 text-[10px] text-slate-600">
-                <span>消費税合計</span>
-                <span>{fmtMoney(invoice.taxTotal)}</span>
-              </div>
-              <div className="flex justify-between py-2 text-sm font-bold text-slate-800 border-t-2 border-slate-800 mt-1">
-                <span>税込合計</span>
-                <span>{fmtMoney(invoice.totalAmount)}</span>
-              </div>
-            </div>
-          </div>
 
           {/* 備考 */}
-          {invoice.notes && (
-            <div className="mb-4 border-t border-slate-200 pt-3">
-              <div className="text-[10px] text-slate-500 font-medium mb-1">備考</div>
-              <div className="text-[10px] text-slate-700 whitespace-pre-wrap">{invoice.notes}</div>
-            </div>
-          )}
-
-          {/* 振込先（複数口座に対応） */}
-          {bankLines.length > 0 && (
-            <div className="border-t border-slate-200 pt-3">
-              <div className="text-[10px] text-slate-500 font-medium mb-1">お振込先</div>
-              {bankLines.map((line) => (
-                <div key={line} className="text-[10px] text-slate-700">{line}</div>
-              ))}
-            </div>
-          )}
+          <div className="mt-6 flex text-[11pt]">
+            <span className="w-[12.1%] shrink-0">備考</span>
+            <span className="flex-1 whitespace-pre-wrap">{invoice.notes}</span>
+          </div>
         </div>
       </div>
     </>

@@ -16,6 +16,8 @@ export const invoicesTable = pgTable("invoices", {
   dueDate: date("due_date"),
   clientId: integer("client_id").references(() => clientsTable.id, { onDelete: "set null" }),
   clientName: text("client_name").notNull().default(""),
+  // 宛名の敬称。法人は「御中」、個人は「様」（おおつか様の様式が可変のため）
+  clientHonorific: text("client_honorific").notNull().default("御中"),
   clientAddress: text("client_address").default(""),
   projectId: integer("project_id").references(() => projectsTable.id, { onDelete: "set null" }),
   projectName: text("project_name").default(""),

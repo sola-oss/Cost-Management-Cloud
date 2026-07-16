@@ -58,6 +58,7 @@ interface Invoice {
   dueDate: string | null;
   clientId: number | null;
   clientName: string;
+  clientHonorific: string;
   clientAddress: string;
   projectId: number | null;
   projectName: string;
@@ -127,6 +128,7 @@ export default function InvoiceEditor({ id }: Props) {
   const [dueDate, setDueDate] = useState("");
   const [clientId, setClientId] = useState<number | null>(null);
   const [clientAddress, setClientAddress] = useState("");
+  const [clientHonorific, setClientHonorific] = useState("御中");
   const [projectId, setProjectId] = useState<number | null>(null);
   const [projectName, setProjectName] = useState("");
   const [registrationNumber, setRegistrationNumber] = useState("");
@@ -174,6 +176,7 @@ export default function InvoiceEditor({ id }: Props) {
       setDueDate(existingInvoice.dueDate || "");
       setClientId(existingInvoice.clientId);
       setClientAddress(existingInvoice.clientAddress || "");
+      setClientHonorific(existingInvoice.clientHonorific || "御中");
       setProjectId(existingInvoice.projectId);
       setProjectName(existingInvoice.projectName || "");
       setRegistrationNumber(existingInvoice.invoiceRegistrationNumber || "");
@@ -316,6 +319,7 @@ export default function InvoiceEditor({ id }: Props) {
         dueDate: dueDate || null,
         clientId,
         clientName: selectedClient?.name || "",
+        clientHonorific,
         clientAddress,
         projectId,
         projectName,
@@ -498,18 +502,30 @@ export default function InvoiceEditor({ id }: Props) {
             </div>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-4">
-            <div>
-              <Label>請求先（得意先）</Label>
-              <Select value={clientId ? String(clientId) : ""} onValueChange={handleClientChange}>
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="得意先を選択..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {clients?.items.map((c) => (
-                    <SelectItem key={c.id} value={String(c.id)} data-search-text={c.kana ?? ""}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-[1fr_auto] gap-2">
+              <div>
+                <Label>請求先（得意先）</Label>
+                <Select value={clientId ? String(clientId) : ""} onValueChange={handleClientChange}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="得意先を選択..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {clients?.items.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)} data-search-text={c.kana ?? ""}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="w-24">
+                <Label>敬称</Label>
+                <Select value={clientHonorific} onValueChange={setClientHonorific}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="御中">御中</SelectItem>
+                    <SelectItem value="様">様</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div>
               <Label>請求先住所</Label>
