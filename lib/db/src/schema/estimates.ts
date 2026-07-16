@@ -13,6 +13,8 @@ export const estimatesTable = pgTable("estimates", {
   estimateDate: date("estimate_date").notNull(),
   createdDate: date("created_date"),
   clientName: text("client_name").notNull().default(""),
+  // 宛名の敬称。法人は「御中」、個人は「様」（おおつか様の様式が可変のため）
+  clientHonorific: text("client_honorific").notNull().default("御中"),
   clientAddress: text("client_address").default(""),
   subject: text("subject").notNull().default(""),
   location: text("location").default(""),

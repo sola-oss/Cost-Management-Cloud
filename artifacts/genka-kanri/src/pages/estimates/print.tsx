@@ -101,7 +101,6 @@ export default function EstimatePrint({ id }: { id: number }) {
   const issueDate = fmtDate(est.estimateDate ?? "");
 
   // 会社情報（見積書に保存されているものを優先、なければ会社設定から補完）
-  const companyName = est.companyName || cs?.companyName || "";
   const representativeName = est.representativeName || cs?.representativeName || "";
   const companyAddress = est.companyAddress || [
     cs?.postalCode ? `〒${cs.postalCode}` : "",
@@ -123,6 +122,18 @@ export default function EstimatePrint({ id }: { id: number }) {
 
   return (
     <>
+      {/* 表紙だけA4横・明細はA4縦。名前付き@pageで用紙の向きをページ単位で変える */}
+      <style>{`
+        @media print {
+          @page cover-a4-landscape { size: A4 landscape; margin: 0; }
+          .cover-page {
+            page: cover-a4-landscape;
+            page-break-after: always;
+            break-after: page;
+          }
+        }
+      `}</style>
+
       {/* 画面表示時のみ印刷ボタン */}
       <div className="print:hidden fixed top-4 right-4 z-50 flex gap-2">
         <button
@@ -150,68 +161,90 @@ export default function EstimatePrint({ id }: { id: number }) {
 
       {/* 印刷コンテンツ */}
       <div className="text-black font-sans text-[11px]">
-        {/* ===== PAGE 1: 御見積書（表紙） ===== */}
-        <div className="print-page w-[210mm] p-[15mm] box-border">
-          {/* ヘッダー */}
-          <div className="flex justify-between text-[10px] text-slate-500 mb-4">
-            <span>見積番号: {estNumber}</span>
-            <span>発行日: {issueDate}</span>
+        {/* ===== PAGE 1: 御見積書（表紙・おおつか様の様式／A4横） ===== */}
+        {/* 支給テンプレート「【おおつか】見積書_横 R7.07.21～.xlsx」の寸法・文字サイズをそのまま写している。
+            横位置の % は元Excelの列位置（A〜AOの41列を100%とした割合）。 */}
+        <div className="cover-page w-[297mm] h-[210mm] px-[10mm] py-[8mm] box-border flex flex-col">
+          {/* 見積NO（左）・発行日（右） */}
+          <div className="flex justify-between text-[9pt]">
+            <span>見積NO　{estNumber}</span>
+            <span>発行日 {issueDate}</span>
           </div>
 
           {/* タイトル */}
-          <div className="text-center mb-5">
-            <h1 className="text-3xl font-bold tracking-widest text-slate-900">御　見　積　書</h1>
-          </div>
+          <h1 className="text-center text-[22pt] font-bold tracking-[0.4em] mt-[4mm] mb-[6mm]">御見積書</h1>
 
-          {/* 得意先名 */}
-          <div className="flex items-end mb-2">
-            <span className="text-xl font-bold flex-1 border-b-2 border-black pb-1">
-              {est.clientName || "\u3000\u3000\u3000\u3000\u3000\u3000\u3000\u3000"}
+          {/* 顧客名＋敬称（法人は御中／個人は様） */}
+          <div className="flex items-end w-[54%]">
+            <span className="flex-1 border-b border-black text-[18pt] pb-0.5 min-h-[26pt]">
+              {est.clientName}
             </span>
-            <span className="text-base font-bold ml-4 pb-1">御中</span>
+            <span className="border-b border-black text-[14pt] pb-1 pl-3 pr-1 shrink-0">
+              {est.clientHonorific ?? "御中"}
+            </span>
           </div>
-          <div className="text-xs mb-5">下記の通り、御見積申し上げます。</div>
+          <div className="text-[11pt] mt-[2mm]">下記の通り、御見積申し上げます。</div>
 
           {/* 御見積金額 */}
-          <div className="flex items-center mb-1">
-            <span className="text-sm font-medium w-28 shrink-0">御見積金額</span>
-            <span className="text-xl font-extrabold text-slate-900 border border-black px-5 py-1 leading-tight">
+          <div className="mt-[13mm] flex items-end text-[16pt]">
+            <span className="w-[26.8%] shrink-0" />
+            <span className="w-[14.7%] shrink-0 text-center">御見積金額</span>
+            <span className="w-[31.7%] shrink-0 text-center border-b border-black pb-0.5">
               {fmtMoney(taxIncluded)}
             </span>
           </div>
-          <div className="flex gap-10 text-xs text-slate-600 mb-6 pl-28">
-            <span>税抜合計　{fmtMoney(finalSubtotal)}-</span>
-            <span>消費税（{taxRate}%）　{fmtMoney(taxAmt)}-</span>
+          <div className="mt-[3mm] flex text-[12pt]">
+            <span className="w-[43.9%] shrink-0" />
+            <span className="w-[22%] shrink-0">税抜合計</span>
+            <span className="w-[19%] shrink-0 text-right">{fmtMoney(finalSubtotal)}-</span>
+          </div>
+          <div className="flex text-[12pt]">
+            <span className="w-[43.9%] shrink-0" />
+            <span className="w-[22%] shrink-0">消費税({taxRate}%)</span>
+            <span className="w-[19%] shrink-0 text-right">{fmtMoney(taxAmt)}-</span>
           </div>
 
-          {/* 2カラム：工事情報（左）・自社情報（右） */}
-          <div className="flex gap-6">
+          {/* 下段：工事情報（左）・自社情報（右） */}
+          <div className="flex mt-[17mm] flex-1">
             {/* 左：工事情報 */}
-            <div className="flex-1 text-xs">
+            <div className="w-[46.3%] shrink-0 text-[14pt]">
               {[
                 { label: "工事名",   value: est.subject ?? "" },
                 { label: "工事場所", value: est.location ?? "" },
                 { label: "工事期間", value: est.constructionPeriod ?? "" },
                 { label: "有効期限", value: est.validityPeriod ? fmtDate(est.validityPeriod) : "" },
-                { label: "備考",     value: est.notes ?? "" },
               ].map(({ label, value }) => (
-                <div key={label} className="flex border-b border-slate-400 py-2 min-h-[28px]">
-                  <span className="font-medium w-16 shrink-0">{label}</span>
+                <div key={label} className="flex border-b border-black py-1 min-h-[12.7mm] items-center">
+                  <span className="w-[22%] shrink-0">{label}</span>
                   <span className="flex-1 pl-2 whitespace-pre-wrap">{value}</span>
                 </div>
               ))}
+              {/* 備考は複数行入るので高さを取る（元様式も F26:S30 と広い） */}
+              <div className="flex border-b border-black py-1 min-h-[31mm]">
+                <span className="w-[22%] shrink-0">備考</span>
+                <span className="flex-1 pl-2 whitespace-pre-wrap">{est.notes ?? ""}</span>
+              </div>
             </div>
 
-            {/* 右：自社情報 */}
-            <div className="w-52 shrink-0 text-[10px] self-start leading-relaxed">
-              <img src={`${BASE}/otsuka-logo.png`} alt="会社ロゴ" className="w-40 mb-2" />
-              {companyName && <div className="font-bold mb-0.5">{companyName}</div>}
+            {/* 中央の余白（元様式の T〜Z 列） */}
+            <div className="w-[17.1%] shrink-0" />
+
+            {/* 右：ロゴ＋社印＋自社情報。会社名はロゴに入っているので文字では出さない */}
+            <div className="flex-1 text-[11pt] leading-snug">
+              <div className="relative mb-2 mt-[6mm]">
+                <img src={`${BASE}/otsuka-logo.png`} alt="株式会社おおつか" className="w-[78%]" />
+                <img
+                  src={`${BASE}/otsuka-seal.png`}
+                  alt="社印"
+                  className="absolute right-[8%] -top-[18%] w-[22%]"
+                />
+              </div>
               {representativeName && <div>代表取締役　{representativeName}</div>}
               {companyAddress && <div>{companyAddress}</div>}
               {companyTel && <div>TEL：{companyTel}</div>}
               {companyFax && <div>FAX：{companyFax}</div>}
-              {constructionLicense && <div className="mt-1">建設業許可 {constructionLicense}</div>}
-              {companyStaff && <div className="mt-1">担当者：{companyStaff}</div>}
+              {constructionLicense && <div>建設業許可　{constructionLicense}</div>}
+              {companyStaff && <div>担当者：{companyStaff}</div>}
               {staffMobile && <div>携帯番号：{staffMobile}</div>}
               {staffEmail && <div>MAIL：{staffEmail}</div>}
             </div>

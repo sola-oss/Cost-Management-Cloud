@@ -42,6 +42,7 @@ interface EstimateForm {
   estimateDate: string;
   createdDate: string;
   clientName: string;
+  clientHonorific: string;
   clientAddress: string;
   subject: string;
   location: string;
@@ -71,7 +72,6 @@ interface Project { id: number; name: string; projectCode: string; clientName: s
 interface WorkType { id: number; code: string; name: string; }
 interface Client { id: number; clientCode: string; name: string; kana: string | null; address: string | null; }
 
-const LEVEL_LABELS: Record<number, string> = { 1: "大", 2: "中", 3: "小", 4: "細", 5: "商品" };
 const ROW_TYPE_LABELS: Record<string, string> = {
   normal: "通常", discount: "値引", total: "合計", tax: "消費税", pagebreak: "改ページ",
 };
@@ -125,244 +125,6 @@ function addMonths(dateStr: string, months: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-// ─── 印刷用レイアウト ─────────────────────────────────────────────────────────
-function PrintLayout({
-  form,
-  items,
-  estNumber,
-  taxAmount,
-  taxIncluded,
-  miscExpensesAmount,
-  discountAmount,
-  finalSubtotal,
-}: {
-  form: EstimateForm;
-  items: EstimateItem[];
-  estNumber: string;
-  taxAmount: number;
-  taxIncluded: number;
-  miscExpensesAmount: number;
-  discountAmount: number;
-  finalSubtotal: number;
-}) {
-  const fmt = (n: number) => `¥${n.toLocaleString()}`;
-  const fmtDate = (d: string) => {
-    if (!d) return "";
-    const [y, m, day] = d.split("-");
-    return `${y}年${parseInt(m)}月${parseInt(day)}日`;
-  };
-  const fmtDateSlash = (d: string) => {
-    if (!d) return "";
-    const [y, m, day] = d.split("-");
-    return `${y}/${m.padStart(2, "0")}/${day.padStart(2, "0")}`;
-  };
-  const pageHeader = (
-    <div className="flex justify-between text-[9px] text-slate-500 mb-3 pb-1 border-b border-slate-300">
-      <span>見積番号: {estNumber}</span>
-      <span>発行日: {fmtDate(form.estimateDate)}</span>
-    </div>
-  );
-
-  // 工種ごとにグループ化
-  // - pagebreak/total/tax行は除外
-  // - workTypeの前後空白・連続空白を正規化してグループキーとして使用
-  // - 全workTypeが空の場合は「（未分類）」として1グループにまとめる
-  // - items配列の順序通りに出現順でグループを構築し、groups.mapで全グループを明細ページに出力
-  type Group = { name: string; rows: EstimateItem[]; subtotal: number };
-  const groups: Group[] = [];
-  const groupMap = new Map<string, Group>();
-  for (const item of items) {
-    if (item.rowType === "pagebreak" || item.rowType === "total" || item.rowType === "tax") continue;
-    const wt = (item.workType ?? "").replace(/\s+/g, " ").trim() || "（未分類）";
-    if (!groupMap.has(wt)) {
-      const g: Group = { name: wt, rows: [], subtotal: 0 };
-      groupMap.set(wt, g);
-      groups.push(g);
-    }
-    const g = groupMap.get(wt)!;
-    const amt = item.quantity != null && item.unitPrice != null
-      ? Math.round(item.quantity * item.unitPrice)
-      : (item.amount ?? 0);
-    g.rows.push(item);
-    g.subtotal += item.rowType === "discount" ? -Math.abs(amt) : amt;
-  }
-  const itemsSubtotal = groups.reduce((s, g) => s + g.subtotal, 0);
-
-  return (
-    <div className="hidden print:block text-black font-sans text-[11px]">
-      <style>{`@media print { @page { margin: 0 !important; } }`}</style>
-
-      {/* ===== PAGE 1: 御見積書（表紙） ===== */}
-      <div className="print-page w-[210mm] p-[15mm] box-border break-after-page">
-        {/* ヘッダー：見積番号（左）・発行日（右） */}
-        <div className="flex justify-between text-[10px] text-slate-500 mb-4">
-          <span>見積番号: {estNumber}</span>
-          <span>発行日: {fmtDateSlash(form.estimateDate)}</span>
-        </div>
-
-        {/* タイトル */}
-        <div className="text-center mb-5">
-          <h1 className="text-3xl font-bold tracking-widest text-slate-900">御　見　積　書</h1>
-        </div>
-
-        {/* 得意先名（名前部分に底線、右端に御中） */}
-        <div className="flex items-end mb-2">
-          <span className="text-xl font-bold flex-1 border-b-2 border-black pb-1">
-            {form.clientName || "\u3000\u3000\u3000\u3000\u3000\u3000\u3000\u3000"}
-          </span>
-          <span className="text-base font-bold ml-4 pb-1">御中</span>
-        </div>
-        <div className="text-xs mb-5">下記の通り、御見積申し上げます。</div>
-
-        {/* 御見積金額エリア */}
-        <div className="flex items-center mb-1">
-          <span className="text-sm font-medium w-28 shrink-0">御見積金額</span>
-          <span className="text-xl font-extrabold text-slate-900 border border-black px-5 py-1 leading-tight">
-            {fmt(taxIncluded)}
-          </span>
-        </div>
-        <div className="flex gap-10 text-xs text-slate-600 mb-6 pl-28">
-          <span>税抜合計　{fmt(finalSubtotal)}-</span>
-          <span>消費税（{form.taxRate}%）　{fmt(taxAmount)}-</span>
-        </div>
-
-        {/* 2カラム：工事情報（左）・自社情報（右） */}
-        <div className="flex gap-6">
-          {/* 左：工事情報（底線のみのフォームスタイル） */}
-          <div className="flex-1 text-xs">
-            {[
-              { label: "工事名",   value: form.subject },
-              { label: "工事場所", value: form.location },
-              { label: "工事期間", value: form.constructionPeriod },
-              { label: "有効期限", value: fmtDate(form.validityPeriod) },
-              { label: "備考",     value: form.notes },
-            ].map(({ label, value }) => (
-              <div key={label} className="flex border-b border-slate-400 py-2 min-h-[28px]">
-                <span className="font-medium w-16 shrink-0">{label}</span>
-                <span className="flex-1 pl-2">{value}</span>
-              </div>
-            ))}
-          </div>
-
-          {/* 右：自社情報（プレーンテキスト） */}
-          <div className="w-52 shrink-0 text-[10px] self-start leading-relaxed">
-            <img src={`${BASE}/otsuka-logo.png`} alt="会社ロゴ" className="w-40 mb-2" />
-            {form.companyName && <div className="font-bold mb-0.5">{form.companyName}</div>}
-            {form.representativeName && <div>代表取締役　{form.representativeName}</div>}
-            {form.companyAddress && <div>{form.companyAddress}</div>}
-            {form.companyTel && <div>TEL：{form.companyTel}</div>}
-            {form.companyFax && <div>FAX：{form.companyFax}</div>}
-            {form.constructionLicense && <div className="mt-1">建設業許可 {form.constructionLicense}</div>}
-            {form.companyStaff && <div className="mt-1">担当者：{form.companyStaff}</div>}
-            {form.staffMobile && <div>携帯番号：{form.staffMobile}</div>}
-            {form.staffEmail && <div>MAIL：{form.staffEmail}</div>}
-          </div>
-        </div>
-      </div>
-
-      {/* ===== PAGE 2: 見積内訳書 ===== */}
-      <div className="print-page w-[210mm] p-[15mm] box-border break-after-page">
-        {pageHeader}
-        <div className="text-center mb-4">
-          <h2 className="text-xl font-bold tracking-wider">見　積　内　訳　書</h2>
-        </div>
-        <table className="w-full border-collapse text-xs">
-          <thead>
-            <tr className="bg-slate-100">
-              <th className="border border-slate-400 px-2 py-2 text-center w-10">No.</th>
-              <th className="border border-slate-400 px-3 py-2 text-left">分類</th>
-              <th className="border border-slate-400 px-3 py-2 text-right w-40">見積額</th>
-            </tr>
-          </thead>
-          <tbody>
-            {groups.map((g, i) => (
-              <tr key={i}>
-                <td className="border border-slate-400 px-2 py-1.5 text-center">{i + 1}</td>
-                <td className="border border-slate-400 px-3 py-1.5">{g.name}</td>
-                <td className="border border-slate-400 px-3 py-1.5 text-right">{g.subtotal.toLocaleString()}</td>
-              </tr>
-            ))}
-            <tr className="bg-slate-50">
-              <td colSpan={2} className="border border-slate-400 px-3 py-1.5 text-right font-medium">小計</td>
-              <td className="border border-slate-400 px-3 py-1.5 text-right font-medium">{itemsSubtotal.toLocaleString()}</td>
-            </tr>
-            {miscExpensesAmount > 0 && (
-              <tr>
-                <td colSpan={2} className="border border-slate-400 px-3 py-1.5 text-right">諸経費</td>
-                <td className="border border-slate-400 px-3 py-1.5 text-right">{miscExpensesAmount.toLocaleString()}</td>
-              </tr>
-            )}
-            {discountAmount > 0 && (
-              <tr>
-                <td colSpan={2} className="border border-slate-400 px-3 py-1.5 text-right">お値引き</td>
-                <td className="border border-slate-400 px-3 py-1.5 text-right">-{discountAmount.toLocaleString()}</td>
-              </tr>
-            )}
-            <tr className="bg-slate-100 font-bold">
-              <td colSpan={2} className="border border-slate-400 px-3 py-2 text-right">税抜合計</td>
-              <td className="border border-slate-400 px-3 py-2 text-right">{finalSubtotal.toLocaleString()}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      {/* ===== PAGE 3+: 見積明細書（工種ごと1ページ） ===== */}
-      {groups.map((group, gi) => (
-        <div key={gi} className={`print-page w-[210mm] p-[15mm] box-border${gi < groups.length - 1 ? " break-after-page" : ""}`}>
-          {pageHeader}
-          <div className="text-center mb-3">
-            <h2 className="text-xl font-bold tracking-wider">見　積　明　細　書</h2>
-            <div className="text-xs text-slate-600 mt-0.5">（{gi + 1}. {group.name}）</div>
-          </div>
-          <table className="w-full border-collapse text-[10px]">
-            <thead>
-              <tr className="bg-slate-100">
-                <th className="border border-slate-400 px-1 py-1.5 text-center w-8">No.</th>
-                <th className="border border-slate-400 px-2 py-1.5 text-left">摘要</th>
-                <th className="border border-slate-400 px-2 py-1.5 text-left w-28">備考</th>
-                <th className="border border-slate-400 px-1 py-1.5 text-center w-20">数量・単位</th>
-                <th className="border border-slate-400 px-2 py-1.5 text-right w-20">見積単価</th>
-                <th className="border border-slate-400 px-2 py-1.5 text-right w-24">見積額</th>
-              </tr>
-            </thead>
-            <tbody>
-              {group.rows.map((item, idx) => {
-                const amt = item.quantity != null && item.unitPrice != null
-                  ? Math.round(item.quantity * item.unitPrice)
-                  : (item.amount ?? 0);
-                const isDiscount = item.rowType === "discount";
-                return (
-                  <tr key={item._key} className={idx % 2 === 1 ? "bg-slate-50" : ""}>
-                    <td className="border border-slate-300 px-1 py-1 text-center text-slate-500">{idx + 1}</td>
-                    <td className="border border-slate-300 px-2 py-1">{item.itemName}</td>
-                    <td className="border border-slate-300 px-2 py-1 text-slate-600">{item.notes}</td>
-                    <td className="border border-slate-300 px-1 py-1 text-center">
-                      {item.quantity != null ? `${item.quantity.toLocaleString()}${item.unit}` : item.unit}
-                    </td>
-                    <td className="border border-slate-300 px-2 py-1 text-right">
-                      {item.unitPrice != null ? item.unitPrice.toLocaleString() : ""}
-                    </td>
-                    <td className="border border-slate-300 px-2 py-1 text-right">
-                      {isDiscount ? `-${Math.abs(amt).toLocaleString()}` : amt > 0 ? amt.toLocaleString() : ""}
-                    </td>
-                  </tr>
-                );
-              })}
-              <tr className="font-bold">
-                <td colSpan={5} className="border border-slate-400 px-2 py-1.5 text-right">
-                  {group.name}　小計
-                </td>
-                <td className="border border-slate-400 px-2 py-1.5 text-right">
-                  {group.subtotal.toLocaleString()}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 // ─── メインエディター ─────────────────────────────────────────────────────────
 export default function EstimateEditor({ id }: { id?: number }) {
@@ -375,7 +137,7 @@ export default function EstimateEditor({ id }: { id?: number }) {
 
   const [form, setForm] = useState<EstimateForm>({
     projectId: "", estimateDate: today, createdDate: today,
-    clientName: "", clientAddress: "", subject: "", location: "",
+    clientName: "", clientHonorific: "御中", clientAddress: "", subject: "", location: "",
     constructionPeriod: "", validityPeriod: addMonths(today, 1),
     paymentTerms: "別途契約書通り", taxRate: 10, status: "draft", notes: "",
     architectFirm: "", companyName: "", companyAddress: "",
@@ -462,6 +224,7 @@ export default function EstimateEditor({ id }: { id?: number }) {
       estimateDate: existing.estimateDate ?? today,
       createdDate: existing.createdDate ?? today,
       clientName: existing.clientName ?? "",
+      clientHonorific: existing.clientHonorific ?? "御中",
       clientAddress: existing.clientAddress ?? "",
       subject: existing.subject ?? "",
       location: existing.location ?? "",
@@ -612,17 +375,6 @@ export default function EstimateEditor({ id }: { id?: number }) {
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
-      {/* 印刷専用レイアウト（print:block） */}
-      <PrintLayout
-        form={form}
-        items={items}
-        estNumber={estNumber}
-        taxAmount={taxAmount}
-        taxIncluded={taxIncluded}
-        miscExpensesAmount={miscExpensesAmount}
-        discountAmount={form.discountAmount}
-        finalSubtotal={finalSubtotal}
-      />
 
       {/* ─── ヘッダー ───────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-6 print:hidden">
@@ -732,14 +484,26 @@ export default function EstimateEditor({ id }: { id?: number }) {
                 />
               )}
             </div>
-            <div>
-              <Label>得意先名（直接入力）</Label>
-              <Input
-                value={form.clientName}
-                onChange={(e) => sf({ clientName: e.target.value })}
-                placeholder="得意先名"
-                className="mt-1"
-              />
+            <div className="grid grid-cols-[1fr_auto] gap-2">
+              <div>
+                <Label>得意先名（直接入力）</Label>
+                <Input
+                  value={form.clientName}
+                  onChange={(e) => sf({ clientName: e.target.value })}
+                  placeholder="得意先名"
+                  className="mt-1"
+                />
+              </div>
+              <div className="w-24">
+                <Label>敬称</Label>
+                <Select value={form.clientHonorific} onValueChange={(v) => sf({ clientHonorific: v })}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="御中">御中</SelectItem>
+                    <SelectItem value="様">様</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 

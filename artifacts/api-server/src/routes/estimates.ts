@@ -54,6 +54,7 @@ function extractBody(body: any) {
     estimateDate: body.estimateDate,
     createdDate: body.createdDate ?? null,
     clientName: body.clientName,
+    clientHonorific: body.clientHonorific,
     clientAddress: body.clientAddress,
     subject: body.subject,
     location: body.location,
@@ -126,6 +127,7 @@ router.post("/", async (req, res) => {
       estimateDate: b.estimateDate || today,
       createdDate: b.createdDate || today,
       clientName: b.clientName ?? "",
+      clientHonorific: b.clientHonorific ?? "御中",
       clientAddress: b.clientAddress ?? "",
       subject: b.subject ?? "",
       location: b.location ?? "",
@@ -200,7 +202,7 @@ router.patch("/:id", async (req, res) => {
     const updates: Record<string, any> = { updatedAt: new Date() };
 
     const fields: (keyof typeof b)[] = [
-      "projectId", "estimateDate", "createdDate", "clientName", "clientAddress",
+      "projectId", "estimateDate", "createdDate", "clientName", "clientHonorific", "clientAddress",
       "subject", "location", "constructionPeriod", "validityPeriod", "paymentTerms",
       "taxRate", "taxExcludedAmount", "taxAmount", "taxIncludedAmount",
       "status", "notes", "architectFirm", "companyName", "companyAddress",
@@ -288,6 +290,7 @@ router.post("/:id/duplicate", async (req, res) => {
       estimateDate: today,
       createdDate: today,
       clientName: orig.clientName,
+      clientHonorific: orig.clientHonorific,
       clientAddress: orig.clientAddress,
       subject: orig.subject,
       location: orig.location,
