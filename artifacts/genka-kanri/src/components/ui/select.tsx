@@ -67,36 +67,146 @@ const SelectScrollDownButton = React.forwardRef<
 SelectScrollDownButton.displayName =
   SelectPrimitive.ScrollDownButton.displayName
 
+// ─── プルダウン内検索 ─────────────────────────────────────────────────────────
+// 選択肢がこの件数以上の SelectContent には自動で検索欄が付く。
+// searchable={false} で個別に無効化、searchable={true} で件数に関わらず有効化できる。
+const SEARCH_THRESHOLD = 10
+
+// SelectItem の表示テキストを再帰的に取り出す（<span>コード</span>名称 のような入れ子にも対応）
+function nodeText(node: React.ReactNode): string {
+  if (node == null || typeof node === "boolean") return ""
+  if (typeof node === "string" || typeof node === "number") return String(node)
+  if (Array.isArray(node)) return node.map(nodeText).join("")
+  if (React.isValidElement(node))
+    return nodeText((node.props as { children?: React.ReactNode }).children)
+  return ""
+}
+
 const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
->(({ className, children, position = "popper", ...props }, ref) => (
-  <SelectPrimitive.Portal>
-    <SelectPrimitive.Content
-      ref={ref}
-      className={cn(
-        "relative z-50 max-h-[--radix-select-content-available-height] min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-[--radix-select-content-transform-origin]",
-        position === "popper" &&
-          "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
-        className
-      )}
-      position={position}
-      {...props}
-    >
-      <SelectScrollUpButton />
-      <SelectPrimitive.Viewport
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content> & {
+    searchable?: boolean
+    searchPlaceholder?: string
+  }
+>(({ className, children, position = "popper", searchable, searchPlaceholder, ...props }, ref) => {
+  // 閉じると SelectContent はアンマウントされるので、検索文字列は自動でリセットされる
+  const [search, setSearch] = React.useState("")
+  const searchInputRef = React.useRef<HTMLInputElement>(null)
+
+  const flat = React.Children.toArray(children)
+  const isItem = (c: React.ReactNode): boolean =>
+    React.isValidElement(c) && c.type === SelectItem
+  const itemCount = flat.filter(isItem).length
+  const showSearch = searchable ?? itemCount >= SEARCH_THRESHOLD
+
+  const q = search.trim().toLowerCase()
+  let visible: React.ReactNode[] = flat
+  let matched = itemCount
+  if (showSearch && q) {
+    visible = flat.filter((c) => !isItem(c) || nodeText(c).toLowerCase().includes(q))
+    matched = visible.filter(isItem).length
+  }
+
+  // 検索欄にフォーカスを移す（IME入力は焦点のある編集要素にしか入らないため必須）。
+  // Radixは開く過程で何度か選択肢へフォーカスを移すため、開いてから一定時間は
+  // フォーカスが選択肢側に行くたびに検索欄へ戻す（安定したら手を引く）。
+  React.useEffect(() => {
+    if (!showSearch) return
+    let cancelled = false
+    let attempt = 0
+    let stable = 0
+    const tick = () => {
+      if (cancelled) return
+      const el = searchInputRef.current
+      if (el) {
+        if (document.activeElement === el) {
+          stable++
+          if (stable >= 3) return // 3tick連続で保持できたら終了
+        } else {
+          stable = 0
+          el.focus({ preventScroll: true })
+        }
+      }
+      if (++attempt < 30) setTimeout(tick, 50)
+    }
+    const t = setTimeout(tick, 50)
+    return () => {
+      cancelled = true
+      clearTimeout(t)
+    }
+  }, [showSearch])
+
+  // フォーカスがまだ選択肢側にある間に打たれた文字も検索欄に流し込む（取りこぼし防止）。
+  const handleContentKeyDown = (e: React.KeyboardEvent) => {
+    if (!showSearch) return
+    if (e.target === searchInputRef.current) return // 検索欄自身の入力はそのまま
+    const printable = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey
+    if (printable) {
+      e.preventDefault()
+      e.stopPropagation()
+      setSearch((s) => s + e.key)
+      searchInputRef.current?.focus({ preventScroll: true })
+    } else if (e.key === "Backspace") {
+      e.preventDefault()
+      e.stopPropagation()
+      setSearch((s) => s.slice(0, -1))
+      searchInputRef.current?.focus({ preventScroll: true })
+    }
+  }
+
+  return (
+    <SelectPrimitive.Portal>
+      <SelectPrimitive.Content
+        ref={ref}
         className={cn(
-          "p-1",
+          "relative z-50 max-h-[--radix-select-content-available-height] min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-[--radix-select-content-transform-origin]",
           position === "popper" &&
-            "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]"
+            "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
+          className
         )}
+        position={position}
+        {...props}
+        onKeyDownCapture={(e) => {
+          // 選択肢側のタイプアヘッドより先に（キャプチャ段階で）文字を検索欄へ流す
+          handleContentKeyDown(e)
+          props.onKeyDownCapture?.(e)
+        }}
       >
-        {children}
-      </SelectPrimitive.Viewport>
-      <SelectScrollDownButton />
-    </SelectPrimitive.Content>
-  </SelectPrimitive.Portal>
-))
+        <SelectScrollUpButton />
+        <SelectPrimitive.Viewport
+          className={cn(
+            "p-1",
+            position === "popper" &&
+              "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]"
+          )}
+        >
+          {showSearch && (
+            <div className="px-2 py-1.5 border-b border-slate-100 sticky -top-1 bg-popover z-10">
+              <input
+                ref={searchInputRef}
+                className="w-full text-sm outline-none bg-transparent placeholder:text-slate-400"
+                placeholder={searchPlaceholder ?? "検索..."}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  // 矢印キーは選択肢の移動に渡し、それ以外はRadixのタイプアヘッドに奪われないよう止める
+                  if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Escape") {
+                    e.stopPropagation()
+                  }
+                }}
+              />
+            </div>
+          )}
+          {visible}
+          {showSearch && q && matched === 0 && (
+            <div className="px-2 py-3 text-sm text-slate-400 text-center">該当がありません</div>
+          )}
+        </SelectPrimitive.Viewport>
+        <SelectScrollDownButton />
+      </SelectPrimitive.Content>
+    </SelectPrimitive.Portal>
+  )
+})
 SelectContent.displayName = SelectPrimitive.Content.displayName
 
 const SelectLabel = React.forwardRef<

@@ -33,17 +33,11 @@ interface WorkTypeItem {
 function WorkTypeSelect({
   value, onChange, workTypes,
 }: { value: string; onChange: (code: string) => void; workTypes: WorkTypeItem[] }) {
-  const [search, setSearch] = useState("");
-  const filtered = workTypes.filter(wt => {
-    const q = search.trim().toLowerCase();
-    return !q || wt.name.toLowerCase().includes(q) || wt.code.toLowerCase().includes(q);
-  });
   const selected = workTypes.find(wt => wt.code === value);
   return (
     <Select
       value={value || "__none__"}
       onValueChange={v => onChange(v === "__none__" ? "" : v)}
-      onOpenChange={open => { if (!open) setSearch(""); }}
     >
       <SelectTrigger className="h-8 text-xs border-slate-200 min-w-[130px]">
         <SelectValue placeholder="工種を選択">
@@ -54,28 +48,15 @@ function WorkTypeSelect({
           )}
         </SelectValue>
       </SelectTrigger>
-      <SelectContent className="max-h-[320px]">
-        <div className="px-2 py-1.5 border-b border-slate-100 sticky top-0 bg-white z-10">
-          <input
-            autoFocus
-            className="w-full text-xs outline-none bg-transparent placeholder:text-slate-400"
-            placeholder="工種名・コードで検索..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            onKeyDown={e => e.stopPropagation()}
-          />
-        </div>
+      {/* 検索欄は共通Selectの自動検索（10件以上で表示）に任せる */}
+      <SelectContent className="max-h-[320px]" searchPlaceholder="工種名・コードで検索...">
         <SelectItem value="__none__" className="text-xs text-slate-400">— 未選択 —</SelectItem>
-        {filtered.length === 0 ? (
-          <div className="px-2 py-3 text-xs text-slate-400 text-center">該当する工種がありません</div>
-        ) : (
-          filtered.map(wt => (
-            <SelectItem key={wt.id} value={wt.code} className="text-xs">
-              <span className="font-mono text-slate-500 mr-1">{wt.code}</span>
-              {wt.name}
-            </SelectItem>
-          ))
-        )}
+        {workTypes.map(wt => (
+          <SelectItem key={wt.id} value={wt.code} className="text-xs">
+            <span className="font-mono text-slate-500 mr-1">{wt.code}</span>
+            {wt.name}
+          </SelectItem>
+        ))}
       </SelectContent>
     </Select>
   );
