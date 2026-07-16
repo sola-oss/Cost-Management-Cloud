@@ -9,7 +9,6 @@
  *   />
  */
 import { useState, useMemo, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -17,21 +16,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, Package, Loader2 } from "lucide-react";
+import { useVendorUnitPrices, type UnitPriceItem } from "@/hooks/use-unit-prices";
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-
-export interface UnitPriceItem {
-  id: number;
-  vendorId: number;
-  workTypeId: number | null;
-  itemName: string;
-  unit: string;
-  unitPrice: string;
-  notes: string | null;
-  vendorName: string | null;
-  workTypeName: string | null;
-  workTypeCode: string | null;
-}
+export type { UnitPriceItem };
 
 export interface UnitPriceSelection {
   itemName: string;
@@ -61,16 +48,7 @@ export function UnitPricePicker({ vendorId, onSelect, trigger, disabled, initial
   const [search, setSearch] = useState("");
   const [workTypeFilter, setWorkTypeFilter] = useState<string>("__all__");
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["/api/unit-prices", "picker", vendorId],
-    queryFn: async () => {
-      const res = await fetch(`${BASE}/api/unit-prices?vendorId=${vendorId}`);
-      if (!res.ok) throw new Error("Failed to fetch unit prices");
-      const json = await res.json();
-      return (json.items ?? []) as UnitPriceItem[];
-    },
-    enabled: open && !!vendorId,
-  });
+  const { data, isLoading } = useVendorUnitPrices(vendorId, open);
 
   const items = data ?? [];
 

@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { Plus, Trash2, Save, FileText, ExternalLink, ClipboardList, Pencil, ChevronDown, ChevronRight, Copy, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { UnitPricePicker, type UnitPriceSelection } from "@/components/unit-price-picker";
+import { ItemNameInput } from "@/components/item-name-input";
 
 interface WorkTypeItem {
   id: number;
@@ -359,6 +360,24 @@ export default function Purchases() {
 
   // ── 単価マスタへ新規登録（単価マスタに無い品目をその場で登録） ──────────────
   const [registeringRow, setRegisteringRow] = useState<string | null>(null);
+  // 単価マスタから選ばれた品目を明細行に反映する（品名サジェスト／単価選択ダイアログ共通）
+  const applyUnitPrice = (idx: number, sel: UnitPriceSelection) => {
+    setRows(prev => {
+      const next = [...prev];
+      let r = { ...next[idx] };
+      r.productName = sel.itemName;
+      r.unit = sel.unit;
+      r.unitPrice = sel.unitPrice;
+      // 商品の工種を自動セット（単価マスタで決まっている工種を反映）
+      if (sel.workTypeCode) r.workTypeCode = sel.workTypeCode;
+      r = recalc(r);
+      next[idx] = r;
+      return next;
+    });
+    // 選択後に数量フィールドへフォーカス
+    setTimeout(() => quantityRefs.current[idx]?.focus(), 50);
+  };
+
   const handleRegisterUnitPrice = async (row: DetailRow) => {
     if (!vendorId || vendorId === "none") {
       toast({ title: "仕入先を選択してください", variant: "destructive" });
@@ -899,9 +918,11 @@ export default function Purchases() {
                       {/* 品名・摘要 */}
                       <td className="px-2 py-1.5">
                         <div className="flex items-center gap-1 mb-1">
-                          <Input
+                          <ItemNameInput
+                            vendorId={vendorId}
                             value={row.productName}
-                            onChange={e => handleRowChange(idx, "productName", e.target.value)}
+                            onChange={v => handleRowChange(idx, "productName", v)}
+                            onSelect={(sel: UnitPriceSelection) => applyUnitPrice(idx, sel)}
                             placeholder="品名"
                             className="h-8 text-xs flex-1"
                           />
@@ -910,22 +931,7 @@ export default function Purchases() {
                           <UnitPricePicker
                             vendorId={vendorId}
                             initialWorkTypeCode={row.workTypeCode}
-                            onSelect={(sel: UnitPriceSelection) => {
-                              setRows(prev => {
-                                const next = [...prev];
-                                let r = { ...next[idx] };
-                                r.productName = sel.itemName;
-                                r.unit = sel.unit;
-                                r.unitPrice = sel.unitPrice;
-                                // 商品の工種を自動セット（単価マスタで決まっている工種を反映）
-                                if (sel.workTypeCode) r.workTypeCode = sel.workTypeCode;
-                                r = recalc(r);
-                                next[idx] = r;
-                                return next;
-                              });
-                              // 選択後に数量フィールドへフォーカス
-                              setTimeout(() => quantityRefs.current[idx]?.focus(), 50);
-                            }}
+                            onSelect={(sel: UnitPriceSelection) => applyUnitPrice(idx, sel)}
                           />
                           <Button
                             type="button"
