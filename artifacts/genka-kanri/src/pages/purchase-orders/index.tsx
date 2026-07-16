@@ -56,6 +56,7 @@ interface PurchaseOrder {
 interface VendorItem {
   id: number;
   name: string;
+  bankAccountHolderKana?: string;
 }
 
 interface WorkTypeItem {
@@ -450,7 +451,7 @@ export default function PurchaseOrders() {
                   </SelectTrigger>
                   <SelectContent>
                     {vendors.map((v) => (
-                      <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>
+                      <SelectItem key={v.id} value={String(v.id)} data-search-text={v.bankAccountHolderKana ?? ""}>{v.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

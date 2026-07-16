@@ -192,6 +192,7 @@ function recalc(row: DetailRow): DetailRow {
 interface VendorItem {
   id: number;
   name: string;
+  bankAccountHolderKana?: string;
 }
 
 
@@ -691,7 +692,7 @@ export default function Purchases() {
                   <SelectContent>
                     <SelectItem value="none">（指定なし）</SelectItem>
                     {vendors.map((v) => (
-                      <SelectItem key={v.id} value={String(v.id)}>
+                      <SelectItem key={v.id} value={String(v.id)} data-search-text={v.bankAccountHolderKana ?? ""}>
                         {v.name}
                       </SelectItem>
                     ))}
