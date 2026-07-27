@@ -896,14 +896,18 @@ export default function Purchases() {
                       </td>
                       {/* 品名・摘要 */}
                       <td className="px-2 py-1.5">
-                        <div className="flex items-center gap-1 mb-1">
+                        {/* 品名は必ず読める幅を確保する。Input が display:flex のため
+                            min-width を指定しないと 0 まで潰れ、単価選択ボタンに押されて
+                            既存伝票を開いても品名が見えなくなる。入り切らない場合は
+                            ボタン側を次の行へ折り返す。 */}
+                        <div className="flex flex-wrap items-center gap-1 mb-1">
                           <ItemNameInput
                             vendorId={vendorId}
                             value={row.productName}
                             onChange={v => handleRowChange(idx, "productName", v)}
                             onSelect={(sel: UnitPriceSelection) => applyUnitPrice(idx, sel)}
                             placeholder="品名"
-                            className="h-8 text-xs flex-1"
+                            className="h-8 text-xs flex-1 min-w-[11rem]"
                           />
                           {vendorId && vendorId !== "none" && (
                           <>
