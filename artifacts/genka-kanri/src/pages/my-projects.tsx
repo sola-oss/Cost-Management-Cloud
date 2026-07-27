@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { HardHat, ChevronDown, ChevronUp, AlertTriangle, Loader2 } from "lucide-react";
+import { HardHat, ChevronDown, ChevronUp, AlertTriangle, Loader2, Inbox, ChevronRight } from "lucide-react";
 import { useStaffMembers } from "@/hooks/use-staff-members";
 import { ProgressInput } from "@/components/progress-input";
 import { formatCurrency } from "@/lib/utils";
@@ -30,6 +30,19 @@ interface ProjectRow {
   totalBudget: number;
   totalActualCost: number;
   budgetUsageRate: number;
+}
+
+interface InboxItem {
+  id: number;
+  vendorName: string;
+  invoiceDate: string | null;
+  paymentDueDate: string | null;
+  status: string;
+  totalAmount: number;
+  unassignedAmount: number;
+  unassignedCount: number;
+  blockCount: number;
+  assignedBlockCount: number;
 }
 
 interface MonitorItem {
@@ -96,6 +109,72 @@ function WorkTypeBreakdown({ projectId }: { projectId: number }) {
   );
 }
 
+// 現場担当者あての仮デジタル請求書。メール通知の代わりに、ここに届く。
+function InboxSection({ staffId }: { staffId: number }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["/api/received-invoices", { staffMemberId: staffId }],
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/received-invoices?staffMemberId=${staffId}`);
+      if (!r.ok) throw new Error("failed");
+      return r.json() as Promise<{ items: InboxItem[] }>;
+    },
+    refetchInterval: 60_000,
+  });
+
+  const items = (data?.items ?? []).filter((i) => i.status === "sent" || i.status === "answered");
+  const unanswered = items.filter((i) => i.status === "sent");
+
+  if (isLoading) return null;
+  if (items.length === 0) return null;
+
+  return (
+    <Card className={unanswered.length > 0 ? "border-amber-300 bg-amber-50/40" : ""}>
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+          <Inbox className={`w-4 h-4 ${unanswered.length > 0 ? "text-amber-600" : "text-slate-400"}`} />
+          届いている請求書
+          {unanswered.length > 0 && (
+            <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-300 text-xs">
+              未回答 {unanswered.length}件
+            </Badge>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          {items.map((inv) => {
+            const done = inv.status === "answered";
+            return (
+              <Link key={inv.id} href={`/received-invoices/${inv.id}`}>
+                <div className="bg-white rounded-md border p-3 hover:border-primary transition-colors cursor-pointer">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium text-slate-800 text-sm truncate">{inv.vendorName || "（仕入先不明）"}</div>
+                      <div className="text-xs text-slate-500 mt-0.5">
+                        {inv.invoiceDate ?? "日付なし"} ・ {formatCurrency(inv.totalAmount)}
+                        {inv.paymentDueDate && <> ・ 支払期日 {inv.paymentDueDate}</>}
+                      </div>
+                      <div className="text-xs mt-1">
+                        {done ? (
+                          <span className="text-emerald-600">回答済み（事務の確認待ち）</span>
+                        ) : (
+                          <span className="text-amber-700">
+                            工事を選んでください（残り {inv.blockCount - inv.assignedBlockCount} ブロック）
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-slate-300 shrink-0 mt-1" />
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function MyProjects() {
   const { data: staff = [] } = useStaffMembers();
   const [name, setName] = useState<string>("");
@@ -127,6 +206,7 @@ export default function MyProjects() {
   const overCount = projects.filter((p) => p.totalBudget > 0 && p.totalActualCost > p.totalBudget).length;
 
   const activeStaff = staff.filter((s) => s.isActive);
+  const me = staff.find((x) => x.name === name);
 
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto space-y-4">
@@ -148,9 +228,11 @@ export default function MyProjects() {
         </Select>
       </div>
 
+      {me && <InboxSection staffId={me.id} />}
+
       {name === "" ? (
         <Card><CardContent className="py-10 text-center text-slate-400 text-sm">
-          名前を選ぶと、担当している工事が表示されます
+          名前を選ぶと、届いている請求書と担当工事が表示されます
         </CardContent></Card>
       ) : isLoading ? (
         <div className="py-10 text-center text-slate-400"><Loader2 className="w-5 h-5 animate-spin inline" /></div>

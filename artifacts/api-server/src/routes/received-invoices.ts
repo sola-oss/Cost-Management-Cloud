@@ -211,12 +211,32 @@ router.post("/", async (req, res) => {
 router.get("/", async (req, res) => {
   try {
     const statusFilter = req.query["status"] as string | undefined;
+    // 現場担当者の「受信」用。自分が送り先になっているものだけを返す。
+    const forStaff = req.query["staffMemberId"] ? Number(req.query["staffMemberId"]) : null;
 
-    const invoices = await db
-      .select()
-      .from(receivedInvoicesTable)
-      .where(statusFilter ? eq(receivedInvoicesTable.status, statusFilter as ReceivedInvoiceStatus) : ne(receivedInvoicesTable.status, "cancelled"))
-      .orderBy(desc(receivedInvoicesTable.createdAt));
+    const baseWhere = statusFilter
+      ? eq(receivedInvoicesTable.status, statusFilter as ReceivedInvoiceStatus)
+      : ne(receivedInvoicesTable.status, "cancelled");
+
+    let invoices;
+    if (forStaff && Number.isInteger(forStaff)) {
+      const mine = await db
+        .select({ id: receivedInvoiceRecipientsTable.receivedInvoiceId })
+        .from(receivedInvoiceRecipientsTable)
+        .where(eq(receivedInvoiceRecipientsTable.staffMemberId, forStaff));
+      const myIds = mine.map((m) => m.id);
+      invoices = myIds.length === 0 ? [] : await db
+        .select()
+        .from(receivedInvoicesTable)
+        .where(and(baseWhere, inArray(receivedInvoicesTable.id, myIds)))
+        .orderBy(desc(receivedInvoicesTable.createdAt));
+    } else {
+      invoices = await db
+        .select()
+        .from(receivedInvoicesTable)
+        .where(baseWhere)
+        .orderBy(desc(receivedInvoicesTable.createdAt));
+    }
 
     if (invoices.length === 0) return res.json({ items: [] });
 

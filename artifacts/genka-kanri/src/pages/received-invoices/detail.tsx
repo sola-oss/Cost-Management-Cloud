@@ -12,6 +12,8 @@ import { useStaffMembers } from "@/hooks/use-staff-members";
 import { formatCurrency } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+// 「自分の現場」で選んだ担当者。誰が回答したかを記録するために引き継ぐ。
+const STAFF_KEY = "cmc.myProjects.staffName";
 
 interface Line {
   id: number;
@@ -113,10 +115,12 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
 
   const respondMut = useMutation({
     mutationFn: async () => {
+      const myName = localStorage.getItem(STAFF_KEY);
+      const me = staff.find((x) => x.name === myName);
       const r = await fetch(`${BASE}/api/received-invoices/${id}/respond`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify(me ? { staffMemberId: me.id } : {}),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message ?? "送信に失敗しました");
     },
