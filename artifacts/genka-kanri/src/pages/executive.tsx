@@ -185,6 +185,9 @@ export default function Executive() {
                         <div className={`text-sm font-bold tabular-nums ${profitTone(a.forecastProfitRate)}`}>
                           {a.forecastProfit != null ? formatCurrency(a.forecastProfit) : "—"}
                         </div>
+                        <div className="text-xs text-slate-400 tabular-nums">
+                          {a.forecastProfitRate != null ? `${a.forecastProfitRate}%` : "—"}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -290,10 +293,14 @@ export default function Executive() {
                 <div className="text-right shrink-0">
                   <div className="text-xs text-slate-500">着地見込み</div>
                   <div className={`font-bold tabular-nums ${profitTone(p.forecastProfitRate)}`}>
-                    {p.forecastProfitRate != null ? `${p.forecastProfitRate}%` : "—"}
+                    {p.forecastProfit != null ? formatCurrency(p.forecastProfit) : "—"}
                   </div>
-                  {p.forecastProfitRate == null && p.forecastUnavailableReason && (
-                    <div className="text-[10px] text-slate-400 leading-tight">{p.forecastUnavailableReason}</div>
+                  {p.forecastProfitRate != null ? (
+                    <div className="text-xs text-slate-400 tabular-nums">{p.forecastProfitRate}%</div>
+                  ) : (
+                    p.forecastUnavailableReason && (
+                      <div className="text-[10px] text-slate-400 leading-tight">{p.forecastUnavailableReason}</div>
+                    )
                   )}
                 </div>
               </div>
@@ -321,7 +328,10 @@ export default function Executive() {
               </div>
 
               <div className="flex justify-between text-xs text-slate-500 tabular-nums">
-                <span>予定粗利 {p.plannedProfit != null ? formatCurrency(p.plannedProfit) : "—"}</span>
+                <span>
+                  予定粗利 {p.plannedProfit != null ? formatCurrency(p.plannedProfit) : "—"}
+                  {p.plannedProfitRate != null && `（${p.plannedProfitRate}%）`}
+                </span>
                 {p.unbilledOrder > 0 && <span className="text-amber-600">発注残 {formatCurrency(p.unbilledOrder)}</span>}
               </div>
             </CardContent>
