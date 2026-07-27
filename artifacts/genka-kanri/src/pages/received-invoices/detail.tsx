@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, ArrowLeft, FileText, AlertTriangle, CheckCircle2, Send, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useVendors } from "@/hooks/use-vendors";
+import { useStaffMembers } from "@/hooks/use-staff-members";
 import { formatCurrency } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -71,6 +72,10 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
   const COLLAPSE_OVER = 6;
 
   const { data: vendors = [] } = useVendors<{ id: number; name: string }>();
+  const { data: staff = [] } = useStaffMembers();
+  // 下書きから現場へ送るための送り先選択。作成直後の一時状態に頼ると、
+  // 画面を離れた時点で送る手段が無くなり下書きが取り残される（実際に起きた）。
+  const [selectedStaff, setSelectedStaff] = useState<number[]>([]);
 
   const { data: projectsData } = useQuery({
     queryKey: ["/api/projects"],
@@ -147,6 +152,24 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
       navigate("/received-invoices");
     },
     onError: (e) => toast({ title: "削除できません", description: e instanceof Error ? e.message : "", variant: "destructive" }),
+  });
+
+  const sendMut = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`${BASE}/api/received-invoices/${id}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ staffMemberIds: selectedStaff }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message ?? "送信に失敗しました");
+    },
+    onSuccess: () => {
+      toast({ title: "送信しました", description: `${selectedStaff.length}名に送りました。` });
+      setSelectedStaff([]);
+      qc.invalidateQueries({ queryKey: ["/api/received-invoices", id] });
+      qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
+    },
+    onError: (e) => toast({ title: "エラー", description: e instanceof Error ? e.message : "", variant: "destructive" }),
   });
 
   const confirmMut = useMutation({
@@ -373,6 +396,38 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
                 {respondMut.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
                 選択した内容を送信
               </Button>
+            )}
+
+            {data.status === "draft" && (
+              <div className="space-y-2 pb-3 mb-3 border-b">
+                <div className="text-xs font-medium text-slate-600">送り先（複数選べます）</div>
+                <div className="flex flex-wrap gap-2">
+                  {staff.filter((x) => x.isActive).map((x) => {
+                    const on = selectedStaff.includes(x.id);
+                    return (
+                      <button
+                        key={x.id}
+                        type="button"
+                        onClick={() => setSelectedStaff((p) => (on ? p.filter((y) => y !== x.id) : [...p, x.id]))}
+                        className={`px-3 py-1.5 rounded-md border text-sm transition-colors ${
+                          on ? "border-primary bg-primary/10 text-primary font-semibold" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        {x.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                <Button
+                  className="w-full h-11"
+                  disabled={selectedStaff.length === 0 || sendMut.isPending}
+                  onClick={() => sendMut.mutate()}
+                >
+                  {sendMut.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
+                  現場に送信
+                </Button>
+                <p className="text-xs text-slate-400">現場に送らず、事務がここで工事を選んで確定することもできます。</p>
+              </div>
             )}
 
             {(data.status === "answered" || data.status === "draft") && (

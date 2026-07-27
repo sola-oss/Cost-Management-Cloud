@@ -402,7 +402,9 @@ export default function ReceivedInvoiceList() {
                         <td className="px-4 py-3">
                           <div className="flex flex-wrap gap-1">
                             {inv.recipients.length === 0 ? (
-                              <span className="text-xs text-slate-400">—</span>
+                              inv.status === "draft"
+                                ? <span className="text-xs text-amber-600">未送信</span>
+                                : <span className="text-xs text-slate-400">—</span>
                             ) : inv.recipients.map((r) => (
                               <Badge key={r.staffMemberId} variant="outline" className={`text-xs ${r.respondedAt ? "border-emerald-200 bg-emerald-50 text-emerald-700" : ""}`}>
                                 {r.name}
