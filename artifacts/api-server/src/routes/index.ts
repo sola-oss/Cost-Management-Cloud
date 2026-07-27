@@ -25,6 +25,7 @@ import constructionCategoriesRouter from "./construction-categories";
 import staffMembersRouter from "./staff-members";
 import usersRouter from "./users";
 import aiExtractRouter from "./ai-extract";
+import receivedInvoicesRouter from "./received-invoices";
 
 const router: IRouter = Router();
 
@@ -54,5 +55,6 @@ router.use("/construction-categories", constructionCategoriesRouter);
 router.use("/staff-members", staffMembersRouter);
 router.use("/users", usersRouter);
 router.use("/ai-extract", aiExtractRouter);
+router.use("/received-invoices", receivedInvoicesRouter);
 
 export default router;
