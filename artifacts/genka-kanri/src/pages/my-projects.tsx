@@ -189,6 +189,16 @@ export default function MyProjects() {
     if (name) localStorage.setItem(STORAGE_KEY, name);
   }, [name]);
 
+  // 覚えていた名前がマスタに無い場合（退職・改名・別会社の環境）は選び直してもらう。
+  // 放置すると選択欄が空欄のまま「担当工事なし」と出て、理由がわからなくなる。
+  useEffect(() => {
+    if (!name || staff.length === 0) return;
+    if (!staff.some((s) => s.isActive && s.name === name)) {
+      setName("");
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  }, [name, staff]);
+
   const { data, isLoading } = useQuery({
     queryKey: ["/api/projects", { siteManager: name }],
     queryFn: async () => {
