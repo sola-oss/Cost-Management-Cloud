@@ -53,7 +53,7 @@ const DRAFT_SCHEMA = {
           unitPrice: { type: "number", description: "単価（カンマ無し）。不明なら0" },
           amount: { type: "number", description: "金額（カンマ無し）。返品・値引はマイナスのまま返す" },
           taxRate: { type: "number", description: "税率(%)。明記が無ければ10、軽減なら8" },
-          isNonPurchase: { type: "boolean", description: "仕入でない行なら true。入金・繰越・前月繰越・値引き・調整・小計・伝票計・合計・消費税等はすべて true。通常の商品/材料/工事の行は false" },
+          isNonPurchase: { type: "boolean", description: "請求書全体に対する調整・集計の行なら true（入金・繰越・前月繰越・小計・伝票計・合計・消費税等）。商品や工事に紐づく行は返品・値引きであっても false（金額をマイナスで返す）" },
         },
         required: ["slipNo", "deliveryDate", "deliveryTo", "category", "description", "quantity", "unit", "unitPrice", "amount", "taxRate", "isNonPurchase"],
       },
@@ -78,8 +78,12 @@ const SYSTEM_PROMPT = `あなたは日本の建設業の経理担当を補助す
 - 伝票番号・納品書番号(slipNo)が行に印字されていれば必ず拾う。これで明細をまとめる。無ければ空文字。
 - 納品先・現場名(deliveryTo)は「印字されているものだけ」拾う。手書きの現場名は読まない（空文字にする）。
 - 区分(category)は内容から判断して 材料費/労務費/外注費/経費 のいずれかに寄せる。難しければ material。
-- 仕入でない行（入金・繰越・前月繰越・値引き・調整・小計・伝票計・合計・消費税等）は isNonPurchase を true にする。
-  これらを商品行と混同すると原価が狂うので、必ず区別すること。
+- isNonPurchase の判断は「その行が商品・工事に紐づくか」で決める。原価が狂うので厳密に。
+  - true にするのは、請求書全体に対する調整・集計の行だけ：
+    入金・振込・繰越・前月繰越・小計・伝票計・合計・総合計・消費税等
+  - false にするのは、商品や工事に紐づく行すべて。**返品・値引き・戻しも false**にして
+    金額をマイナスで返す（返品は原価を減らす行であり、集計行ではない）。
+    例：「パイプガード直管（返品） -3,532」→ isNonPurchase=false, amount=-3532
 - 明細が主に手書きで数量・単価が不確実なら handwritten を true にする。無理に創作せず、読めない数値は0にする。
 - これは人が確認して修正する「下書き」です。確実でない箇所は推測で埋めず、空・0のままにしてください。`;
 
@@ -116,9 +120,12 @@ router.post("/purchase-invoice", async (req, res) => {
         : ({ type: "image", source: { type: "base64", media_type: media as "image/png" | "image/jpeg" | "image/webp" | "image/gif", data: fileBase64 } } as const);
 
     const client = new Anthropic();
-    const response = await client.messages.create({
+    // 明細が多い請求書（大田鋼管は3ページ25行）は出力が長くなり、8192では
+    // JSONが途中で切れて解析に失敗していた。上限を上げ、長い応答でHTTPが
+    // タイムアウトしないようストリーミングで受ける。
+    const stream = client.messages.stream({
       model: MODEL,
-      max_tokens: 8192,
+      max_tokens: 32000,
       system: SYSTEM_PROMPT,
       output_config: { format: { type: "json_schema", schema: DRAFT_SCHEMA } },
       messages: [
@@ -131,9 +138,18 @@ router.post("/purchase-invoice", async (req, res) => {
         },
       ],
     });
+    const response = await stream.finalMessage();
 
     if (response.stop_reason === "refusal") {
       return res.status(422).json({ message: "AIがこの文書の読み取りを拒否しました。別のファイルでお試しください。" });
+    }
+    // ② 出力上限に達した場合。JSONが途中で切れているので解析しても意味がない。
+    //    原因が分かるメッセージを返す（以前は「解析に失敗」としか出なかった）。
+    if (response.stop_reason === "max_tokens") {
+      req.log.warn({ usage: response.usage }, "AI extraction hit max_tokens");
+      return res.status(422).json({
+        message: "明細が多く、AIが最後まで読み切れませんでした。ページを分けてアップロードするか、手入力をお使いください。",
+      });
     }
 
     const textBlock = response.content.find((b) => b.type === "text");
@@ -151,7 +167,11 @@ router.post("/purchase-invoice", async (req, res) => {
     try {
       draft = JSON.parse(textBlock.text);
     } catch {
-      return res.status(502).json({ message: "AI応答の解析に失敗しました。" });
+      req.log.error(
+        { stopReason: response.stop_reason, usage: response.usage, head: textBlock.text.slice(0, 300) },
+        "Failed to parse AI response",
+      );
+      return res.status(502).json({ message: "AI応答の解析に失敗しました。もう一度お試しください。" });
     }
 
     // ── 金額の検算（コード側。AIの再呼び出しはしない）──────────────────────────
@@ -169,8 +189,11 @@ router.post("/purchase-invoice", async (req, res) => {
     // 必ず税額分ズレて誤検知になる（実データで発覚）。
     // 税抜合計が取れていればそれと、取れていなければ「税込 − 税額」と突き合わせる。
     const expectedNet = subtotal > 0 ? subtotal : (total > 0 && tax > 0 ? total - tax : 0);
-    const tolerance = Math.max(expectedNet * 0.02, 100); // 2% か 100円の大きい方
-    const amountMismatch = expectedNet > 0 && Math.abs(purchaseSum - expectedNet) > tolerance;
+    // 金額は請求書に印字された数字なので、本来は円単位で一致する。
+    // 以前は2%の許容にしており、返品行の取り違え（3,532円のズレ）を見逃していた。
+    const tolerance = Math.max(Math.round(expectedNet * 0.005), 100); // 0.5% か 100円の大きい方
+    const amountDiff = expectedNet > 0 ? Math.round(purchaseSum - expectedNet) : 0;
+    const amountMismatch = expectedNet > 0 && Math.abs(amountDiff) > tolerance;
 
     // 仕入先名を既存マスタに突合して候補を返す（自動では紐づけない）。
     const vendorName = (draft.vendorName ?? "").trim();
@@ -191,7 +214,7 @@ router.post("/purchase-invoice", async (req, res) => {
         .slice(0, 5);
     }
 
-    return res.json({ draft, vendorMatches, amountMismatch });
+    return res.json({ draft, vendorMatches, amountMismatch, amountDiff, expectedNet, purchaseSum });
   } catch (err) {
     req.log.error({ err }, "Failed to AI-extract purchase invoice");
     return res.status(500).json({ message: "AI読み取り中にエラーが発生しました。" });

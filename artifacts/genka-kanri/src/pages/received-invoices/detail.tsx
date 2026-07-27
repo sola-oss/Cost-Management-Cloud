@@ -234,7 +234,7 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
           <button
             className="text-sm text-slate-400 hover:text-red-500 flex items-center gap-1"
             onClick={() => {
-              if (confirm(`${data.vendorName || "この請求書"}を削除しますか？\n原本の画像も一緒に消えます。`)) {
+              if (confirm(`${data.vendorName || "この書類"}を削除しますか？\n原本の画像も一緒に消えます。`)) {
                 delMut.mutate();
               }
             }}
@@ -249,7 +249,7 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
         <CardContent className="p-4 space-y-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              {data.status === "sent" && <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-200 mb-1">仮 ─ 未回答</Badge>}
+              {data.status === "sent" && <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-200 mb-1">未回答</Badge>}
               {data.status === "answered" && <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-200 mb-1">確認待ち</Badge>}
               {data.status === "confirmed" && <Badge variant="outline" className="bg-emerald-100 text-emerald-700 border-emerald-200 mb-1">確定済</Badge>}
               {data.status === "draft" && <Badge variant="outline" className="mb-1">下書き</Badge>}

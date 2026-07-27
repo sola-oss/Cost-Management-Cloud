@@ -10,7 +10,6 @@ import { useAuthStatus } from "@/hooks/use-auth";
 import { Loader2 } from "lucide-react";
 
 // Pages
-import Dashboard from "@/pages/dashboard";
 import Projects from "@/pages/projects";
 import NewProject from "@/pages/projects/new";
 import ProjectDetail from "@/pages/projects/detail";
@@ -85,7 +84,7 @@ function Router() {
   return (
     <AppLayout>
       <Switch>
-        <Route path="/" component={Dashboard} />
+        <Route path="/" component={Executive} />
         <Route path="/projects" component={Projects} />
         <Route path="/projects/new" component={NewProject} />
         <Route path="/projects/:id" component={ProjectDetail} />
@@ -94,7 +93,6 @@ function Router() {
         <Route path="/projects/:id/ledger" component={ProjectLedger} />
         <Route path="/reports" component={Reports} />
         <Route path="/purchases" component={Purchases} />
-        <Route path="/executive" component={Executive} />
         <Route path="/my-projects" component={MyProjects} />
         <Route path="/received-invoices" component={ReceivedInvoiceList} />
         <Route path="/received-invoices/:id">

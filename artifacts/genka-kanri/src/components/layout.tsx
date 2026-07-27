@@ -18,13 +18,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     { title: "ダッシュボード", icon: LayoutDashboard, url: "/" },
     { title: "工事一覧", icon: FolderKanban, url: "/projects" },
     { title: "自分の現場", icon: HardHat, url: "/my-projects" },
-    { title: "経営ダッシュボード", icon: TrendingUp, url: "/executive" },
   ];
 
   const operationNav = [
     { title: "見積書", icon: FileText, url: "/estimates" },
     { title: "注文書", icon: ClipboardList, url: "/purchase-orders" },
-    { title: "仮デジタル請求書", icon: FileScan, url: "/received-invoices" },
+    { title: "仕入の振り分け", icon: FileScan, url: "/received-invoices" },
     { title: "仕入入力", icon: ShoppingCart, url: "/purchases" },
     { title: "仕入集計", icon: Calculator, url: "/purchase-summary" },
     { title: "請求管理", icon: Receipt, url: "/invoices" },

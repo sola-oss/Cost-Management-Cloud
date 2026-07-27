@@ -65,7 +65,7 @@ export default function ReceivedInvoiceList() {
   // アップロード〜送信のフォーム状態
   const [reading, setReading] = useState(false);
   const [draftId, setDraftId] = useState<number | null>(null);
-  const [draftSummary, setDraftSummary] = useState<{ vendorName: string; total: number; lines: number; blocks: number; mismatch: boolean; ai: boolean } | null>(null);
+  const [draftSummary, setDraftSummary] = useState<{ vendorName: string; total: number; lines: number; blocks: number; mismatch: boolean; diff?: number; ai: boolean } | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<number[]>([]);
   const [manual, setManual] = useState(false);
 
@@ -106,7 +106,7 @@ export default function ReceivedInvoiceList() {
         const e = await ex.json().catch(() => ({}));
         throw new Error(e.message ?? "AI読み取りに失敗しました");
       }
-      const { draft, vendorMatches, amountMismatch } = await ex.json();
+      const { draft, vendorMatches, amountMismatch, amountDiff } = await ex.json();
 
       // 仕入先マスタの候補（完全一致 or 最有力）を初期値にする
       const vendorId: number | null = vendorMatches?.[0]?.id ?? null;
@@ -141,6 +141,7 @@ export default function ReceivedInvoiceList() {
         lines,
         blocks: slips.size > 0 ? slips.size : lines,
         mismatch: !!amountMismatch,
+        diff: amountDiff ?? 0,
         ai: true,
       });
       qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
@@ -167,7 +168,7 @@ export default function ReceivedInvoiceList() {
 
   const sendMut = useMutation({
     mutationFn: async () => {
-      if (!draftId) throw new Error("先に請求書を読み取ってください");
+      if (!draftId) throw new Error("先に書類を読み取ってください");
       const r = await fetch(`${BASE}/api/received-invoices/${draftId}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -192,10 +193,10 @@ export default function ReceivedInvoiceList() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
           <FileScan className="w-6 h-6 text-primary" />
-          仮デジタル請求書
+          仕入の振り分け
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          届いた請求書をデータ化して現場担当者に送り、明細ごとに工事を選んでもらいます。
+          届いた請求書・納品書をデータ化して現場担当者に送り、明細ごとに工事を選んでもらいます。
         </p>
       </div>
 
@@ -230,7 +231,7 @@ export default function ReceivedInvoiceList() {
       {/* アップロード＆送信 */}
       <Card>
         <CardHeader className="py-3 border-b">
-          <CardTitle className="text-sm font-semibold text-slate-700">請求書を送る</CardTitle>
+          <CardTitle className="text-sm font-semibold text-slate-700">書類を送る</CardTitle>
         </CardHeader>
         <CardContent className="p-4 space-y-4">
           <input
@@ -247,7 +248,7 @@ export default function ReceivedInvoiceList() {
               onCreated={(id, summary) => {
                 setManual(false);
                 setDraftId(id);
-                setDraftSummary({ ...summary, mismatch: false, ai: false });
+                setDraftSummary({ ...summary, mismatch: false, diff: 0, ai: false });
                 qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
               }}
             />
@@ -263,12 +264,12 @@ export default function ReceivedInvoiceList() {
                 <div className="flex flex-col items-center gap-2 text-slate-600">
                   <Loader2 className="w-6 h-6 animate-spin" />
                   <span className="text-sm font-medium">AIが読み取っています…</span>
-                  <span className="text-xs text-slate-400">10〜30秒ほどかかります</span>
+                  <span className="text-xs text-slate-400">30秒〜2分ほどかかります（明細が多いほど長くなります）</span>
                 </div>
               ) : (
                 <div className="flex flex-col items-center gap-2">
                   <Upload className="w-6 h-6 text-slate-400" />
-                  <span className="text-sm font-semibold text-slate-700">請求書のPDF・写真を選ぶ</span>
+                  <span className="text-sm font-semibold text-slate-700">請求書・納品書のPDF・写真を選ぶ</span>
                   <span className="text-xs text-slate-400">AIが読み取って、送り先を選ぶだけで現場に届きます</span>
                 </div>
               )}
@@ -301,7 +302,9 @@ export default function ReceivedInvoiceList() {
                   {draftSummary.mismatch && (
                     <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-700">
                       <AlertTriangle className="w-3.5 h-3.5" />
-                      明細合計と請求総額が一致しません。内容を確認してください。
+                      明細の合計が請求額と{draftSummary.diff && draftSummary.diff !== 0
+                        ? `${formatCurrency(Math.abs(draftSummary.diff))}ずれています`
+                        : "一致しません"}。内容を確認してください。
                     </div>
                   )}
                 </div>
@@ -355,20 +358,20 @@ export default function ReceivedInvoiceList() {
       {/* 一覧 */}
       <Card>
         <CardHeader className="py-3 border-b flex flex-row items-center justify-between">
-          <CardTitle className="text-sm font-semibold text-slate-700">受領した請求書</CardTitle>
+          <CardTitle className="text-sm font-semibold text-slate-700">受け取った書類</CardTitle>
           <span className="text-xs text-slate-400">支払期日が近い順に注意してください</span>
         </CardHeader>
         <CardContent className="p-0">
           {isLoading ? (
             <div className="py-10 text-center text-slate-400">読み込み中…</div>
           ) : items.length === 0 ? (
-            <div className="py-10 text-center text-slate-400">まだ受領した請求書がありません</div>
+            <div className="py-10 text-center text-slate-400">まだ受け取った書類がありません</div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[840px]">
                 <thead>
                   <tr className="border-b bg-slate-50 text-xs text-slate-500">
-                    <th className="text-left px-4 py-2.5">請求書</th>
+                    <th className="text-left px-4 py-2.5">書類</th>
                     <th className="text-left px-4 py-2.5">送り先</th>
                     <th className="text-left px-4 py-2.5">状態</th>
                     <th className="text-right px-4 py-2.5">経過</th>
@@ -451,7 +454,7 @@ export default function ReceivedInvoiceList() {
                                 className="h-8 w-8 text-slate-300 hover:text-red-500"
                                 title="削除"
                                 onClick={() => {
-                                  if (confirm(`${inv.vendorName || "この請求書"}を削除しますか？\n原本の画像も一緒に消えます。`)) {
+                                  if (confirm(`${inv.vendorName || "この書類"}を削除しますか？\n原本の画像も一緒に消えます。`)) {
                                     delMut.mutate(inv.id);
                                   }
                                 }}

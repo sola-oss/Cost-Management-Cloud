@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { useGetCostByCategory, useGetMonthlyCosts } from "@workspace/api-client-react";
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from "recharts";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -61,6 +63,69 @@ function profitTone(rate: number | null): string {
   return "text-emerald-600";
 }
 
+// 原価の内訳グラフ。旧「ダッシュボード」から統合したもの（画面が2つあると分かりにくいため）。
+const CHART_COLORS = ["#f97316", "#0f172a", "#0284c7", "#10b981"];
+
+function CostCharts() {
+  const { data: costByCategory, isLoading: categoryLoading } = useGetCostByCategory();
+  const { data: monthlyCosts, isLoading: monthlyLoading } = useGetMonthlyCosts();
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <Card>
+        <CardContent className="p-4">
+          <div className="text-sm font-semibold text-slate-700 mb-2">原価項目別の構成</div>
+          <div className="h-[220px] w-full">
+            {categoryLoading ? <Skeleton className="h-full w-full" /> : costByCategory?.categories ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={costByCategory.categories} cx="50%" cy="50%" innerRadius={45} outerRadius={80}
+                       paddingAngle={2} dataKey="amount" nameKey="label" isAnimationActive={false}>
+                    {costByCategory.categories.map((_, i) => (
+                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : null}
+          </div>
+          {costByCategory?.categories && (
+            <div className="flex flex-wrap gap-3 justify-center mt-2">
+              {costByCategory.categories.map((c, i) => (
+                <div key={c.category} className="flex items-center gap-1.5 text-xs">
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }} />
+                  <span className="text-slate-600">{c.label}</span>
+                  <span className="font-medium tabular-nums">{c.percentage}%</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-4">
+          <div className="text-sm font-semibold text-slate-700 mb-2">月別の原価推移</div>
+          <div className="h-[220px] w-full">
+            {monthlyLoading ? <Skeleton className="h-full w-full" /> : monthlyCosts?.months ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={monthlyCosts.months}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis dataKey="month" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                  <YAxis tickFormatter={(v) => `¥${(v / 10000).toFixed(0)}万`} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                  <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                  <Area type="monotone" dataKey="total" stroke="#f97316" fill="#fdba74" fillOpacity={0.3} isAnimationActive={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function Executive() {
   const [openAll, setOpenAll] = useState(false);
 
@@ -89,7 +154,7 @@ export default function Executive() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
           <TrendingUp className="w-6 h-6 text-primary" />
-          経営ダッシュボード
+          ダッシュボード
         </h1>
         <p className="text-sm text-slate-500 mt-1">施工中 {s.activeProjects} 件の状況と、このあとの着地見込みです。</p>
       </div>
@@ -199,12 +264,14 @@ export default function Executive() {
                 <li>・出来高が先月以前のままの工事が {f.staleProgressProjects} 件あります</li>
               )}
               {f.pendingReceivedInvoices > 0 && (
-                <li>・未処理の仮デジタル請求書が {f.pendingReceivedInvoices} 件あります（原価にまだ入っていません）</li>
+                <li>・振り分けが済んでいない書類が {f.pendingReceivedInvoices} 件あります（原価にまだ入っていません）</li>
               )}
             </ul>
           </CardContent>
         </Card>
       )}
+
+      <CostCharts />
 
       {/* 工事別 */}
       <div className="space-y-2">

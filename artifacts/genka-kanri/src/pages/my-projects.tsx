@@ -109,7 +109,7 @@ function WorkTypeBreakdown({ projectId }: { projectId: number }) {
   );
 }
 
-// 現場担当者あての仮デジタル請求書。メール通知の代わりに、ここに届く。
+// 現場担当者あての書類（仕入の振り分け）。メール通知の代わりに、ここに届く。
 function InboxSection({ staffId }: { staffId: number }) {
   const { data, isLoading } = useQuery({
     queryKey: ["/api/received-invoices", { staffMemberId: staffId }],
@@ -132,7 +132,7 @@ function InboxSection({ staffId }: { staffId: number }) {
       <CardContent className="p-4 space-y-3">
         <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
           <Inbox className={`w-4 h-4 ${unanswered.length > 0 ? "text-amber-600" : "text-slate-400"}`} />
-          届いている請求書
+          届いている書類
           {unanswered.length > 0 && (
             <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-300 text-xs">
               未回答 {unanswered.length}件
@@ -232,7 +232,7 @@ export default function MyProjects() {
 
       {name === "" ? (
         <Card><CardContent className="py-10 text-center text-slate-400 text-sm">
-          名前を選ぶと、届いている請求書と担当工事が表示されます
+          名前を選ぶと、届いている書類と担当工事が表示されます
         </CardContent></Card>
       ) : isLoading ? (
         <div className="py-10 text-center text-slate-400"><Loader2 className="w-5 h-5 animate-spin inline" /></div>
