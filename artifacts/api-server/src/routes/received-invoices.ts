@@ -119,6 +119,12 @@ function unassignedAmount(items: ItemRow[]): number {
     .reduce((s, i) => s + parseN(i.amount), 0);
 }
 
+// 未割当の行数。金額0円の行が未割当でも「未割当額0」になってしまうため、
+// 送信・確定の可否は金額ではなく行数で判定する（0円行が原価から静かに漏れるのを防ぐ）。
+function unassignedCount(items: ItemRow[]): number {
+  return items.filter((i) => !i.isNonPurchase && i.projectId == null).length;
+}
+
 // ── POST /  受領請求書を作成（AI抽出の下書き or 手入力から）────────────────────
 // body: { vendorId?, vendorName, invoiceDate?, paymentDueDate?, subtotal, taxAmount,
 //         totalAmount, aiExtracted, amountMismatch, notes?, fileBase64?, mediaType?,
@@ -245,8 +251,9 @@ router.get("/", async (req, res) => {
 
     const out = invoices.map((inv) => {
       const its = itemsByInv.get(inv.id) ?? [];
-      const blocks = buildBlocks(its);
-      const assignedBlocks = blocks.filter((bk) => bk.allPurchaseAssigned || bk.itemIds.length === 0).length;
+      // 進捗は仕入ブロックだけで数える（入金・値引などの非仕入ブロックは分母にも入れない）
+      const blocks = buildBlocks(its).filter((bk) => bk.itemIds.length > 0);
+      const assignedBlocks = blocks.filter((bk) => bk.allPurchaseAssigned).length;
       return {
         id: inv.id,
         vendorId: inv.vendorId,
@@ -257,6 +264,7 @@ router.get("/", async (req, res) => {
         amountMismatch: inv.amountMismatch,
         totalAmount: parseN(inv.totalAmount),
         unassignedAmount: unassignedAmount(its),
+        unassignedCount: unassignedCount(its),
         blockCount: blocks.length,
         assignedBlockCount: assignedBlocks,
         sentAt: inv.sentAt,
@@ -316,6 +324,7 @@ router.get("/:id", async (req, res) => {
       hasFile: !!inv.filePath,
       blocks: buildBlocks(items),
       unassignedAmount: unassignedAmount(items),
+      unassignedCount: unassignedCount(items),
       recipients: recips,
     });
   } catch (err) {
@@ -412,10 +421,40 @@ router.patch("/:id/assign", async (req, res) => {
       .from(receivedInvoiceItemsTable)
       .where(eq(receivedInvoiceItemsTable.receivedInvoiceId, id))) as unknown as ItemRow[];
 
-    return res.json({ blocks: buildBlocks(items), unassignedAmount: unassignedAmount(items) });
+    return res.json({
+      blocks: buildBlocks(items),
+      unassignedAmount: unassignedAmount(items),
+      unassignedCount: unassignedCount(items),
+    });
   } catch (err) {
     req.log.error({ err }, "Failed to assign received invoice items");
     return res.status(500).json({ message: "割当の保存に失敗しました。" });
+  }
+});
+
+// ── PATCH /:id/vendor  仕入先を確定する（AI抽出で未確定だった場合に事務が選ぶ）────
+router.patch("/:id/vendor", async (req, res) => {
+  try {
+    const id = Number(req.params["id"]);
+    const vendorId = Number(req.body?.vendorId);
+    if (!Number.isInteger(vendorId)) return res.status(400).json({ message: "vendorId が不正です" });
+
+    const [inv] = await db.select().from(receivedInvoicesTable).where(eq(receivedInvoicesTable.id, id));
+    if (!inv) return res.status(404).json({ message: "見つかりません" });
+    if (inv.status === "confirmed") return res.status(409).json({ message: "確定済みのため変更できません。" });
+
+    const [v] = await db.select({ name: vendorsTable.name }).from(vendorsTable).where(eq(vendorsTable.id, vendorId));
+    if (!v) return res.status(400).json({ message: "その仕入先は存在しません。" });
+
+    await db
+      .update(receivedInvoicesTable)
+      .set({ vendorId, updatedAt: new Date() })
+      .where(eq(receivedInvoicesTable.id, id));
+
+    return res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "Failed to set vendor");
+    return res.status(500).json({ message: "仕入先の保存に失敗しました。" });
   }
 });
 
@@ -433,9 +472,12 @@ router.post("/:id/respond", async (req, res) => {
       .select()
       .from(receivedInvoiceItemsTable)
       .where(eq(receivedInvoiceItemsTable.receivedInvoiceId, id))) as unknown as ItemRow[];
-    const remaining = unassignedAmount(items);
-    if (remaining !== 0) {
-      return res.status(400).json({ message: "未割当が残っています。すべての明細に工事を割り当ててください。", unassignedAmount: remaining });
+    if (unassignedCount(items) > 0) {
+      return res.status(400).json({
+        message: "未割当が残っています。すべての明細に工事を割り当ててください。",
+        unassignedAmount: unassignedAmount(items),
+        unassignedCount: unassignedCount(items),
+      });
     }
 
     await db.transaction(async (tx) => {
@@ -483,9 +525,12 @@ router.post("/:id/confirm", async (req, res) => {
       .select()
       .from(receivedInvoiceItemsTable)
       .where(eq(receivedInvoiceItemsTable.receivedInvoiceId, id))) as unknown as ItemRow[];
-    const remaining = unassignedAmount(items);
-    if (remaining !== 0) {
-      return res.status(400).json({ message: "未割当が残っているため確定できません。", unassignedAmount: remaining });
+    if (unassignedCount(items) > 0) {
+      return res.status(400).json({
+        message: "未割当が残っているため確定できません。",
+        unassignedAmount: unassignedAmount(items),
+        unassignedCount: unassignedCount(items),
+      });
     }
 
     // 仕入行のみを対象にする（入金・繰越・値引・小計などの非仕入行は原価に立てない）

@@ -19,6 +19,8 @@ import Reports from "@/pages/reports";
 import Purchases from "@/pages/purchases";
 import Vendors from "@/pages/vendors";
 import PurchaseSummary from "@/pages/purchase-summary";
+import ReceivedInvoiceList from "@/pages/received-invoices";
+import ReceivedInvoiceDetail from "@/pages/received-invoices/detail";
 import EstimateList from "@/pages/estimates/index";
 import NewEstimate from "@/pages/estimates/new";
 import EstimateDetail from "@/pages/estimates/detail";
@@ -90,6 +92,10 @@ function Router() {
         <Route path="/projects/:id/ledger" component={ProjectLedger} />
         <Route path="/reports" component={Reports} />
         <Route path="/purchases" component={Purchases} />
+        <Route path="/received-invoices" component={ReceivedInvoiceList} />
+        <Route path="/received-invoices/:id">
+          {(params) => <ReceivedInvoiceDetail id={parseInt(params.id)} />}
+        </Route>
         <Route path="/purchase-summary" component={PurchaseSummary} />
         {/* 支払はMF会計に移したため、旧・支払管理は導線ごと外している（pages/payments.tsx は復帰できるよう残置）。
             支払査定は仕入集計として引き継いだので、古いURLはそちらへ寄せる。 */}
