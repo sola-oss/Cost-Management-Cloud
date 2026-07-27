@@ -4,7 +4,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Upload, FileScan, Send, ChevronRight, AlertTriangle, Sparkles } from "lucide-react";
+import { Loader2, Upload, FileScan, Send, ChevronRight, AlertTriangle, Sparkles, PencilLine } from "lucide-react";
+import { ManualEntry } from "./manual-entry";
 import { useToast } from "@/hooks/use-toast";
 import { useStaffMembers } from "@/hooks/use-staff-members";
 import { useVendors } from "@/hooks/use-vendors";
@@ -64,8 +65,9 @@ export default function ReceivedInvoiceList() {
   // アップロード〜送信のフォーム状態
   const [reading, setReading] = useState(false);
   const [draftId, setDraftId] = useState<number | null>(null);
-  const [draftSummary, setDraftSummary] = useState<{ vendorName: string; total: number; lines: number; blocks: number; mismatch: boolean } | null>(null);
+  const [draftSummary, setDraftSummary] = useState<{ vendorName: string; total: number; lines: number; blocks: number; mismatch: boolean; ai: boolean } | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<number[]>([]);
+  const [manual, setManual] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["/api/received-invoices"],
@@ -139,6 +141,7 @@ export default function ReceivedInvoiceList() {
         lines,
         blocks: slips.size > 0 ? slips.size : lines,
         mismatch: !!amountMismatch,
+        ai: true,
       });
       qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
       toast({ title: "読み取り完了", description: `${lines}行を読み取りました。送り先を選んで送信してください。` });
@@ -226,7 +229,18 @@ export default function ReceivedInvoiceList() {
             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
           />
 
-          {!draftSummary ? (
+          {!draftSummary && manual ? (
+            <ManualEntry
+              onCancel={() => setManual(false)}
+              onCreated={(id, summary) => {
+                setManual(false);
+                setDraftId(id);
+                setDraftSummary({ ...summary, mismatch: false, ai: false });
+                qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
+              }}
+            />
+          ) : !draftSummary ? (
+            <div className="space-y-3">
             <button
               type="button"
               disabled={reading}
@@ -247,13 +261,24 @@ export default function ReceivedInvoiceList() {
                 </div>
               )}
             </button>
+            <div className="flex items-center justify-center">
+              <button
+                type="button"
+                onClick={() => setManual(true)}
+                className="text-sm text-slate-500 hover:text-primary flex items-center gap-1.5 underline underline-offset-2"
+              >
+                <PencilLine className="w-3.5 h-3.5" />
+                AIを使わず手で入力する
+              </button>
+            </div>
+            </div>
           ) : (
             <div className="space-y-4">
               <div className="flex items-start justify-between gap-4 rounded-lg border bg-emerald-50/50 border-emerald-200 p-4">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 text-sm font-semibold text-emerald-800">
                     <Sparkles className="w-4 h-4" />
-                    読み取りました
+                    {draftSummary.ai ? "読み取りました" : "入力しました"}
                   </div>
                   <div className="mt-1 text-sm text-slate-700">
                     {draftSummary.vendorName || "（仕入先不明）"} ／ {formatCurrency(draftSummary.total)}
