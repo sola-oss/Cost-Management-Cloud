@@ -19,6 +19,10 @@ export const purchaseInvoicesTable = pgTable("purchase_invoices", {
   projectId: integer("project_id").notNull().references(() => projectsTable.id, { onDelete: "cascade" }),
   vendorId: integer("vendor_id").notNull().references(() => vendorsTable.id),
   purchaseOrderId: integer("purchase_order_id").references(() => purchaseOrdersTable.id, { onDelete: "set null" }),
+  // 仮デジタル請求書(received_invoices)から確定生成された場合、その原本ID。
+  // 1枚の原本を工事ごとにN件へ分割して作るので、原本1枚に戻せるよう保持する。
+  // received_invoices は循環参照を避けるため FK 参照は張らず、ID値のみ保持する。
+  receivedInvoiceId: integer("received_invoice_id"),
   purchaseDate: date("purchase_date").notNull(),
   paymentDueDate: date("payment_due_date"),
   status: text("status").$type<PurchaseInvoiceStatus>().notNull().default("confirmed"),
