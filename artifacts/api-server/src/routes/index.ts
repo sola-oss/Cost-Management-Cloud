@@ -27,6 +27,7 @@ import usersRouter from "./users";
 import aiExtractRouter from "./ai-extract";
 import receivedInvoicesRouter from "./received-invoices";
 import projectProgressRouter from "./project-progress";
+import executiveRouter from "./executive";
 
 const router: IRouter = Router();
 
@@ -38,6 +39,7 @@ router.use("/projects/:id/progress", projectProgressRouter);
 router.use("/cost-items", costItemsRouter);
 router.use("/budgets", budgetsRouter);
 router.use("/dashboard", dashboardRouter);
+router.use("/executive", executiveRouter);
 router.use("/payments", paymentsRouter);
 router.use("/vendor-groups", vendorGroupsRouter);
 router.use("/vendors", vendorsRouter);

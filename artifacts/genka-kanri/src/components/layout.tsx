@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, Calculator, Users, FileText, Wrench, Settings, Receipt, ClipboardList, DollarSign, KeyRound, LogOut, UserCircle, Tags, UserRound, UserCog, FileScan } from "lucide-react";
+import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, Calculator, Users, FileText, Wrench, Settings, Receipt, ClipboardList, DollarSign, KeyRound, LogOut, UserCircle, Tags, UserRound, UserCog, FileScan, TrendingUp } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarProvider, SidebarRail, SidebarTrigger, SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from "./ui/sidebar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { useCompanySettings } from "@/hooks/use-company-settings";
@@ -18,6 +18,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     { title: "ダッシュボード", icon: LayoutDashboard, url: "/" },
     { title: "工事一覧", icon: FolderKanban, url: "/projects" },
     { title: "自分の現場", icon: HardHat, url: "/my-projects" },
+    { title: "経営ダッシュボード", icon: TrendingUp, url: "/executive" },
   ];
 
   const operationNav = [
