@@ -51,3 +51,8 @@ Thumbs.db
 # migration DB dumps (test data, regenerable)
 migration/*.sql
 vite.config.ts.bak
+
+# 環境変数（APIキーなどの秘密情報。絶対にコミットしない）
+.env
+.env.*
+!.env.example
