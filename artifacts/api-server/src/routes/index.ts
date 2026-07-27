@@ -26,6 +26,7 @@ import staffMembersRouter from "./staff-members";
 import usersRouter from "./users";
 import aiExtractRouter from "./ai-extract";
 import receivedInvoicesRouter from "./received-invoices";
+import projectProgressRouter from "./project-progress";
 
 const router: IRouter = Router();
 
@@ -33,6 +34,7 @@ router.use(healthRouter);
 router.use("/auth", authRouter);
 router.use("/projects", projectsRouter);
 router.use("/projects/:id/budget-items", budgetItemsRouter);
+router.use("/projects/:id/progress", projectProgressRouter);
 router.use("/cost-items", costItemsRouter);
 router.use("/budgets", budgetsRouter);
 router.use("/dashboard", dashboardRouter);

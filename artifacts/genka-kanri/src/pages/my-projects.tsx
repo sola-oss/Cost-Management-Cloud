@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { HardHat, ChevronDown, ChevronUp, AlertTriangle, Loader2 } from "lucide-react";
 import { useStaffMembers } from "@/hooks/use-staff-members";
+import { ProgressInput } from "@/components/progress-input";
 import { formatCurrency } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -244,6 +245,8 @@ export default function MyProjects() {
                         <span className="text-xs text-slate-400 hover:text-primary underline underline-offset-2">工事台帳</span>
                       </Link>
                     </div>
+
+                    <ProgressInput projectId={p.id} recordedBy={name} />
 
                     {isOpen && <WorkTypeBreakdown projectId={p.id} />}
                   </CardContent>
