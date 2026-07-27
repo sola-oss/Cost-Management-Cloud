@@ -157,3 +157,7 @@ overrides:
   # drizzle-kit uses esbuild internally on an older version that's vulnerable, this overrides it
   "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
   esbuild: "0.27.3"
+  # @anthropic-ai/sdk の任意peerであるzodが4系を引き込み、genka-kanriの
+  # react-hook-form + @hookform/resolvers の型解決を壊すためカタログの3系に固定する。
+  # （SDKのzodヘルパーは使っていないので3系で問題ない）
+  "@anthropic-ai/sdk>zod": "3.25.76"

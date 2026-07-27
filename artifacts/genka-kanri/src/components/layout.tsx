@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, CreditCard, Calculator, Users, FileText, Wrench, Settings, Receipt, ClipboardList, DollarSign, KeyRound, LogOut, UserCircle, Tags, UserRound, UserCog } from "lucide-react";
+import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, Calculator, Users, FileText, Wrench, Settings, Receipt, ClipboardList, DollarSign, KeyRound, LogOut, UserCircle, Tags, UserRound, UserCog, FileScan } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarProvider, SidebarRail, SidebarTrigger, SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from "./ui/sidebar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { useCompanySettings } from "@/hooks/use-company-settings";
@@ -22,9 +22,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const operationNav = [
     { title: "見積書", icon: FileText, url: "/estimates" },
     { title: "注文書", icon: ClipboardList, url: "/purchase-orders" },
+    { title: "仮デジタル請求書", icon: FileScan, url: "/received-invoices" },
     { title: "仕入入力", icon: ShoppingCart, url: "/purchases" },
-    { title: "支払査定", icon: Calculator, url: "/payment-assessment" },
-    { title: "支払管理", icon: CreditCard, url: "/payments" },
+    { title: "仕入集計", icon: Calculator, url: "/purchase-summary" },
     { title: "請求管理", icon: Receipt, url: "/invoices" },
   ];
 

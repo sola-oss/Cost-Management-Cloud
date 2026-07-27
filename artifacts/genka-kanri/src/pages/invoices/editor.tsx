@@ -790,8 +790,11 @@ export default function InvoiceEditor({ id }: Props) {
           <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="備考・特記事項など" />
         </section>
 
-        {/* 入金管理（詳細ページのみ） */}
-        {id && (
+        {/* 入金管理（詳細ページのみ）
+            入金の消込は会計ソフト側で行うことにしたため、画面からは外している。
+            API・テーブル・下の handleAddPayment / handleDeletePayment はそのまま残してあるので、
+            戻すときはこの条件を id に戻せばよい。 */}
+        {false && id && (
           <section className="bg-white rounded-xl border p-6">
             <h2 className="text-base font-semibold text-slate-700 border-b pb-2 mb-4">入金管理</h2>
 

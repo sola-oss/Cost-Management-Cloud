@@ -292,7 +292,6 @@ export default function Purchases() {
   const [memo,            setMemo]            = useState("");
 
   // ── 支払予定生成フラグ ────────────────────────────────────────────────────
-  const [createPayment, setCreatePayment] = useState(false);
 
   // ── 編集データをフォームに反映（初回のみ）──────────────────────────────────
   useEffect(() => {
@@ -310,7 +309,6 @@ export default function Purchases() {
     setSelectedProject(String(editInvoiceData.projectId));
     setIsDraft(editInvoiceData.isProvisional);
     setMemo(editInvoiceData.notes ?? "");
-    setCreatePayment(false);
 
     setRows(
       editInvoiceData.items.length > 0
@@ -467,7 +465,6 @@ export default function Purchases() {
     setTaxCalcType("外税明細単位");
     setIsDraft(false);
     setMemo("");
-    setCreatePayment(true);
     setRows([createRow()]);
   };
 
@@ -545,18 +542,14 @@ export default function Purchases() {
             isProvisional: isDraft,
             taxCalculationMethod: taxCalcMethodMap[taxCalcType] ?? "detail_exclusive",
             notes: memo || null,
-            createPayment,
             items: itemsPayload,
           }),
         });
         if (!res.ok) throw new Error("Failed to create purchase invoice");
         const invoice = await res.json() as { id: number; voucherNumber: string };
-        if (createPayment) {
-          queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
-        }
         toast({
           title: "登録完了",
-          description: `仕入伝票 ${invoice.voucherNumber} を登録しました。${createPayment ? "支払予定も作成しました。" : ""}`,
+          description: `仕入伝票 ${invoice.voucherNumber} を登録しました。`,
         });
         newSlip();
         mark(invoice.id);
@@ -581,7 +574,6 @@ export default function Purchases() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           paymentDueDate: paymentDueDate || null,
-          createPayment,
         }),
       });
       if (!res.ok) throw new Error("Failed");
@@ -590,7 +582,6 @@ export default function Purchases() {
       mark(invoice.id);
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
-      if (createPayment) queryClient.invalidateQueries({ queryKey: ["/api/payments"] });
       setImportPOOpen(false);
     } catch {
       toast({ title: "取込エラー", description: "取込に失敗しました。", variant: "destructive" });
@@ -829,18 +820,6 @@ export default function Purchases() {
                   />
                   <Label htmlFor="isDraft" className="text-sm text-slate-700 cursor-pointer">
                     仮伝票として保存する
-                  </Label>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="createPayment"
-                    checked={createPayment}
-                    onCheckedChange={v => setCreatePayment(!!v)}
-                    className="accent-teal-600"
-                  />
-                  <Label htmlFor="createPayment" className="text-sm text-slate-700 cursor-pointer">
-                    支払予定も作成する
-                    <span className="ml-2 text-xs text-slate-400">※通常は支払査定から登録されます</span>
                   </Label>
                 </div>
               </div>

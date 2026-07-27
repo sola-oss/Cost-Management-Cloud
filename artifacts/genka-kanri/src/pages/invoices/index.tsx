@@ -21,8 +21,11 @@ interface Invoice {
   status: "unpaid" | "partial" | "paid";
 }
 
+// 入金の消込は会計ソフト側で行うため、CMCでは入金の状態を追わない。
+// unpaid は「請求書を出した」状態を指すので「請求済」と表示する。
+// partial / paid は入金管理を使っていた頃の既存データ用に残してある。
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  unpaid: { label: "未入金", color: "bg-slate-100 text-slate-600 border-slate-200" },
+  unpaid: { label: "請求済", color: "bg-slate-100 text-slate-600 border-slate-200" },
   partial: { label: "一部入金", color: "bg-amber-100 text-amber-700 border-amber-200" },
   paid: { label: "入金済", color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
 };
@@ -88,7 +91,7 @@ export default function InvoiceList() {
             <Receipt className="w-6 h-6 text-orange-500" />
             請求管理
           </h1>
-          <p className="text-sm text-slate-500 mt-0.5">請求書の発行・入金管理を行います。</p>
+          <p className="text-sm text-slate-500 mt-0.5">請求書の発行と管理を行います。入金の消込は会計ソフト側で行います。</p>
         </div>
         <Link href="/invoices/new">
           <Button className="bg-orange-500 hover:bg-orange-600 text-white gap-2">
@@ -103,6 +106,8 @@ export default function InvoiceList() {
         {Object.entries(STATUS_LABELS).map(([key, { label, color }]) => {
           const count = allItems.filter((inv) => inv.status === key).length;
           const sum = allItems.filter((inv) => inv.status === key).reduce((s, inv) => s + inv.totalAmount, 0);
+          // 入金の状態は追わなくなったので、一部入金・入金済は既存データが残っている間だけ出す
+          if (key !== "unpaid" && count === 0) return null;
           return (
             <Card
               key={key}
@@ -126,9 +131,7 @@ export default function InvoiceList() {
             <div className="flex gap-2 flex-wrap">
               {[
                 { value: "all", label: "すべて" },
-                { value: "unpaid", label: "未入金" },
-                { value: "partial", label: "一部入金" },
-                { value: "paid", label: "入金済" },
+                { value: "unpaid", label: "請求済" },
               ].map((opt) => (
                 <button
                   key={opt.value}
