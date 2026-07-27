@@ -6,6 +6,9 @@ import {
   receivedInvoiceItemsTable,
   receivedInvoiceRecipientsTable,
   staffMembersTable,
+  vendorsTable,
+  purchaseInvoicesTable,
+  purchaseInvoiceItemsTable,
 } from "@workspace/db";
 import type { ReceivedInvoiceStatus } from "@workspace/db";
 import {
@@ -15,6 +18,12 @@ import {
   deleteInvoiceFile,
   storageMode,
 } from "../lib/invoice-storage";
+import { withUniqueNumberTransaction } from "../lib/unique-number";
+import {
+  generateVoucherNumber,
+  syncCostItemsAfterInvoice,
+  calcTotals,
+} from "../lib/purchase-invoice-create";
 
 const router: IRouter = Router();
 
@@ -453,13 +462,22 @@ router.post("/:id/respond", async (req, res) => {
   }
 });
 
-// ── POST /:id/confirm  事務が確定（→ 工事ごとに仕入伝票を生成：タスク#5で実装）──
+// ── POST /:id/confirm  事務が確定 → 工事ごとに仕入伝票を生成 ────────────────────
+//
+// 1枚の受領請求書を、明細の工事でグループ化して purchase_invoices をN件作る。
+// purchase_invoices.projectId は notNull なので分割が必須。生成した各伝票には
+// receivedInvoiceId を持たせ、原本1枚に戻せるようにする。
+// 支払は会計ソフト側なので payments は作らない（原価だけ立てる）。
 router.post("/:id/confirm", async (req, res) => {
   try {
     const id = Number(req.params["id"]);
     const [inv] = await db.select().from(receivedInvoicesTable).where(eq(receivedInvoicesTable.id, id));
     if (!inv) return res.status(404).json({ message: "見つかりません" });
     if (inv.status === "confirmed") return res.status(409).json({ message: "すでに確定済みです。" });
+    if (inv.status === "cancelled") return res.status(409).json({ message: "取消済みのため確定できません。" });
+    if (!inv.vendorId) {
+      return res.status(400).json({ message: "仕入先が未設定です。仕入先を選んでから確定してください。" });
+    }
 
     const items = (await db
       .select()
@@ -470,14 +488,103 @@ router.post("/:id/confirm", async (req, res) => {
       return res.status(400).json({ message: "未割当が残っているため確定できません。", unassignedAmount: remaining });
     }
 
-    // TODO(#5): 工事ごとにグループ化して purchase_invoices を生成する。
-    // ここでは状態だけ進める（生成処理は次タスクで confirm 内に実装）。
+    // 仕入行のみを対象にする（入金・繰越・値引・小計などの非仕入行は原価に立てない）
+    const purchaseItems = items.filter((i) => !i.isNonPurchase && i.projectId != null);
+    if (purchaseItems.length === 0) {
+      return res.status(400).json({ message: "原価に計上できる明細がありません。" });
+    }
+
+    const [vendorRow] = await db
+      .select({ name: vendorsTable.name })
+      .from(vendorsTable)
+      .where(eq(vendorsTable.id, inv.vendorId));
+    const vendorName = vendorRow?.name ?? inv.vendorName ?? "（仕入先）";
+    const purchaseDate = inv.invoiceDate ?? new Date().toISOString().slice(0, 10);
+
+    // 工事ごとにグループ化
+    const byProject = new Map<number, ItemRow[]>();
+    for (const it of purchaseItems) {
+      const pid = it.projectId as number;
+      const arr = byProject.get(pid) ?? [];
+      arr.push(it);
+      byProject.set(pid, arr);
+    }
+
+    const created: Array<{ projectId: number; voucherNumber: string; totalAmount: number }> = [];
+
+    // 工事ごとに1件ずつ採番して作る（採番衝突はトランザクション単位でリトライ）
+    for (const [projectId, group] of byProject) {
+      const lines = group
+        .sort((a, b) => a.lineNumber - b.lineNumber)
+        .map((l) => ({ ...l, amountN: parseN(l.amount), taxRateN: parseN(l.taxRate) }));
+      const totals = calcTotals(lines.map((l) => ({ amount: l.amountN, taxRate: l.taxRateN })));
+
+      const madeVoucher = await withUniqueNumberTransaction(
+        generateVoucherNumber,
+        async (voucherNumber, tx) => {
+          const [pi] = await tx
+            .insert(purchaseInvoicesTable)
+            .values({
+              voucherNumber,
+              projectId,
+              vendorId: inv.vendorId as number,
+              receivedInvoiceId: inv.id,
+              purchaseDate,
+              paymentDueDate: inv.paymentDueDate ?? null,
+              status: "confirmed",
+              isProvisional: false,
+              subtotal: String(totals.subtotal),
+              taxAmount: String(totals.taxAmount),
+              totalAmount: String(totals.totalAmount),
+              notes: `仮デジタル請求書 #${inv.id}（${vendorName}）から生成`,
+            })
+            .returning();
+
+          const insertedItems = await tx
+            .insert(purchaseInvoiceItemsTable)
+            .values(
+              lines.map((l, idx) => ({
+                purchaseInvoiceId: pi.id,
+                lineNumber: idx + 1,
+                category: l.category as "material" | "labor" | "subcontract" | "expense",
+                description: l.description,
+                // 納品書番号・納品先を摘要に残す（あとから原本を追える）
+                specification: [l.slipNo ? `伝票${l.slipNo}` : null, l.deliveryTo || null]
+                  .filter(Boolean)
+                  .join(" ") || null,
+                quantity: String(l.quantity),
+                unit: l.unit,
+                unitPrice: String(l.unitPrice),
+                amount: String(l.amount),
+                taxRate: String(l.taxRate),
+              })),
+            )
+            .returning();
+
+          await syncCostItemsAfterInvoice(
+            tx,
+            projectId,
+            purchaseDate,
+            voucherNumber,
+            false,
+            vendorName,
+            inv.vendorId as number,
+            insertedItems,
+          );
+
+          return voucherNumber;
+        },
+      );
+
+      created.push({ projectId, voucherNumber: madeVoucher, totalAmount: totals.totalAmount });
+    }
+
     await db
       .update(receivedInvoicesTable)
       .set({ status: "confirmed", confirmedAt: new Date(), updatedAt: new Date() })
       .where(eq(receivedInvoicesTable.id, id));
 
-    return res.json({ ok: true });
+    return res.json({ ok: true, created });
   } catch (err) {
     req.log.error({ err }, "Failed to confirm received invoice");
     return res.status(500).json({ message: "確定に失敗しました。" });
