@@ -121,7 +121,7 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message ?? "送信に失敗しました");
     },
     onSuccess: () => {
-      toast({ title: "送信しました", description: "事務の確認待ちになりました。" });
+      toast({ title: "事務に返しました", description: "事務が確認して確定します。" });
       qc.invalidateQueries({ queryKey: ["/api/received-invoices", id] });
       qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
     },
@@ -164,10 +164,12 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message ?? "送信に失敗しました");
     },
     onSuccess: () => {
-      toast({ title: "送信しました", description: `${selectedStaff.length}名に送りました。` });
+      toast({ title: "現場に送信しました", description: "現場担当者が工事を選ぶと、確認待ちになります。" });
       setSelectedStaff([]);
       qc.invalidateQueries({ queryKey: ["/api/received-invoices", id] });
       qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
+      // 事務の作業はここで完了。この先は現場担当者の画面なので一覧へ戻す
+      navigate("/received-invoices");
     },
     onError: (e) => toast({ title: "エラー", description: e instanceof Error ? e.message : "", variant: "destructive" }),
   });
@@ -392,10 +394,16 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
             )}
 
             {data.status === "sent" && (
-              <Button className="w-full h-11" disabled={!done || respondMut.isPending} onClick={() => respondMut.mutate()}>
-                {respondMut.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
-                選択した内容を送信
-              </Button>
+              <>
+                <p className="text-xs text-slate-500 bg-slate-50 rounded px-2 py-1.5">
+                  ここから先は現場担当者（{data.recipients.map((r) => r.name).join("・") || "未設定"}）の操作です。
+                  工事を選び終えたら事務に返してください。
+                </p>
+                <Button className="w-full h-11" disabled={!done || respondMut.isPending} onClick={() => respondMut.mutate()}>
+                  {respondMut.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
+                  割当を完了して事務に返す
+                </Button>
+              </>
             )}
 
             {data.status === "draft" && (
