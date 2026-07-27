@@ -72,7 +72,9 @@ const SYSTEM_PROMPT = `あなたは日本の建設業の経理担当を補助す
 ルール：
 - 金額はカンマや「円」を除いた数値で返す（例: 1,234,000 → 1234000）。
 - 返品・値引き・マイナス調整の行は、金額をマイナスのまま返す（例: -3,532）。
-- 日付は YYYY-MM-DD 形式。読み取れない日付は空文字 "" にする。年が和暦（令和）なら西暦へ直す。
+- 日付は YYYY-MM-DD 形式。読み取れない日付は空文字 "" にする。
+- 和暦は必ず西暦に直す。**令和N年 = 西暦(2018+N)年**（例: 令和8年=2026年、令和7年=2025年、令和6年=2024年）。
+  請求書内で年が省略され月日だけの行（例「6.5」「6/30」）は、請求日の年に合わせること。
 - 伝票番号・納品書番号(slipNo)が行に印字されていれば必ず拾う。これで明細をまとめる。無ければ空文字。
 - 納品先・現場名(deliveryTo)は「印字されているものだけ」拾う。手書きの現場名は読まない（空文字にする）。
 - 区分(category)は内容から判断して 材料費/労務費/外注費/経費 のいずれかに寄せる。難しければ material。
@@ -141,6 +143,8 @@ router.post("/purchase-invoice", async (req, res) => {
 
     let draft: {
       vendorName?: string;
+      subtotal?: number;
+      taxAmount?: number;
       totalAmount?: number;
       items?: Array<{ amount?: number; isNonPurchase?: boolean }>;
     };
@@ -157,18 +161,16 @@ router.post("/purchase-invoice", async (req, res) => {
     const purchaseSum = items
       .filter((it) => !it.isNonPurchase)
       .reduce((s, it) => s + num(it.amount), 0);
+    const subtotal = num(draft.subtotal);
+    const tax = num(draft.taxAmount);
     const total = num(draft.totalAmount);
-    // 税抜の明細合計と税込総額を単純比較はできないので、税抜・税込どちらかに1円でも
-    // 近ければ一致とみなす緩い判定。厳密な突合は人が画面で行う。
-    const nonPurchaseSum = items
-      .filter((it) => it.isNonPurchase)
-      .reduce((s, it) => s + num(it.amount), 0);
-    const grossWithAdjust = purchaseSum + nonPurchaseSum;
-    const tolerance = Math.max(total * 0.02, 100); // 2% か 100円の大きい方
-    const amountMismatch =
-      total > 0 &&
-      Math.abs(purchaseSum - total) > tolerance &&
-      Math.abs(grossWithAdjust - total) > tolerance;
+
+    // 検算は「税抜どうし」で行う。仕入行の合計は税抜なので、税込の請求額と比べると
+    // 必ず税額分ズレて誤検知になる（実データで発覚）。
+    // 税抜合計が取れていればそれと、取れていなければ「税込 − 税額」と突き合わせる。
+    const expectedNet = subtotal > 0 ? subtotal : (total > 0 && tax > 0 ? total - tax : 0);
+    const tolerance = Math.max(expectedNet * 0.02, 100); // 2% か 100円の大きい方
+    const amountMismatch = expectedNet > 0 && Math.abs(purchaseSum - expectedNet) > tolerance;
 
     // 仕入先名を既存マスタに突合して候補を返す（自動では紐づけない）。
     const vendorName = (draft.vendorName ?? "").trim();

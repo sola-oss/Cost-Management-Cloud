@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Upload, FileScan, Send, ChevronRight, AlertTriangle, Sparkles, PencilLine } from "lucide-react";
+import { Loader2, Upload, FileScan, Send, ChevronRight, AlertTriangle, Sparkles, PencilLine, Trash2 } from "lucide-react";
 import { ManualEntry } from "./manual-entry";
 import { useToast } from "@/hooks/use-toast";
 import { useStaffMembers } from "@/hooks/use-staff-members";
@@ -152,6 +152,18 @@ export default function ReceivedInvoiceList() {
       if (fileRef.current) fileRef.current.value = "";
     }
   };
+
+  const delMut = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await fetch(`${BASE}/api/received-invoices/${id}`, { method: "DELETE" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message ?? "削除に失敗しました");
+    },
+    onSuccess: () => {
+      toast({ title: "削除しました" });
+      qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
+    },
+    onError: (e) => toast({ title: "削除できません", description: e instanceof Error ? e.message : "", variant: "destructive" }),
+  });
 
   const sendMut = useMutation({
     mutationFn: async () => {
@@ -429,11 +441,28 @@ export default function ReceivedInvoiceList() {
                           </div>
                         </td>
                         <td className="px-2">
-                          <Link href={`/received-invoices/${inv.id}`}>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-primary">
-                              <ChevronRight className="w-4 h-4" />
-                            </Button>
-                          </Link>
+                          <div className="flex items-center gap-0.5">
+                            {inv.status !== "confirmed" && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-slate-300 hover:text-red-500"
+                                title="削除"
+                                onClick={() => {
+                                  if (confirm(`${inv.vendorName || "この請求書"}を削除しますか？\n原本の画像も一緒に消えます。`)) {
+                                    delMut.mutate(inv.id);
+                                  }
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            )}
+                            <Link href={`/received-invoices/${inv.id}`}>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-primary">
+                                <ChevronRight className="w-4 h-4" />
+                              </Button>
+                            </Link>
+                          </div>
                         </td>
                       </tr>
                     );

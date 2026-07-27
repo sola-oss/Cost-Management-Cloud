@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, ArrowLeft, FileText, AlertTriangle, CheckCircle2, Send, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, ArrowLeft, FileText, AlertTriangle, CheckCircle2, Send, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useVendors } from "@/hooks/use-vendors";
 import { formatCurrency } from "@/lib/utils";
@@ -65,6 +65,10 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
   const qc = useQueryClient();
   const [, navigate] = useLocation();
   const [open, setOpen] = useState<Record<string, boolean>>({});
+  // 明細は既定で見せる。ブロックの見出し（納品書No・納品先）に判断材料が無い請求書
+  // （いわさき工房のように納品先の印字が無いもの）では、品名が唯一の手掛かりになるため。
+  // 行数が多いブロックだけ畳む（大田鋼管のような多明細でスクロールが辛くならないように）。
+  const COLLAPSE_OVER = 6;
 
   const { data: vendors = [] } = useVendors<{ id: number; name: string }>();
 
@@ -132,6 +136,19 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
     onError: (e) => toast({ title: "エラー", description: e instanceof Error ? e.message : "", variant: "destructive" }),
   });
 
+  const delMut = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`${BASE}/api/received-invoices/${id}`, { method: "DELETE" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message ?? "削除に失敗しました");
+    },
+    onSuccess: () => {
+      toast({ title: "削除しました" });
+      qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
+      navigate("/received-invoices");
+    },
+    onError: (e) => toast({ title: "削除できません", description: e instanceof Error ? e.message : "", variant: "destructive" }),
+  });
+
   const confirmMut = useMutation({
     mutationFn: async () => {
       const r = await fetch(`${BASE}/api/received-invoices/${id}/confirm`, {
@@ -178,11 +195,25 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
 
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto space-y-4">
-      <Link href="/received-invoices">
-        <button className="text-sm text-slate-500 hover:text-slate-800 flex items-center gap-1">
-          <ArrowLeft className="w-4 h-4" /> 一覧へ戻る
-        </button>
-      </Link>
+      <div className="flex items-center justify-between">
+        <Link href="/received-invoices">
+          <button className="text-sm text-slate-500 hover:text-slate-800 flex items-center gap-1">
+            <ArrowLeft className="w-4 h-4" /> 一覧へ戻る
+          </button>
+        </Link>
+        {data.status !== "confirmed" && (
+          <button
+            className="text-sm text-slate-400 hover:text-red-500 flex items-center gap-1"
+            onClick={() => {
+              if (confirm(`${data.vendorName || "この請求書"}を削除しますか？\n原本の画像も一緒に消えます。`)) {
+                delMut.mutate();
+              }
+            }}
+          >
+            <Trash2 className="w-3.5 h-3.5" /> 削除
+          </button>
+        )}
+      </div>
 
       {/* ヘッダ */}
       <Card>
@@ -241,7 +272,7 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
         {data.blocks.map((b) => {
           const isNon = b.itemIds.length === 0;
           const assigned = b.allPurchaseAssigned;
-          const isOpen = open[b.key] ?? false;
+          const isOpen = open[b.key] ?? b.lineCount <= COLLAPSE_OVER;
           return (
             <Card key={b.key} className={`border-l-4 ${isNon ? "border-l-slate-300 bg-slate-50/60" : assigned ? "border-l-emerald-500 bg-emerald-50/40" : "border-l-amber-500"}`}>
               <CardContent className="p-4 space-y-3">
@@ -254,6 +285,13 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
                       {b.deliveryDate ? `${b.deliveryDate} 納品 ・ ` : ""}{b.lineCount}行
                       {b.deliveryTo ? <> ・ 納品先 <span className="font-semibold text-slate-700">{b.deliveryTo}</span></> : b.slipNo ? <> ・ <span className="text-amber-600">納品先の記載なし</span></> : null}
                     </div>
+                    {/* 品名の要約。畳んでいても何のブロックか分かるようにする */}
+                    {!isNon && (
+                      <div className="text-xs text-slate-600 mt-1 truncate">
+                        {b.lines[0]?.description}
+                        {b.lineCount > 1 && <span className="text-slate-400"> 他{b.lineCount - 1}件</span>}
+                      </div>
+                    )}
                   </div>
                   <div className="text-sm font-bold tabular-nums whitespace-nowrap">{formatCurrency(b.amount)}</div>
                 </div>
@@ -286,14 +324,16 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
                   </div>
                 )}
 
-                <button
-                  type="button"
-                  onClick={() => setOpen((p) => ({ ...p, [b.key]: !isOpen }))}
-                  className="text-xs text-primary hover:underline underline-offset-2 flex items-center gap-1"
-                >
-                  {isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                  明細 {b.lineCount}行を{isOpen ? "閉じる" : "開く"}
-                </button>
+                {b.lineCount > COLLAPSE_OVER && (
+                  <button
+                    type="button"
+                    onClick={() => setOpen((p) => ({ ...p, [b.key]: !isOpen }))}
+                    className="text-xs text-primary hover:underline underline-offset-2 flex items-center gap-1"
+                  >
+                    {isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    明細 {b.lineCount}行を{isOpen ? "閉じる" : "開く"}
+                  </button>
+                )}
 
                 {isOpen && (
                   <table className="w-full text-xs border-t">

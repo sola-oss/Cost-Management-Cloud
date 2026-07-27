@@ -108,10 +108,21 @@ router.get("/", async (req, res) => {
 
       // 予定粗利：請負 − 実行予算
       const plannedProfit = budget > 0 ? contract - budget : null;
+
       // 着地見込み（今のペース）：請負 −（実績原価 ÷ 進捗率）
-      // 進捗が未入力・0%なら計算できない（＝これが着地見込みを出せない理由）
-      const forecastCost = progressRate && progressRate > 0 ? (actual / progressRate) * 100 : null;
+      // ただし実績原価がほとんど計上されていない段階では、この式は極端に楽観的な
+      // 数字になる（例：出来高40%・原価消化1% → 粗利99%）。月初など請求書が
+      // まだ届いていない時期に必ず起きるので、実績が薄いうちは算出しない。
+      const MIN_COST_RATE_FOR_FORECAST = 5; // 原価消化率がこれ未満なら見込みを出さない
+      const enoughCost = costRate != null && costRate >= MIN_COST_RATE_FOR_FORECAST;
+      const canForecast = !!progressRate && progressRate > 0 && enoughCost;
+      const forecastCost = canForecast ? Math.round((actual / progressRate!) * 100) : null;
       const forecastProfit = forecastCost != null && contract > 0 ? contract - forecastCost : null;
+      // 見込みを出せない理由（画面で「—」の意味を説明するため）
+      const forecastUnavailableReason =
+        !progressRate || progressRate <= 0 ? "出来高が未入力"
+        : !enoughCost ? "実績原価がまだ少ない"
+        : null;
 
       // 原価が進捗より何ポイント先行しているか（プラスが大きいほど危険）
       const gap = costRate != null && progressRate != null ? round1(costRate - progressRate) : null;
@@ -135,6 +146,7 @@ router.get("/", async (req, res) => {
         plannedProfitRate: plannedProfit != null && contract > 0 ? round1((plannedProfit / contract) * 100) : null,
         forecastCost,
         forecastProfit,
+        forecastUnavailableReason,
         forecastProfitRate: forecastProfit != null && contract > 0 ? round1((forecastProfit / contract) * 100) : null,
         overBudget: budget > 0 && actual > budget,
       };
@@ -148,7 +160,7 @@ router.get("/", async (req, res) => {
     const plannedProfit = contractTotal - budgetTotal;
 
     // 全体の着地見込みは、見込みが出せる工事だけを合計する（出せない工事は予定値で代替）
-    const forecastProfit = items.reduce((s, i) => s + (i.forecastProfit ?? i.plannedProfit ?? 0), 0);
+    const forecastProfit = Math.round(items.reduce((s, i) => s + (i.forecastProfit ?? i.plannedProfit ?? 0), 0));
 
     // ── 注意が要る工事（危ない順）─────────────────────────────────────────
     const alerts = items

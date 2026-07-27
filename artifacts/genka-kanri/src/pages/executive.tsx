@@ -35,6 +35,7 @@ interface ProjectRow {
   forecastCost: number | null;
   forecastProfit: number | null;
   forecastProfitRate: number | null;
+  forecastUnavailableReason: string | null;
   overBudget: boolean;
 }
 interface AlertRow extends ProjectRow { reasons: string[]; severity: number }
@@ -224,6 +225,9 @@ export default function Executive() {
                   <div className={`font-bold tabular-nums ${profitTone(p.forecastProfitRate)}`}>
                     {p.forecastProfitRate != null ? `${p.forecastProfitRate}%` : "—"}
                   </div>
+                  {p.forecastProfitRate == null && p.forecastUnavailableReason && (
+                    <div className="text-[10px] text-slate-400 leading-tight">{p.forecastUnavailableReason}</div>
+                  )}
                 </div>
               </div>
 
