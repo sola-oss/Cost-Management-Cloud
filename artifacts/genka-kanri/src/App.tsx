@@ -21,6 +21,7 @@ import Vendors from "@/pages/vendors";
 import PurchaseSummary from "@/pages/purchase-summary";
 import ReceivedInvoiceList from "@/pages/received-invoices";
 import ReceivedInvoiceDetail from "@/pages/received-invoices/detail";
+import MyProjects from "@/pages/my-projects";
 import EstimateList from "@/pages/estimates/index";
 import NewEstimate from "@/pages/estimates/new";
 import EstimateDetail from "@/pages/estimates/detail";
@@ -92,6 +93,7 @@ function Router() {
         <Route path="/projects/:id/ledger" component={ProjectLedger} />
         <Route path="/reports" component={Reports} />
         <Route path="/purchases" component={Purchases} />
+        <Route path="/my-projects" component={MyProjects} />
         <Route path="/received-invoices" component={ReceivedInvoiceList} />
         <Route path="/received-invoices/:id">
           {(params) => <ReceivedInvoiceDetail id={parseInt(params.id)} />}

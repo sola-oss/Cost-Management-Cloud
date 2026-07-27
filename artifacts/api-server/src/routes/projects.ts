@@ -36,6 +36,7 @@ function buildProjectListItem(project: typeof projectsTable.$inferSelect, totalB
     clientName: project.clientName,
     contractAmount,
     status: project.status,
+    siteManager: project.siteManager,
     startDate: project.startDate,
     endDate: project.endDate,
     totalBudget,
@@ -47,7 +48,7 @@ function buildProjectListItem(project: typeof projectsTable.$inferSelect, totalB
 
 router.get("/", async (req, res) => {
   try {
-    const { status, search, page = "1", limit = "20" } = req.query as Record<string, string>;
+    const { status, search, siteManager, page = "1", limit = "20" } = req.query as Record<string, string>;
     // 不正な値で .limit(NaN)/.offset(NaN) になり500化するのを防ぎ、上限もクランプする。
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.min(Math.max(1, parseInt(limit) || 20), 2000);
@@ -55,6 +56,10 @@ router.get("/", async (req, res) => {
 
     const conditions = [];
     if (status) conditions.push(eq(projectsTable.status, status as any));
+    // 工事担当で絞る（現場担当者が自分の担当工事だけを見るため）
+    if (siteManager && siteManager.trim()) {
+      conditions.push(eq(projectsTable.siteManager, siteManager.trim()));
+    }
     if (search && search.trim()) {
       const q = `%${search.trim()}%`;
       // 工事名・工事番号・得意先名で検索

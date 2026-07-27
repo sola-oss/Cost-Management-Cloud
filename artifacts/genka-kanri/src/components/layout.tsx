@@ -17,6 +17,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const mainNav = [
     { title: "ダッシュボード", icon: LayoutDashboard, url: "/" },
     { title: "工事一覧", icon: FolderKanban, url: "/projects" },
+    { title: "自分の現場", icon: HardHat, url: "/my-projects" },
   ];
 
   const operationNav = [
