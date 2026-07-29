@@ -84,6 +84,7 @@ export function InvoiceEditor({
   invoiceDate: initialInvoiceDate,
   paymentDueDate: initialPaymentDueDate,
   totalAmount: initialTotalAmount,
+  aiExtracted,
   lines,
   onSaved,
   onCancel,
@@ -92,6 +93,7 @@ export function InvoiceEditor({
   invoiceDate: string | null;
   paymentDueDate: string | null;
   totalAmount: number;
+  aiExtracted: boolean;
   lines: EditorLine[];
   onSaved: () => void;
   onCancel: () => void;
@@ -184,8 +186,31 @@ export function InvoiceEditor({
             <DateInput value={paymentDueDate} onChange={(e) => setPaymentDueDate(e.target.value)} />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">請求額（原本の「今回ご請求額」）</Label>
-            <NumberInput className="text-right" value={totalAmount} onChange={setTotalAmount} />
+            {/* ラベルで「原本の今回ご請求額」と断言しない。AIが読み違えると
+                原本に無い数字が入り、「この金額は何？」と探させることになる。 */}
+            <Label className="text-xs">請求額</Label>
+            <NumberInput
+              className={`text-right ${mismatch ? "border-amber-400" : ""}`}
+              value={totalAmount}
+              onChange={setTotalAmount}
+            />
+            <p className="text-xs text-slate-500">
+              {aiExtracted
+                ? "AIが読み取った金額です。原本の「今回ご請求額」と違っていたら直してください。"
+                : "原本の「今回ご請求額」を入れてください。"}
+            </p>
+            {/* 明細から自動計算はしない。自動にすると、AIが金額を読み違えても
+                必ず一致してしまい検算の警告が二度と出なくなる。代わりに1押しで
+                入れられるようにする（明細を直しても請求額が変わらず戸惑うため）。 */}
+            {mismatch && (
+              <button
+                type="button"
+                onClick={() => setTotalAmount(String(computed))}
+                className="text-xs text-primary hover:underline underline-offset-2"
+              >
+                明細の合計 {formatCurrency(computed)} を入れる
+              </button>
+            )}
           </div>
         </div>
 
@@ -300,7 +325,8 @@ export function InvoiceEditor({
 
         {mismatch && (
           <p className="text-xs text-amber-700">
-            明細から計算した合計が請求額と{formatCurrency(Math.abs(diff))}ずれています。原本を確認してください。
+            明細から計算した合計 {formatCurrency(computed)} が、請求額 {formatCurrency(n(totalAmount))} と
+            {formatCurrency(Math.abs(diff))}ずれています。原本を見て、明細を直すか、上の請求額を直してください。
           </p>
         )}
         {missingWorkType > 0 && (

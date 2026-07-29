@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db, purchaseInvoicesTable, purchaseInvoiceItemsTable, costItemsTable } from "@workspace/db";
 import type { Tx } from "./unique-number";
 
@@ -72,4 +72,24 @@ export function calcTotals(items: Array<{ amount: number; taxRate: number }>) {
   const subtotal = items.reduce((s, i) => s + i.amount, 0);
   const taxAmount = items.reduce((s, i) => s + Math.floor((i.amount * i.taxRate) / 100), 0);
   return { subtotal, taxAmount, totalAmount: subtotal + taxAmount };
+}
+
+/**
+ * 仕入伝票に紐づく cost_items を全削除する。
+ * 伝票を消すとき（仕入入力の削除・受領請求書の確定取り消し）に使う。
+ * これを忘れると原価だけが残る。
+ */
+export async function deleteCostItemsByInvoiceId(tx: Tx, invoiceId: number) {
+  const items = await tx
+    .select({ costItemId: purchaseInvoiceItemsTable.costItemId })
+    .from(purchaseInvoiceItemsTable)
+    .where(eq(purchaseInvoiceItemsTable.purchaseInvoiceId, invoiceId));
+
+  const costItemIds = items
+    .map((i) => i.costItemId)
+    .filter((id): id is number => id != null);
+
+  if (costItemIds.length > 0) {
+    await tx.delete(costItemsTable).where(inArray(costItemsTable.id, costItemIds));
+  }
 }

@@ -13,6 +13,7 @@ import {
 } from "@workspace/db";
 import type { PurchaseInvoiceStatus } from "@workspace/db";
 import { withUniqueNumberTransaction, type Tx } from "../lib/unique-number";
+import { deleteCostItemsByInvoiceId } from "../lib/purchase-invoice-create";
 
 const router: IRouter = Router();
 
@@ -125,21 +126,7 @@ async function syncCostItemsAfterInvoice(
   }
 }
 
-/** 仕入伝票に紐づく cost_items を全削除する */
-async function deleteCostItemsByInvoiceId(tx: Tx, invoiceId: number) {
-  const items = await tx
-    .select({ costItemId: purchaseInvoiceItemsTable.costItemId })
-    .from(purchaseInvoiceItemsTable)
-    .where(eq(purchaseInvoiceItemsTable.purchaseInvoiceId, invoiceId));
-
-  const costItemIds = items
-    .map((i) => i.costItemId)
-    .filter((id): id is number => id != null);
-
-  if (costItemIds.length > 0) {
-    await tx.delete(costItemsTable).where(inArray(costItemsTable.id, costItemIds));
-  }
-}
+// deleteCostItemsByInvoiceId は lib/purchase-invoice-create.ts に移動（確定取り消しと共用）
 
 // GET /api/purchase-invoices
 router.get("/", async (req, res) => {

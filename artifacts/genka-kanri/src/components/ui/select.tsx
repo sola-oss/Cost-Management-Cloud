@@ -106,13 +106,16 @@ const SelectContent = React.forwardRef<
   let visible: React.ReactNode[] = flat
   let matched = itemCount
   if (showSearch && q) {
-    visible = flat.filter((c) => {
+    const hits = flat.filter((c) => {
       if (!isItem(c)) return true
       // 表示テキストに加え、data-search-text（読みがな等の追加検索語）も対象にする
       const props = (c as React.ReactElement).props as Record<string, unknown>
       const extra = typeof props["data-search-text"] === "string" ? (props["data-search-text"] as string) : ""
       return searchMatch(nodeText(c) + " " + extra, q)
     })
+    // 絞り込みの結果、後ろに項目が残らなかったグループ見出しは落とす
+    // （見出しだけが宙に浮いて、該当があるように見えるのを防ぐ）
+    visible = hits.filter((c, i) => (isItem(c) ? true : isItem(hits[i + 1])))
     matched = visible.filter(isItem).length
   }
 

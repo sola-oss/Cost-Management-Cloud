@@ -24,6 +24,11 @@ const router: IRouter = Router();
 
 const MODEL = "claude-sonnet-5";
 
+// 読み取りの「深さ」。指定しないと既定の high になり、請求書1枚ごとに毎回いちばん
+// 深く考えるため待ち時間が伸びる。印字された請求書は浅くても正確に読めるので、
+// 速さと正確さの折り合いをここで決める（low / medium / high / xhigh / max）。
+const EFFORT = (process.env["AI_EXTRACT_EFFORT"] ?? "medium") as "low" | "medium" | "high" | "xhigh" | "max";
+
 // 完成工事原価の4区分。Claude にこのいずれかへ寄せさせる。
 const CATEGORY_ENUM = ["material", "labor", "subcontract", "expense"] as const;
 
@@ -75,6 +80,9 @@ const SYSTEM_PROMPT = `あなたは日本の建設業の経理担当を補助す
 - 日付は YYYY-MM-DD 形式。読み取れない日付は空文字 "" にする。
 - 和暦は必ず西暦に直す。**令和N年 = 西暦(2018+N)年**（例: 令和8年=2026年、令和7年=2025年、令和6年=2024年）。
   請求書内で年が省略され月日だけの行（例「6.5」「6/30」）は、請求日の年に合わせること。
+- 手書きで元号が潰れて読み取りにくいときは**令和として解釈する**（平成は2019年4月で終わっており、
+  いま届く請求書はまず令和。「令和8年」を「平成28年」と読むような取り違えを避ける）。
+  西暦に直した結果が5年以上前になる場合は、元号の読み違いを疑って令和で解釈し直すこと。
 - 伝票番号・納品書番号(slipNo)が行に印字されていれば必ず拾う。これで明細をまとめる。無ければ空文字。
 - 納品先・現場名(deliveryTo)は「印字されているものだけ」拾う。手書きの現場名は読まない（空文字にする）。
 - 区分(category)は内容から判断して 材料費/労務費/外注費/経費 のいずれかに寄せる。難しければ material。
@@ -127,7 +135,7 @@ router.post("/purchase-invoice", async (req, res) => {
       model: MODEL,
       max_tokens: 32000,
       system: SYSTEM_PROMPT,
-      output_config: { format: { type: "json_schema", schema: DRAFT_SCHEMA } },
+      output_config: { effort: EFFORT, format: { type: "json_schema", schema: DRAFT_SCHEMA } },
       messages: [
         {
           role: "user",
@@ -162,7 +170,7 @@ router.post("/purchase-invoice", async (req, res) => {
       subtotal?: number;
       taxAmount?: number;
       totalAmount?: number;
-      items?: Array<{ amount?: number; isNonPurchase?: boolean }>;
+      items?: Array<{ amount?: number; taxRate?: number; isNonPurchase?: boolean }>;
     };
     try {
       draft = JSON.parse(textBlock.text);
@@ -193,7 +201,18 @@ router.post("/purchase-invoice", async (req, res) => {
     // 以前は2%の許容にしており、返品行の取り違え（3,532円のズレ）を見逃していた。
     const tolerance = Math.max(Math.round(expectedNet * 0.005), 100); // 0.5% か 100円の大きい方
     const amountDiff = expectedNet > 0 ? Math.round(purchaseSum - expectedNet) : 0;
-    const amountMismatch = expectedNet > 0 && Math.abs(amountDiff) > tolerance;
+    let amountMismatch = expectedNet > 0 && Math.abs(amountDiff) > tolerance;
+
+    // 税抜も税額も読めなかった場合（手書きの請求書でよく起きる）、上の検算は
+    // expectedNet=0 になって素通りしていた。小川板金の実物では明細合計52,800に対し
+    // 請求額310,600と読み違えていたのに、警告が出なかった。
+    // 税込どうしでも突き合わせて、桁違いを拾えるようにする。
+    if (!amountMismatch && expectedNet === 0 && total > 0) {
+      const grossFromLines = items
+        .reduce((s, it) => s + num(it.amount) * (it.isNonPurchase ? 1 : 1 + num(it.taxRate) / 100), 0);
+      const grossTolerance = Math.max(Math.round(total * 0.01), 100);
+      amountMismatch = Math.abs(grossFromLines - total) > grossTolerance;
+    }
 
     // 仕入先名を既存マスタに突合して候補を返す（自動では紐づけない）。
     const vendorName = (draft.vendorName ?? "").trim();

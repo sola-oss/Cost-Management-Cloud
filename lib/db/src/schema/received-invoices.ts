@@ -74,6 +74,14 @@ export const receivedInvoiceItemsTable = pgTable("received_invoice_items", {
   taxRate: numeric("tax_rate", { precision: 5, scale: 2 }).notNull().default("10"),
   // 現場担当者が割り当てる工事。割当前は null。
   projectId: integer("project_id").references(() => projectsTable.id, { onDelete: "set null" }),
+  // 誰がこの行の工事を選んだか。「返す」を押したとき、その人が選んだ行だけを
+  // 固定するために使う（他の人が選択中の行まで巻き込まないため）。
+  // 事務が選んだ場合は null。
+  assignedByStaffId: integer("assigned_by_staff_id").references(() => staffMembersTable.id, { onDelete: "set null" }),
+  // 現場担当者が「返す」を押した時点で固定される。1枚を複数の現場で分ける場合、
+  // 書類全体はまだ未回答のまま残るため、返した人の分だけをここで守る。
+  // 固定後は割当を変更できない（差し戻すと全員ぶん解除される）。
+  lockedAt: timestamp("locked_at", { withTimezone: true }),
   // 仕入でない行（入金・繰越・値引・小計・合計・消費税等）。集計・確定・割当対象から除外する。
   // いわさき工房の「入金 振込 -43,670」のような相殺行を原価に取り込まないための旗。
   isNonPurchase: boolean("is_non_purchase").notNull().default(false),

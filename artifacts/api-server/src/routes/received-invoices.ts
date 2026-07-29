@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, desc, inArray, ne } from "drizzle-orm";
+import { eq, and, desc, inArray, ne, sql, isNull, isNotNull } from "drizzle-orm";
 import {
   db,
   receivedInvoicesTable,
@@ -23,6 +23,7 @@ import {
   generateVoucherNumber,
   syncCostItemsAfterInvoice,
   calcTotals,
+  deleteCostItemsByInvoiceId,
 } from "../lib/purchase-invoice-create";
 
 const router: IRouter = Router();
@@ -63,6 +64,7 @@ interface ItemRow {
   taxRate: string;
   projectId: number | null;
   isNonPurchase: boolean;
+  lockedAt: Date | null;
 }
 
 function fmtItem(i: ItemRow) {
@@ -82,6 +84,7 @@ function fmtItem(i: ItemRow) {
     taxRate: parseN(i.taxRate),
     projectId: i.projectId,
     isNonPurchase: i.isNonPurchase,
+    locked: i.lockedAt != null,
   };
 }
 
@@ -110,6 +113,8 @@ function buildBlocks(items: ItemRow[]) {
       projectId: projectIds.size === 1 ? [...projectIds][0] : null,
       hasNonPurchase: lines.some((l) => l.isNonPurchase),
       allPurchaseAssigned: purchaseLines.length > 0 && purchaseLines.every((l) => l.projectId != null),
+      // 誰かが「返す」を押して固定された分。あとから他の人に書き換えられないようにする。
+      locked: purchaseLines.length > 0 && purchaseLines.every((l) => l.lockedAt != null),
     };
   });
 }
@@ -211,37 +216,58 @@ router.post("/", async (req, res) => {
 
 // ── GET /  未回答一覧（事務用）──────────────────────────────────────────────
 // ?status= でフィルタ（省略時は cancelled 以外すべて）
+// ?scope=open で確定前（下書き・未回答・確認待ち）だけに絞る
+// ?limit= で件数を制限（既定300）。使い続けると確定済がたまり、全件返すのが重くなるため。
 router.get("/", async (req, res) => {
   try {
     const statusFilter = req.query["status"] as string | undefined;
+    const scope = req.query["scope"] as string | undefined;
     // 現場担当者の「受信」用。自分が送り先になっているものだけを返す。
     const forStaff = req.query["staffMemberId"] ? Number(req.query["staffMemberId"]) : null;
+    const limitParam = Number(req.query["limit"]);
+    const limit = Number.isInteger(limitParam) && limitParam > 0 ? Math.min(limitParam, 1000) : 300;
 
     const baseWhere = statusFilter
       ? eq(receivedInvoicesTable.status, statusFilter as ReceivedInvoiceStatus)
-      : ne(receivedInvoicesTable.status, "cancelled");
+      : scope === "open"
+        ? inArray(receivedInvoicesTable.status, ["draft", "sent", "answered"])
+        : ne(receivedInvoicesTable.status, "cancelled");
 
-    let invoices;
+    // 並び順は「手を動かす必要がある順」。確定済は後ろへ回し、確定前は支払期日の近い順。
+    // 期日の無いものは最後（画面の見出し「支払期日が近い順」と実際の並びを合わせる）。
+    const orderBy = [
+      sql`case when ${receivedInvoicesTable.status} = 'confirmed' then 1 else 0 end asc`,
+      sql`${receivedInvoicesTable.paymentDueDate} asc nulls last`,
+      desc(receivedInvoicesTable.createdAt),
+    ];
+
+    let rows;
     if (forStaff && Number.isInteger(forStaff)) {
       const mine = await db
         .select({ id: receivedInvoiceRecipientsTable.receivedInvoiceId })
         .from(receivedInvoiceRecipientsTable)
         .where(eq(receivedInvoiceRecipientsTable.staffMemberId, forStaff));
       const myIds = mine.map((m) => m.id);
-      invoices = myIds.length === 0 ? [] : await db
+      rows = myIds.length === 0 ? [] : await db
         .select()
         .from(receivedInvoicesTable)
         .where(and(baseWhere, inArray(receivedInvoicesTable.id, myIds)))
-        .orderBy(desc(receivedInvoicesTable.createdAt));
+        .orderBy(...orderBy)
+        .limit(limit + 1);
     } else {
-      invoices = await db
+      rows = await db
         .select()
         .from(receivedInvoicesTable)
         .where(baseWhere)
-        .orderBy(desc(receivedInvoicesTable.createdAt));
+        .orderBy(...orderBy)
+        .limit(limit + 1);
     }
 
-    if (invoices.length === 0) return res.json({ items: [] });
+    // 1件多く取って、続きがあるかを画面に知らせる（黙って切り捨てない）
+    const hasMore = rows.length > limit;
+    const invoices = hasMore ? rows.slice(0, limit) : rows;
+
+    if (invoices.length === 0) return res.json({ items: [], hasMore: false });
 
     const ids = invoices.map((i) => i.id);
     const allItems = await db
@@ -300,7 +326,7 @@ router.get("/", async (req, res) => {
       };
     });
 
-    return res.json({ items: out });
+    return res.json({ items: out, hasMore });
   } catch (err) {
     req.log.error({ err }, "Failed to list received invoices");
     return res.status(500).json({ message: "一覧の取得に失敗しました。" });
@@ -331,10 +357,34 @@ router.get("/:id", async (req, res) => {
       .innerJoin(staffMembersTable, eq(receivedInvoiceRecipientsTable.staffMemberId, staffMembersTable.id))
       .where(eq(receivedInvoiceRecipientsTable.receivedInvoiceId, id));
 
+    // ── 二重取り込みの検知 ───────────────────────────────────────────────
+    // 同じ請求書をもう一度取り込んでも今までは何も言わなかった。確定すると原価が
+    // そのまま倍になる。同じ仕入先・同じ請求日・同じ請求額を「疑わしい」として出す。
+    // 同額の請求が別々に届くこともあるので、止めはしない（警告だけ）。
+    const duplicates =
+      inv.vendorId && inv.invoiceDate
+        ? await db
+            .select({
+              id: receivedInvoicesTable.id,
+              status: receivedInvoicesTable.status,
+              createdAt: receivedInvoicesTable.createdAt,
+            })
+            .from(receivedInvoicesTable)
+            .where(and(
+              ne(receivedInvoicesTable.id, id),
+              eq(receivedInvoicesTable.vendorId, inv.vendorId),
+              eq(receivedInvoicesTable.invoiceDate, inv.invoiceDate),
+              eq(receivedInvoicesTable.totalAmount, inv.totalAmount),
+              ne(receivedInvoicesTable.status, "cancelled"),
+            ))
+            .orderBy(desc(receivedInvoicesTable.createdAt))
+        : [];
+
     return res.json({
       id: inv.id,
       vendorId: inv.vendorId,
       vendorName: inv.vendorName,
+      duplicates,
       invoiceDate: inv.invoiceDate,
       paymentDueDate: inv.paymentDueDate,
       status: inv.status,
@@ -417,11 +467,13 @@ router.post("/:id/send", async (req, res) => {
 });
 
 // ── PATCH /:id/assign  明細に工事を割り当てる（現場担当者）──────────────────────
-// body: { assignments: [{ itemId, projectId | null }] }
+// body: { assignments: [{ itemId, projectId | null }], staffMemberId? }
 router.patch("/:id/assign", async (req, res) => {
   try {
     const id = Number(req.params["id"]);
     const assignments = (req.body?.assignments ?? []) as Array<{ itemId: number; projectId: number | null }>;
+    // 誰が選んだかを残す。「返す」でその人の分だけを固定するために使う。
+    const staffMemberId = req.body?.staffMemberId as number | undefined;
     if (!Array.isArray(assignments)) return res.status(400).json({ message: "assignments が不正です" });
 
     const [inv] = await db.select().from(receivedInvoicesTable).where(eq(receivedInvoicesTable.id, id));
@@ -429,12 +481,40 @@ router.patch("/:id/assign", async (req, res) => {
     if (inv.status === "confirmed" || inv.status === "cancelled") {
       return res.status(409).json({ message: "確定済み/取消済みのため変更できません。" });
     }
+    // 現場から返ってきたあとは動かせない。事務が見た内容と確定される内容が
+    // ずれるのを防ぐため。直すときは差し戻して現場に選び直してもらう。
+    if (inv.status === "answered") {
+      return res.status(409).json({ message: "現場から返ってきた書類は変更できません。直すときは差し戻してください。" });
+    }
+
+    // 返答済みの分（固定された行）は、まだ書類全体が未回答でも書き換えさせない。
+    // 1枚を複数の現場で分けるとき、先に返した人の回答が黙って差し替わるのを防ぐ。
+    const targetIds = assignments.map((a) => a.itemId).filter((x) => Number.isInteger(x));
+    if (targetIds.length > 0) {
+      const locked = await db
+        .select({ id: receivedInvoiceItemsTable.id })
+        .from(receivedInvoiceItemsTable)
+        .where(and(
+          eq(receivedInvoiceItemsTable.receivedInvoiceId, id),
+          inArray(receivedInvoiceItemsTable.id, targetIds),
+          isNotNull(receivedInvoiceItemsTable.lockedAt),
+        ));
+      if (locked.length > 0) {
+        return res.status(409).json({
+          message: "この明細は担当者が回答済みのため変更できません。直すときは事務に差し戻してもらってください。",
+        });
+      }
+    }
 
     await db.transaction(async (tx) => {
       for (const a of assignments) {
         await tx
           .update(receivedInvoiceItemsTable)
-          .set({ projectId: a.projectId ?? null, updatedAt: new Date() })
+          .set({
+            projectId: a.projectId ?? null,
+            assignedByStaffId: a.projectId == null ? null : (staffMemberId ?? null),
+            updatedAt: new Date(),
+          })
           .where(and(eq(receivedInvoiceItemsTable.id, a.itemId), eq(receivedInvoiceItemsTable.receivedInvoiceId, id)));
       }
     });
@@ -586,7 +666,14 @@ router.patch("/:id", async (req, res) => {
   }
 });
 
-// ── POST /:id/respond  現場担当者の回答送信（全割当済なら answered へ）───────────
+// ── POST /:id/respond  現場担当者の回答送信 ────────────────────────────────────
+//
+// 1枚の請求書が複数の現場にまたがると、自分の分を選び終えても他人の分が残るため、
+// 「全ブロック埋まるまで誰も返せない」状態になっていた。誰かが他人の現場まで
+// 当てずっぽうで選ぶか、全員が待ち続けるかの二択になる。
+// そこで、自分の分だけ返せるようにする。回答した事実は担当者ごとに記録し、
+// 書類が「確認待ち（answered）」に進むのは全ブロックが埋まったときだけにする。
+//
 // body: { staffMemberId? }
 router.post("/:id/respond", async (req, res) => {
   try {
@@ -595,18 +682,15 @@ router.post("/:id/respond", async (req, res) => {
 
     const [inv] = await db.select().from(receivedInvoicesTable).where(eq(receivedInvoicesTable.id, id));
     if (!inv) return res.status(404).json({ message: "見つかりません" });
+    if (inv.status === "confirmed" || inv.status === "cancelled") {
+      return res.status(409).json({ message: "この請求書は回答できない状態です。" });
+    }
 
     const items = (await db
       .select()
       .from(receivedInvoiceItemsTable)
       .where(eq(receivedInvoiceItemsTable.receivedInvoiceId, id))) as unknown as ItemRow[];
-    if (unassignedCount(items) > 0) {
-      return res.status(400).json({
-        message: "未割当が残っています。すべての明細に工事を割り当ててください。",
-        unassignedAmount: unassignedAmount(items),
-        unassignedCount: unassignedCount(items),
-      });
-    }
+    const remaining = unassignedCount(items);
 
     await db.transaction(async (tx) => {
       if (staffMemberId) {
@@ -618,17 +702,79 @@ router.post("/:id/respond", async (req, res) => {
             eq(receivedInvoiceRecipientsTable.staffMemberId, staffMemberId),
           ));
       }
-      // 全割当済 → answered（事務の確認待ち）
+      // 返した人の回答をここで確定させ、あとから他の人に書き換えられないようにする。
+      // 全部埋まった（＝これで確認待ちに上がる）ときは全行、途中のときは
+      // 「その人が選んだ行」だけを固定する。他の人が選択中の行まで巻き込むと、
+      // 選び直せないまま固まってしまうため。
+      await tx
+        .update(receivedInvoiceItemsTable)
+        .set({ lockedAt: new Date(), updatedAt: new Date() })
+        .where(and(
+          eq(receivedInvoiceItemsTable.receivedInvoiceId, id),
+          isNotNull(receivedInvoiceItemsTable.projectId),
+          isNull(receivedInvoiceItemsTable.lockedAt),
+          ...(remaining === 0 || !staffMemberId
+            ? []
+            : [eq(receivedInvoiceItemsTable.assignedByStaffId, staffMemberId)]),
+        ));
+      // 全部埋まったときだけ事務の確認待ちへ進める。残っていれば sent のまま、
+      // 他の担当者が続きを選べる状態を保つ。
+      if (remaining === 0) {
+        await tx
+          .update(receivedInvoicesTable)
+          .set({ status: "answered", updatedAt: new Date() })
+          .where(eq(receivedInvoicesTable.id, id));
+      }
+    });
+
+    return res.json({
+      ok: true,
+      status: remaining === 0 ? "answered" : "sent",
+      unassignedCount: remaining,
+      unassignedAmount: unassignedAmount(items),
+    });
+  } catch (err) {
+    req.log.error({ err }, "Failed to respond received invoice");
+    return res.status(500).json({ message: "送信に失敗しました。" });
+  }
+});
+
+// ── POST /:id/reopen  事務が現場へ差し戻す（確認待ち → 未回答）──────────────────
+//
+// 現場から返ってきた書類は工事を選び直せないようにしてある（事務が見た内容と
+// 確定される内容が食い違わないため）。工事が間違っていた場合の逃げ道がこれ。
+// 回答済みの印を全員分消し、現場の「届いている書類」に戻す。
+router.post("/:id/reopen", async (req, res) => {
+  try {
+    const id = Number(req.params["id"]);
+    const [inv] = await db.select().from(receivedInvoicesTable).where(eq(receivedInvoicesTable.id, id));
+    if (!inv) return res.status(404).json({ message: "見つかりません" });
+    // 確認待ちだけでなく、途中まで返ってきている未回答も対象にする。
+    // 先に返した人の分が固定されているため、それを直す手段がここしかない。
+    if (inv.status !== "answered" && inv.status !== "sent") {
+      return res.status(409).json({ message: "現場に出ている書類だけ差し戻せます。" });
+    }
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(receivedInvoiceRecipientsTable)
+        .set({ respondedAt: null })
+        .where(eq(receivedInvoiceRecipientsTable.receivedInvoiceId, id));
+      // 固定を解除して、現場が選び直せる状態に戻す（工事の選択自体は残す）。
+      await tx
+        .update(receivedInvoiceItemsTable)
+        .set({ lockedAt: null, updatedAt: new Date() })
+        .where(eq(receivedInvoiceItemsTable.receivedInvoiceId, id));
       await tx
         .update(receivedInvoicesTable)
-        .set({ status: "answered", updatedAt: new Date() })
+        .set({ status: "sent", updatedAt: new Date() })
         .where(eq(receivedInvoicesTable.id, id));
     });
 
     return res.json({ ok: true });
   } catch (err) {
-    req.log.error({ err }, "Failed to respond received invoice");
-    return res.status(500).json({ message: "送信に失敗しました。" });
+    req.log.error({ err }, "Failed to reopen received invoice");
+    return res.status(500).json({ message: "差し戻しに失敗しました。" });
   }
 });
 
@@ -649,6 +795,7 @@ router.post("/:id/confirm", async (req, res) => {
       return res.status(400).json({ message: "仕入先が未設定です。仕入先を選んでから確定してください。" });
     }
 
+    const prevStatus = inv.status;
     const items = (await db
       .select()
       .from(receivedInvoiceItemsTable)
@@ -683,8 +830,22 @@ router.post("/:id/confirm", async (req, res) => {
       byProject.set(pid, arr);
     }
 
+    // ── 二重確定の防止 ─────────────────────────────────────────────────────
+    // 確定を同時に2本たたく／二度押しする／通信が遅くて再送される、のいずれでも
+    // 仕入伝票が2組できて原価が二重に計上されていた（実際に再現）。
+    // 先に「確定済み」を書き込めた1本だけが伝票の作成に進めるようにする。
+    const claimed = await db
+      .update(receivedInvoicesTable)
+      .set({ status: "confirmed", confirmedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(receivedInvoicesTable.id, id), ne(receivedInvoicesTable.status, "confirmed")))
+      .returning({ id: receivedInvoicesTable.id });
+    if (claimed.length === 0) {
+      return res.status(409).json({ message: "すでに確定済みです。" });
+    }
+
     const created: Array<{ projectId: number; voucherNumber: string; totalAmount: number }> = [];
 
+    try {
     // 工事ごとに1件ずつ採番して作る（採番衝突はトランザクション単位でリトライ）
     for (const [projectId, group] of byProject) {
       const lines = group
@@ -753,16 +914,75 @@ router.post("/:id/confirm", async (req, res) => {
 
       created.push({ projectId, voucherNumber: madeVoucher, totalAmount: totals.totalAmount });
     }
-
-    await db
-      .update(receivedInvoicesTable)
-      .set({ status: "confirmed", confirmedAt: new Date(), updatedAt: new Date() })
-      .where(eq(receivedInvoicesTable.id, id));
+    } catch (err) {
+      // 伝票づくりの途中で落ちたら、確定の印を元に戻して再挑戦できるようにする。
+      // ここで戻さないと「確定済みなのに伝票が無い」書類が残る。
+      await db
+        .update(receivedInvoicesTable)
+        .set({ status: prevStatus, confirmedAt: null, updatedAt: new Date() })
+        .where(eq(receivedInvoicesTable.id, id));
+      throw err;
+    }
 
     return res.json({ ok: true, created });
   } catch (err) {
     req.log.error({ err }, "Failed to confirm received invoice");
     return res.status(500).json({ message: "確定に失敗しました。" });
+  }
+});
+
+// ── POST /:id/unconfirm  確定を取り消す（確定済 → 確認待ち）────────────────────
+//
+// 工事を間違えたまま確定すると、これまでは伝票を手で消して仕入入力で作り直すしか
+// 手がなかった。ここで、生成した仕入伝票と原価をまとめて取り消し、書類を確認待ちに
+// 戻す。戻したあとは差し戻して現場に選び直してもらう流れになる。
+//
+// 支払済・査定済の伝票が1枚でもあるときは取り消さない（支払・査定の整合を壊すため）。
+router.post("/:id/unconfirm", async (req, res) => {
+  try {
+    const id = Number(req.params["id"]);
+    const [inv] = await db.select().from(receivedInvoicesTable).where(eq(receivedInvoicesTable.id, id));
+    if (!inv) return res.status(404).json({ message: "見つかりません" });
+    if (inv.status !== "confirmed") {
+      return res.status(409).json({ message: "確定済みの書類だけ取り消せます。" });
+    }
+
+    const vouchers = await db
+      .select({ id: purchaseInvoicesTable.id, voucherNumber: purchaseInvoicesTable.voucherNumber, status: purchaseInvoicesTable.status })
+      .from(purchaseInvoicesTable)
+      .where(eq(purchaseInvoicesTable.receivedInvoiceId, id));
+
+    const blocked = vouchers.filter((v) => v.status === "paid" || v.status === "assessed");
+    if (blocked.length > 0) {
+      return res.status(409).json({
+        message: `支払済・査定済の仕入伝票があるため取り消せません（${blocked.map((v) => v.voucherNumber).join(", ")}）。先に支払・査定を取り消してください。`,
+      });
+    }
+
+    await db.transaction(async (tx) => {
+      for (const v of vouchers) {
+        // 原価（cost_items）を先に消してから伝票を消す。順番を逆にすると原価が残る。
+        await deleteCostItemsByInvoiceId(tx, v.id);
+        await tx.delete(purchaseInvoicesTable).where(eq(purchaseInvoicesTable.id, v.id));
+      }
+      // 誰が見ても分かるように、取り消した事実を備考へ残す。
+      const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+      const note = `${stamp} 確定を取り消し（仕入伝票${vouchers.length}件を削除）`;
+      await tx
+        .update(receivedInvoicesTable)
+        .set({
+          status: "answered",
+          confirmedAt: null,
+          notes: inv.notes ? `${inv.notes}\n${note}` : note,
+          updatedAt: new Date(),
+        })
+        .where(eq(receivedInvoicesTable.id, id));
+    });
+
+    return res.json({ ok: true, deleted: vouchers.map((v) => v.voucherNumber) });
+  } catch (err) {
+    req.log.error({ err }, "Failed to unconfirm received invoice");
+    return res.status(500).json({ message: "確定の取り消しに失敗しました。" });
   }
 });
 

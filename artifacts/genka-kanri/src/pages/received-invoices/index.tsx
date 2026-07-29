@@ -72,15 +72,23 @@ export default function ReceivedInvoiceList() {
     queryFn: async () => {
       const r = await fetch(`${BASE}/api/received-invoices`);
       if (!r.ok) throw new Error("failed");
-      return r.json() as Promise<{ items: InvoiceRow[] }>;
+      return r.json() as Promise<{ items: InvoiceRow[]; hasMore?: boolean }>;
     },
   });
   const items = data?.items ?? [];
 
+  const drafts = items.filter((i) => i.status === "draft");
   const pending = items.filter((i) => i.status === "sent");
   const waiting = items.filter((i) => i.status === "answered");
-  const unassignedTotal = pending.reduce((s, i) => s + i.unassignedAmount, 0);
-  const confirmedThisMonth = items.filter((i) => i.status === "confirmed").length;
+  const confirmed = items.filter((i) => i.status === "confirmed");
+  // 確定前ぜんぶの未割当。下書きのまま止まっている分も原価に入っていないので数える。
+  const unassignedTotal = [...drafts, ...pending, ...waiting].reduce((s, i) => s + i.unassignedAmount, 0);
+
+  // 一覧のタブ。使い続けると確定済がたまり、対応が要るものが埋もれるため既定は「対応中」。
+  const [tab, setTab] = useState<"open" | "confirmed" | "all">("open");
+  const shown = tab === "open" ? items.filter((i) => i.status !== "confirmed")
+    : tab === "confirmed" ? confirmed
+    : items;
 
   // ── AI読み取り → 受領請求書を作成 ─────────────────────────────────────────
   const handleFile = async (file: File) => {
@@ -100,6 +108,11 @@ export default function ReceivedInvoiceList() {
       });
       if (!ex.ok) {
         const e = await ex.json().catch(() => ({}));
+        // AIキーが未設定のときは、環境変数の話を使う人に見せても手が止まるだけなので
+        // 手入力へ案内する。
+        if (ex.status === 503) {
+          throw new Error("AIの読み取りは今は使えません。下の「AIを使わず手で入力する」からお願いします。");
+        }
         throw new Error(e.message ?? "AI読み取りに失敗しました");
       }
       const { draft, vendorMatches, amountMismatch, amountDiff } = await ex.json();
@@ -170,18 +183,18 @@ export default function ReceivedInvoiceList() {
         </p>
       </div>
 
-      {/* サマリー */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* サマリー。下書き（未送信）を先頭に置く。どのKPIにも出ないと送り忘れが放置される。 */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <Card className="border-none bg-slate-50">
           <CardContent className="p-4">
-            <div className="text-xs text-slate-500">未回答</div>
-            <div className={`text-2xl font-bold ${pending.length > 0 ? "text-amber-600" : "text-slate-400"}`}>{pending.length}</div>
+            <div className="text-xs text-slate-500">下書き（未送信）</div>
+            <div className={`text-2xl font-bold ${drafts.length > 0 ? "text-amber-600" : "text-slate-400"}`}>{drafts.length}</div>
           </CardContent>
         </Card>
         <Card className="border-none bg-slate-50">
           <CardContent className="p-4">
-            <div className="text-xs text-slate-500">未割当の合計</div>
-            <div className={`text-2xl font-bold ${unassignedTotal > 0 ? "text-amber-600" : "text-slate-400"}`}>{formatCurrency(unassignedTotal)}</div>
+            <div className="text-xs text-slate-500">未回答</div>
+            <div className={`text-2xl font-bold ${pending.length > 0 ? "text-amber-600" : "text-slate-400"}`}>{pending.length}</div>
           </CardContent>
         </Card>
         <Card className="border-none bg-slate-50">
@@ -192,8 +205,15 @@ export default function ReceivedInvoiceList() {
         </Card>
         <Card className="border-none bg-slate-50">
           <CardContent className="p-4">
+            <div className="text-xs text-slate-500">確定前の未割当</div>
+            <div className={`text-2xl font-bold ${unassignedTotal > 0 ? "text-amber-600" : "text-slate-400"}`}>{formatCurrency(unassignedTotal)}</div>
+            <div className="text-[11px] text-slate-400 mt-0.5">まだ原価に入っていない額</div>
+          </CardContent>
+        </Card>
+        <Card className="border-none bg-slate-50">
+          <CardContent className="p-4">
             <div className="text-xs text-slate-500">確定済</div>
-            <div className="text-2xl font-bold text-emerald-600">{confirmedThisMonth}</div>
+            <div className="text-2xl font-bold text-emerald-600">{confirmed.length}</div>
           </CardContent>
         </Card>
       </div>
@@ -260,15 +280,39 @@ export default function ReceivedInvoiceList() {
 
       {/* 一覧 */}
       <Card>
-        <CardHeader className="py-3 border-b flex flex-row items-center justify-between">
-          <CardTitle className="text-sm font-semibold text-slate-700">受け取った書類</CardTitle>
-          <span className="text-xs text-slate-400">支払期日が近い順に注意してください</span>
+        <CardHeader className="py-3 border-b space-y-2">
+          <div className="flex flex-row items-center justify-between gap-3 flex-wrap">
+            <CardTitle className="text-sm font-semibold text-slate-700">受け取った書類</CardTitle>
+            <span className="text-xs text-slate-400">確定前のものを、支払期日が近い順に並べています</span>
+          </div>
+          <div className="flex items-center gap-1">
+            {([
+              { key: "open" as const, label: `対応中 ${items.filter((i) => i.status !== "confirmed").length}` },
+              { key: "confirmed" as const, label: `確定済 ${confirmed.length}` },
+              { key: "all" as const, label: "すべて" },
+            ]).map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className={`px-3 py-1 rounded-md text-xs transition-colors ${
+                  tab === t.key ? "bg-primary/10 text-primary font-semibold" : "text-slate-500 hover:bg-slate-50"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           {isLoading ? (
             <div className="py-10 text-center text-slate-400">読み込み中…</div>
-          ) : items.length === 0 ? (
-            <div className="py-10 text-center text-slate-400">まだ受け取った書類がありません</div>
+          ) : shown.length === 0 ? (
+            <div className="py-10 text-center text-slate-400">
+              {items.length === 0 ? "まだ受け取った書類がありません"
+                : tab === "open" ? "対応が必要な書類はありません"
+                : "確定済の書類はありません"}
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm min-w-[840px]">
@@ -285,7 +329,7 @@ export default function ReceivedInvoiceList() {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((inv) => {
+                  {shown.map((inv) => {
                     const st = STATUS_LABEL[inv.status] ?? STATUS_LABEL["draft"];
                     const left = daysUntil(inv.paymentDueDate);
                     const elapsed = daysSince(inv.sentAt);
@@ -319,7 +363,15 @@ export default function ReceivedInvoiceList() {
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <Badge variant="outline" className={`text-xs ${st.cls}`}>{st.label}</Badge>
+                          {/* 複数人に送った書類は、全員が返すまで「未回答」のままになる。
+                              一部が返している途中と、誰も手を付けていないのは別物なので分ける。 */}
+                          {inv.status === "sent" && inv.recipients.some((r) => r.respondedAt) ? (
+                            <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                              一部回答 {inv.recipients.filter((r) => r.respondedAt).length}/{inv.recipients.length}
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className={`text-xs ${st.cls}`}>{st.label}</Badge>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums">
                           {elapsed == null ? <span className="text-slate-300">—</span> : <span className={elapsed >= 5 ? "font-semibold text-amber-600" : "text-slate-600"}>{elapsed}日</span>}
@@ -377,6 +429,11 @@ export default function ReceivedInvoiceList() {
                   })}
                 </tbody>
               </table>
+              {data?.hasMore && (
+                <p className="px-4 py-2.5 text-xs text-slate-400 border-t">
+                  古い書類は表示していません（新しい300件まで）。確定前のものはすべてこの中にあります。
+                </p>
+              )}
             </div>
           )}
         </CardContent>

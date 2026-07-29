@@ -43,6 +43,7 @@ interface InboxItem {
   unassignedCount: number;
   blockCount: number;
   assignedBlockCount: number;
+  recipients: { staffMemberId: number; name: string; respondedAt: string | null }[];
 }
 
 interface MonitorItem {
@@ -122,7 +123,10 @@ function InboxSection({ staffId }: { staffId: number }) {
   });
 
   const items = (data?.items ?? []).filter((i) => i.status === "sent" || i.status === "answered");
-  const unanswered = items.filter((i) => i.status === "sent");
+  // 自分が返したかどうかで数える。1枚を複数人で分ける場合、自分の分を返しても
+  // 書類は「未回答」のまま残るので、状態だけで数えるといつまでも催促されてしまう。
+  const myAnswer = (i: InboxItem) => i.recipients.find((r) => r.staffMemberId === staffId)?.respondedAt ?? null;
+  const unanswered = items.filter((i) => i.status === "sent" && !myAnswer(i));
 
   if (isLoading) return null;
   if (items.length === 0) return null;
@@ -143,6 +147,7 @@ function InboxSection({ staffId }: { staffId: number }) {
         <div className="space-y-2">
           {items.map((inv) => {
             const done = inv.status === "answered";
+            const iAnswered = myAnswer(inv) != null;
             return (
               <Link key={inv.id} href={`/received-invoices/${inv.id}`}>
                 <div className="bg-white rounded-md border p-3 hover:border-primary transition-colors cursor-pointer">
@@ -156,6 +161,10 @@ function InboxSection({ staffId }: { staffId: number }) {
                       <div className="text-xs mt-1">
                         {done ? (
                           <span className="text-emerald-600">回答済み（事務の確認待ち）</span>
+                        ) : iAnswered ? (
+                          <span className="text-emerald-600">
+                            自分の分は返しました（残り {inv.blockCount - inv.assignedBlockCount} ブロックは他の方）
+                          </span>
                         ) : (
                           <span className="text-amber-700">
                             工事を選んでください（残り {inv.blockCount - inv.assignedBlockCount} ブロック）

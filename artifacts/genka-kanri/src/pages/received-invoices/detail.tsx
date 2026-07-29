@@ -4,8 +4,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, ArrowLeft, FileText, AlertTriangle, CheckCircle2, Send, ChevronDown, ChevronUp, Trash2, PencilLine, Plus } from "lucide-react";
+import { Loader2, ArrowLeft, FileText, AlertTriangle, CheckCircle2, Send, ChevronDown, ChevronUp, Trash2, PencilLine, Plus, Undo2 } from "lucide-react";
 import { InvoiceEditor } from "./editor";
 import { useToast } from "@/hooks/use-toast";
 import { useVendors } from "@/hooks/use-vendors";
@@ -44,6 +45,8 @@ interface Block {
   projectId: number | null;
   hasNonPurchase: boolean;
   allPurchaseAssigned: boolean;
+  /** 担当者が「返す」を押して固定された。差し戻すまで変更できない */
+  locked: boolean;
 }
 interface Detail {
   id: number;
@@ -62,8 +65,10 @@ interface Detail {
   unassignedAmount: number;
   unassignedCount: number;
   recipients: { staffMemberId: number; name: string; respondedAt: string | null }[];
+  /** 同じ仕入先・請求日・請求額の書類（二重取り込みの疑い） */
+  duplicates: { id: number; status: string; createdAt: string }[];
 }
-interface Project { id: number; name: string; projectCode: string }
+interface Project { id: number; name: string; projectCode: string; siteManager?: string | null }
 
 const NONE = "__none__";
 
@@ -74,6 +79,9 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   // 事務が中身を直しているあいだ。下書きのときだけ入れる。
   const [editing, setEditing] = useState(false);
+  // 仕入先マスタに登録する社名。AIが読んだ名前を初期値にし、打ち替えられるようにする
+  // （手書きだと空で返る／宛先を発行元と取り違えることがある）。
+  const [vendorNameInput, setVendorNameInput] = useState<string | null>(null);
   // 明細は既定で見せる。ブロックの見出し（納品書No・納品先）に判断材料が無い請求書
   // （いわさき工房のように納品先の印字が無いもの）では、品名が唯一の手掛かりになるため。
   // 行数が多いブロックだけ畳む（大田鋼管のような多明細でスクロールが辛くならないように）。
@@ -107,10 +115,15 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
   // 割当（ブロック単位でまとめて更新）
   const assignMut = useMutation({
     mutationFn: async (a: { itemIds: number[]; projectId: number | null }) => {
+      // 誰が選んだかを一緒に送る。「返す」でその人の分だけを固定するために使う。
+      const me = staff.find((x) => x.name === localStorage.getItem(STAFF_KEY));
       const r = await fetch(`${BASE}/api/received-invoices/${id}/assign`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ assignments: a.itemIds.map((itemId) => ({ itemId, projectId: a.projectId })) }),
+        body: JSON.stringify({
+          assignments: a.itemIds.map((itemId) => ({ itemId, projectId: a.projectId })),
+          ...(me ? { staffMemberId: me.id } : {}),
+        }),
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message ?? "保存に失敗しました");
       return r.json();
@@ -128,10 +141,19 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(me ? { staffMemberId: me.id } : {}),
       });
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message ?? "送信に失敗しました");
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.message ?? "送信に失敗しました");
+      return j as { status: string; unassignedCount: number };
     },
-    onSuccess: () => {
-      toast({ title: "事務に返しました", description: "事務が確認して確定します。" });
+    onSuccess: (j) => {
+      toast(
+        j.status === "answered"
+          ? { title: "事務に返しました", description: "事務が確認して確定します。" }
+          : {
+              title: "自分の分を返しました",
+              description: `残り${j.unassignedCount}行は他の担当者が選びます。全部そろうと事務の確認待ちになります。`,
+            },
+      );
       qc.invalidateQueries({ queryKey: ["/api/received-invoices", id] });
       qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
     },
@@ -214,6 +236,39 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
     onError: (e) => toast({ title: "エラー", description: e instanceof Error ? e.message : "", variant: "destructive" }),
   });
 
+  const reopenMut = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`${BASE}/api/received-invoices/${id}/reopen`, { method: "POST" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message ?? "差し戻しに失敗しました");
+    },
+    onSuccess: () => {
+      toast({ title: "現場に差し戻しました", description: "現場担当者の「届いている書類」に戻り、選び直せます。" });
+      qc.invalidateQueries({ queryKey: ["/api/received-invoices", id] });
+      qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
+    },
+    onError: (e) => toast({ title: "エラー", description: e instanceof Error ? e.message : "", variant: "destructive" }),
+  });
+
+  const unconfirmMut = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`${BASE}/api/received-invoices/${id}/unconfirm`, { method: "POST" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.message ?? "確定の取り消しに失敗しました");
+      return j as { deleted: string[] };
+    },
+    onSuccess: (j) => {
+      toast({
+        title: "確定を取り消しました",
+        description: `仕入伝票${j.deleted.length}件（${j.deleted.join(", ")}）と原価を取り消し、確認待ちに戻しました。`,
+      });
+      qc.invalidateQueries({ queryKey: ["/api/received-invoices", id] });
+      qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
+      qc.invalidateQueries({ queryKey: ["/api/purchase-invoices"] });
+      qc.invalidateQueries({ queryKey: ["/api/cost-items"] });
+    },
+    onError: (e) => toast({ title: "取り消せません", description: e instanceof Error ? e.message : "", variant: "destructive" }),
+  });
+
   const confirmMut = useMutation({
     mutationFn: async () => {
       const r = await fetch(`${BASE}/api/received-invoices/${id}/confirm`, {
@@ -243,6 +298,9 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
   // 0円の明細が未割当でも金額は0のままなので、完了判定は件数で行う
   const done = (data?.unassignedCount ?? 1) === 0;
   const locked = data?.status === "confirmed" || data?.status === "cancelled";
+  // 現場から返ってきた書類は工事を選び直せない（事務が見た内容と確定される内容が
+  // 食い違わないようにする）。直すときは差し戻す。
+  const assignLocked = locked || data?.status === "answered";
 
   if (isLoading) {
     return <div className="p-6 text-center text-slate-400"><Loader2 className="w-5 h-5 animate-spin inline" /></div>;
@@ -253,10 +311,21 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
 
   // 分母は仕入行の合計（税抜）。請求総額は税込なので、これを分母にすると
   // 0割当でもバーが伸びてしまう。
+  const linkedVendorName = data.vendorId ? (vendors.find((v) => v.id === data.vendorId)?.name ?? "") : "";
+
+  // 請求日が極端に古い／先すぎるときの安全網。手書きの元号をAIが読み違えると
+  // （令和8年→平成28年＝2016年）、そのまま確定すると原価が別の年に入ってしまう。
+  const invoiceYear = data.invoiceDate ? Number(data.invoiceDate.slice(0, 4)) : null;
+  const thisYear = new Date().getFullYear();
+  const dateLooksWrong = invoiceYear != null && (invoiceYear < thisYear - 2 || invoiceYear > thisYear + 1);
+
+  // 入力欄の値。未編集ならAIが読んだ社名を初期値にする。
+  const vendorNameDraft = vendorNameInput ?? data.vendorName ?? "";
+
   // 似た名前の既存仕入先。「登録」を押す前に見せて、同じ会社を二重に作るのを防ぐ。
   // 突合の正規化はAI読み取り側（ai-extract.ts）と同じ考え方に揃えている。
   const strip = (s: string) => s.replace(/\s|株式会社|（株）|\(株\)|有限会社|（有）|\(有\)/g, "");
-  const needle = strip(data.vendorName ?? "");
+  const needle = strip(vendorNameDraft);
   const similarVendors = !data.vendorId && needle.length > 0
     ? vendors.filter((v) => {
         const hay = strip(v.name);
@@ -265,6 +334,16 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
     : [];
 
   const purchaseTotal = purchaseBlocks.reduce((s, b) => s + b.amount, 0);
+  // 「自分の現場」で選んだ名前。自分が担当している工事を先に出して、実データの
+  // 工事数（本番は今後増える）でも選びやすくする。
+  const myStaffName = localStorage.getItem(STAFF_KEY);
+  const myProjects = myStaffName ? projects.filter((p) => p.siteManager === myStaffName) : [];
+  const otherProjects = projects.filter((p) => !myProjects.includes(p));
+
+  const nonPurchaseTotal = data.blocks
+    .flatMap((b) => b.lines)
+    .filter((l) => l.isNonPurchase)
+    .reduce((s, l) => s + l.amount, 0);
   const progress = purchaseTotal > 0
     ? Math.max(0, Math.min(100, ((purchaseTotal - data.unassignedAmount) / purchaseTotal) * 100))
     : 0;
@@ -304,7 +383,11 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
               {!data.vendorId && data.status !== "cancelled" && (
                 <Badge variant="outline" className="mb-1 ml-1 bg-amber-100 text-amber-700 border-amber-200">仕入先 未確定</Badge>
               )}
-              <h1 className="text-lg font-bold text-slate-900 leading-snug">{data.vendorName || "（仕入先不明）"}</h1>
+              {/* 紐づけ済みならマスタの正式名を出す。AIが読んだ名前（空のことも多い）より
+                  そちらが正しい。 */}
+              <h1 className="text-lg font-bold text-slate-900 leading-snug">
+                {linkedVendorName || data.vendorName || "（仕入先不明）"}
+              </h1>
               {!data.vendorId && data.vendorName && (
                 <p className="text-xs text-amber-700 mt-0.5">
                   {data.aiExtracted ? "AIが読んだ社名です。" : "入力された社名です。"}仕入先マスタと結びついていません。
@@ -331,20 +414,76 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
             <dt className="text-slate-500">請求日</dt><dd className="tabular-nums">{data.invoiceDate ?? "—"}</dd>
             <dt className="text-slate-500">支払期日</dt><dd className="tabular-nums">{data.paymentDueDate ?? "—"}</dd>
             <dt className="text-slate-500">請求額</dt><dd className="tabular-nums font-medium">{formatCurrency(data.totalAmount)}</dd>
+            {/* 未割当は「仕入対象（税抜）」が分母。請求額（税込・入金相殺後）と並ぶと
+                金額が逆転して見えるため、分母をそのまま出しておく。 */}
+            <dt className="text-slate-500">仕入対象</dt>
+            <dd className="tabular-nums">
+              {formatCurrency(purchaseTotal)}
+              <span className="text-xs text-slate-400 ml-1.5">税抜・工事に割り当てる分</span>
+            </dd>
             <dt className="text-slate-500">明細</dt><dd>{data.blocks.reduce((s, b) => s + b.lineCount, 0)}行 ─ {purchaseBlocks.length}ブロック</dd>
           </dl>
+
+          {nonPurchaseTotal !== 0 && (
+            <p className="text-xs text-slate-500">
+              入金・値引などの {formatCurrency(nonPurchaseTotal)} は請求額から差し引かれています。原価には計上しません。
+            </p>
+          )}
 
           {data.amountMismatch && (
             <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-px" />
-              <span>明細の合計と請求総額が一致していません。原本を確認してください。</span>
+              {/* どちらの数字がどうずれているかと、直す場所まで書く。
+                  「一致していません」だけでは、何をどこで直すのか分からない。 */}
+              <span>
+                明細から計算した合計 {formatCurrency(purchaseTotal + data.taxAmount + nonPurchaseTotal)} が、
+                請求額 {formatCurrency(data.totalAmount)} と合っていません。
+                {data.status === "draft"
+                  ? "「内容を直す」から、明細か請求額を直してください。"
+                  : "原本を確認してください。"}
+              </span>
+            </div>
+          )}
+
+          {/* 同じ請求書を2回取り込むと、確定した分だけ原価が増える。止めはしないが、
+              確定する前に必ず目に入る場所で知らせる。 */}
+          {(data.duplicates ?? []).length > 0 && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-px" />
+              <div className="space-y-1">
+                <p className="font-semibold">同じ内容の書類がすでにあります（二重計上に注意）</p>
+                <p>仕入先・請求日・請求額がすべて同じものが{data.duplicates.length}件あります。</p>
+                <p className="flex flex-wrap gap-x-3 gap-y-1">
+                  {data.duplicates.map((d) => (
+                    <Link key={d.id} href={`/received-invoices/${d.id}`}>
+                      <span className="underline underline-offset-2 cursor-pointer">
+                        {d.createdAt.slice(0, 10)} 取り込み・
+                        {d.status === "confirmed" ? "確定済" : d.status === "answered" ? "確認待ち" : d.status === "sent" ? "未回答" : "下書き"}
+                      </span>
+                    </Link>
+                  ))}
+                </p>
+                <p className="text-amber-700">
+                  別々の請求である場合はそのまま進めてください。取り違えなら、この書類を削除してください。
+                </p>
+              </div>
+            </div>
+          )}
+
+          {dateLooksWrong && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-px" />
+              <span>
+                請求日が {data.invoiceDate} になっています。和暦の読み違いかもしれません
+                （令和8年を平成28年と読むと2016年になります）。原本を確認してください。
+              </span>
             </div>
           )}
 
           {/* 残額バー */}
           <div className="space-y-1.5 pt-1">
             <div className="flex items-baseline justify-between">
-              <span className="text-xs font-medium uppercase tracking-wide text-slate-500">未割当</span>
+              <span className="text-xs font-medium uppercase tracking-wide text-slate-500">未割当（仕入対象のうち）</span>
               <span className={`text-lg font-bold tabular-nums ${done ? "text-emerald-600" : "text-amber-600"}`}>
                 {formatCurrency(data.unassignedAmount)}
               </span>
@@ -359,26 +498,11 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
         </CardContent>
       </Card>
 
-      {editing && data.status === "draft" && (
-        <InvoiceEditor
-          invoiceId={id}
-          invoiceDate={data.invoiceDate}
-          paymentDueDate={data.paymentDueDate}
-          totalAmount={data.totalAmount}
-          lines={data.blocks.flatMap((b) => b.lines)}
-          onCancel={() => setEditing(false)}
-          onSaved={() => {
-            setEditing(false);
-            qc.invalidateQueries({ queryKey: ["/api/received-invoices", id] });
-            qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
-          }}
-        />
-      )}
-
       {/* 事務の確認。現場に送る前に仕入先を確かめる場所。
           以前は送信ボタンより下（しかも回答が返ってきてから）にあり、仕入先が
-          未確定のまま現場に送られていた。 */}
-      {!editing && !locked && (data.status !== "sent" || !data.vendorId) && (
+          未確定のまま現場に送られていた。
+          編集中も出しておく（隠すと「内容を直す」を押した瞬間に社名へ触れなくなる）。 */}
+      {!locked && (data.status !== "sent" || !data.vendorId) && (
         <Card className={!data.vendorId ? "border-amber-300 bg-amber-50/40" : undefined}>
           <CardContent className="p-4 space-y-1">
             <label className="text-xs font-medium uppercase tracking-wide text-slate-500">仕入先</label>
@@ -415,28 +539,53 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
                   </div>
                 )}
 
-                {data.vendorName && (
-                  <div className="space-y-1">
+                {/* 社名は打ち替えられるようにする。手書きの請求書ではAIが社名を読めない
+                    （空で返る）ことも、宛先を発行元と取り違えることもあるため。 */}
+                <div className="space-y-1">
+                  <label className="text-xs text-slate-600">マスタに無い仕入先はここから登録できます</label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      value={vendorNameDraft}
+                      onChange={(e) => setVendorNameInput(e.target.value)}
+                      placeholder="請求書に書かれている会社名"
+                      className="h-9 max-w-xs"
+                    />
                     <Button
                       variant="outline"
                       size="sm"
                       className="gap-1.5"
-                      disabled={createVendorMut.isPending}
-                      onClick={() => createVendorMut.mutate(data.vendorName)}
+                      disabled={vendorNameDraft.trim() === "" || createVendorMut.isPending}
+                      onClick={() => createVendorMut.mutate(vendorNameDraft.trim())}
                     >
                       {createVendorMut.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                      「{data.vendorName}」を仕入先に登録して使う
+                      この名前で登録して使う
                     </Button>
-                    <p className="text-xs text-slate-500">
-                      新しい取引先はここから登録できます。締め日・支払日は初期値（末締め・翌月25日）で入るので、
-                      必要なら後で仕入先マスタで直してください。
-                    </p>
                   </div>
-                )}
+                  <p className="text-xs text-slate-500">
+                    締め日・支払日は初期値（末締め・翌月25日）で入ります。必要なら後で仕入先マスタで直してください。
+                  </p>
+                </div>
               </div>
             )}
           </CardContent>
         </Card>
+      )}
+
+      {editing && data.status === "draft" && (
+        <InvoiceEditor
+          invoiceId={id}
+          invoiceDate={data.invoiceDate}
+          paymentDueDate={data.paymentDueDate}
+          totalAmount={data.totalAmount}
+          aiExtracted={data.aiExtracted}
+          lines={data.blocks.flatMap((b) => b.lines)}
+          onCancel={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            qc.invalidateQueries({ queryKey: ["/api/received-invoices", id] });
+            qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
+          }}
+        />
       )}
 
       {/* ブロック一覧 */}
@@ -474,10 +623,17 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
                   </div>
                 ) : (
                   <div className="space-y-1">
-                    <label className="text-xs font-medium uppercase tracking-wide text-slate-500">工事</label>
+                    <label className="text-xs font-medium uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
+                      工事
+                      {b.locked && !assignLocked && (
+                        <span className="font-normal normal-case tracking-normal text-emerald-700">
+                          ・回答済み（変更するには差し戻しが必要です）
+                        </span>
+                      )}
+                    </label>
                     <Select
                       value={b.projectId ? String(b.projectId) : NONE}
-                      disabled={locked || assignMut.isPending}
+                      disabled={assignLocked || b.locked || assignMut.isPending}
                       onValueChange={(v) => assignMut.mutate({ itemIds: b.itemIds, projectId: v === NONE ? null : Number(v) })}
                     >
                       <SelectTrigger className={`h-11 ${!assigned ? "border-amber-400 text-amber-700" : ""}`}>
@@ -485,7 +641,19 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
                       </SelectTrigger>
                       <SelectContent className="max-h-[300px]" searchPlaceholder="工事名で検索">
                         <SelectItem value={NONE} className="text-slate-400">（未選択）</SelectItem>
-                        {projects.map((p) => (
+                        {myProjects.length > 0 && (
+                          <div className="px-2 py-1 text-[11px] font-semibold text-slate-400">自分の担当</div>
+                        )}
+                        {myProjects.map((p) => (
+                          <SelectItem key={p.id} value={String(p.id)}>
+                            <span className="font-mono text-xs text-slate-400 mr-1.5">{p.projectCode}</span>
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                        {myProjects.length > 0 && otherProjects.length > 0 && (
+                          <div className="px-2 py-1 text-[11px] font-semibold text-slate-400 border-t mt-1 pt-1.5">その他の工事</div>
+                        )}
+                        {otherProjects.map((p) => (
                           <SelectItem key={p.id} value={String(p.id)}>
                             <span className="font-mono text-xs text-slate-400 mr-1.5">{p.projectCode}</span>
                             {p.name}
@@ -542,14 +710,49 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
 
             {data.status === "sent" && (
               <>
-                <p className="text-xs text-slate-500 bg-slate-50 rounded px-2 py-1.5">
-                  ここから先は現場担当者（{data.recipients.map((r) => r.name).join("・") || "未設定"}）の操作です。
-                  工事を選び終えたら事務に返してください。
-                </p>
-                <Button className="w-full h-11" disabled={!done || respondMut.isPending} onClick={() => respondMut.mutate()}>
+                <div className="text-xs text-slate-500 bg-slate-50 rounded px-2 py-1.5 space-y-1">
+                  <p>
+                    ここから先は現場担当者（{data.recipients.map((r) => r.name).join("・") || "未設定"}）の操作です。
+                    {data.recipients.length > 1
+                      ? "自分が分かる分だけ選んで返せます。残りは他の方が選びます。"
+                      : "工事を選び終えたら事務に返してください。"}
+                  </p>
+                  {/* 複数人に送っているときは、誰がもう返したかを見せる。
+                      これが無いと「自分が待つ番なのか」が誰にも分からない。 */}
+                  {data.recipients.length > 1 && (
+                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      {data.recipients.map((r) => (
+                        <span key={r.staffMemberId} className={r.respondedAt ? "text-emerald-700" : "text-slate-500"}>
+                          {r.name}
+                          {r.respondedAt ? "：回答済み" : "：まだ"}
+                        </span>
+                      ))}
+                    </p>
+                  )}
+                </div>
+                <Button className="w-full h-11" disabled={respondMut.isPending} onClick={() => respondMut.mutate()}>
                   {respondMut.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Send className="w-4 h-4 mr-2" />}
-                  割当を完了して事務に返す
+                  {done
+                    ? "割当を完了して事務に返す"
+                    : `自分の分を返す（残り${purchaseBlocks.length - assignedCount}ブロックは他の方へ）`}
                 </Button>
+                {/* 先に返した人の分は固定されるので、間違いに気づいたときの逃げ道を
+                    途中の状態でも用意する。 */}
+                {data.recipients.some((r) => r.respondedAt) && (
+                  <Button
+                    variant="outline"
+                    className="w-full gap-1.5"
+                    disabled={reopenMut.isPending}
+                    onClick={() => {
+                      if (confirm("回答済みの分を選び直せるようにしますか？\n全員の「回答済み」が外れ、最初から選び直せる状態に戻ります。")) {
+                        reopenMut.mutate();
+                      }
+                    }}
+                  >
+                    {reopenMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Undo2 className="w-4 h-4" />}
+                    回答済みの分を選び直せるようにする
+                  </Button>
+                )}
               </>
             )}
 
@@ -588,10 +791,18 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
               </div>
             )}
 
-            {(data.status === "answered" || data.status === "draft") && (
+            {/* 送信済みでも全部埋まっていれば確定できるようにする。誰も「返す」を
+                押さないまま割当だけ終わった書類が、確定できずに残るのを防ぐ。 */}
+            {(data.status === "answered" || data.status === "draft" || (data.status === "sent" && done)) && (
               <div className="space-y-2">
                 {!data.vendorId && (
                   <p className="text-xs text-amber-700">上の「仕入先」を選ぶと確定できます。</p>
+                )}
+                {data.status === "answered" && (
+                  <p className="text-xs text-slate-500 bg-slate-50 rounded px-2 py-1.5">
+                    現場から返ってきました。工事はここでは変えられません。
+                    直すときは差し戻して、現場に選び直してもらってください。
+                  </p>
                 )}
                 <Button
                   className="w-full h-11 bg-emerald-600 hover:bg-emerald-700"
@@ -601,6 +812,21 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
                   {confirmMut.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle2 className="w-4 h-4 mr-2" />}
                   確定して仕入伝票をつくる
                 </Button>
+                {data.status === "answered" && (
+                  <Button
+                    variant="outline"
+                    className="w-full gap-1.5"
+                    disabled={reopenMut.isPending}
+                    onClick={() => {
+                      if (confirm("現場に差し戻しますか？\n工事の選択はそのまま残り、現場が選び直せる状態に戻ります。")) {
+                        reopenMut.mutate();
+                      }
+                    }}
+                  >
+                    {reopenMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Undo2 className="w-4 h-4" />}
+                    現場に差し戻す
+                  </Button>
+                )}
               </div>
             )}
           </CardContent>
@@ -609,12 +835,42 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
 
       {data.status === "confirmed" && (
         <Card className="bg-emerald-50 border-emerald-200">
-          <CardContent className="p-4 flex items-center justify-between gap-3">
-            <div className="text-sm text-emerald-800 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4" />
-              確定済みです。工事ごとの仕入伝票が作られ、原価に計上されました。
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm text-emerald-800 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4" />
+                確定済みです。工事ごとの仕入伝票が作られ、原価に計上されました。
+              </div>
+              <Button variant="outline" size="sm" onClick={() => navigate("/purchases")}>仕入を見る</Button>
             </div>
-            <Button variant="outline" size="sm" onClick={() => navigate("/purchases")}>仕入を見る</Button>
+            {/* 工事を間違えたまま確定したときの直し方。伝票を手で消して作り直す運用を置き換える。 */}
+            <div className="border-t border-emerald-200 pt-3">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                disabled={unconfirmMut.isPending}
+                onClick={() => {
+                  if (
+                    confirm(
+                      "確定を取り消しますか？\n\n" +
+                      "・この書類から作られた仕入伝票と原価が消えます\n" +
+                      "・その分、工事の原価が減ります\n" +
+                      "・書類は確認待ちに戻ります（工事の選択は残ります）\n\n" +
+                      "支払済・査定済の伝票があるときは取り消せません。",
+                    )
+                  ) {
+                    unconfirmMut.mutate();
+                  }
+                }}
+              >
+                {unconfirmMut.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Undo2 className="w-3.5 h-3.5" />}
+                確定を取り消す
+              </Button>
+              <p className="text-xs text-emerald-700 mt-1.5">
+                工事を間違えて確定したときはここから取り消し、差し戻して現場に選び直してもらってください。
+              </p>
+            </div>
           </CardContent>
         </Card>
       )}
