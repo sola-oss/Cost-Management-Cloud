@@ -54,6 +54,7 @@ interface ItemRow {
   deliveryDate: string | null;
   deliveryTo: string | null;
   category: string;
+  workTypeId: number | null;
   description: string;
   quantity: string;
   unit: string;
@@ -72,6 +73,7 @@ function fmtItem(i: ItemRow) {
     deliveryDate: i.deliveryDate,
     deliveryTo: i.deliveryTo,
     category: i.category,
+    workTypeId: i.workTypeId,
     description: i.description,
     quantity: parseN(i.quantity),
     unit: i.unit,
@@ -186,6 +188,7 @@ router.post("/", async (req, res) => {
             deliveryDate: (it["deliveryDate"] as string) || null,
             deliveryTo: (it["deliveryTo"] as string) || null,
             category: ((it["category"] as string) ?? "material") as "material" | "labor" | "subcontract" | "expense",
+            workTypeId: (it["workTypeId"] as number) ?? null,
             description: (it["description"] as string) ?? "",
             quantity: String(it["quantity"] ?? 1),
             unit: (it["unit"] as string) ?? "",
@@ -478,6 +481,111 @@ router.patch("/:id/vendor", async (req, res) => {
   }
 });
 
+// ── PATCH /:id  事務が中身を直す（下書きのみ）────────────────────────────────
+//
+// AIの読み違い（日付・金額・品名）と、AIが判断できない科目・工種をここで整える。
+// 現場に送る前に事務が確かめる、という順番を成り立たせるための入口。
+// 送信後（sent以降）を対象にしないのは、現場が付けた工事の割当を壊さないため。
+//
+// body: { invoiceDate?, paymentDueDate?, totalAmount?,
+//         items?: [{ id?, slipNo, deliveryDate, deliveryTo, category, workTypeId,
+//                    description, quantity, unit, unitPrice, amount, taxRate, isNonPurchase }] }
+router.patch("/:id", async (req, res) => {
+  try {
+    const id = Number(req.params["id"]);
+    if (!Number.isInteger(id)) return res.status(400).json({ message: "不正なIDです" });
+
+    const [inv] = await db.select().from(receivedInvoicesTable).where(eq(receivedInvoicesTable.id, id));
+    if (!inv) return res.status(404).json({ message: "見つかりません" });
+    if (inv.status !== "draft") {
+      return res.status(409).json({ message: "現場に送ったあとは中身を変更できません。" });
+    }
+
+    const b = req.body as {
+      invoiceDate?: string | null;
+      paymentDueDate?: string | null;
+      totalAmount?: number;
+      items?: Array<Record<string, unknown>>;
+    };
+
+    await db.transaction(async (tx) => {
+      if (Array.isArray(b.items)) {
+        const existing = await tx
+          .select({ id: receivedInvoiceItemsTable.id })
+          .from(receivedInvoiceItemsTable)
+          .where(eq(receivedInvoiceItemsTable.receivedInvoiceId, id));
+        const existingIds = new Set(existing.map((e) => e.id));
+        const keptIds = new Set<number>();
+
+        for (const [idx, it] of b.items.entries()) {
+          const values = {
+            lineNumber: idx + 1,
+            slipNo: (it["slipNo"] as string) || null,
+            deliveryDate: (it["deliveryDate"] as string) || null,
+            deliveryTo: (it["deliveryTo"] as string) || null,
+            category: ((it["category"] as string) ?? "material") as "material" | "labor" | "subcontract" | "expense",
+            workTypeId: (it["workTypeId"] as number) ?? null,
+            description: (it["description"] as string) ?? "",
+            quantity: String(it["quantity"] ?? 1),
+            unit: (it["unit"] as string) ?? "",
+            unitPrice: String(it["unitPrice"] ?? 0),
+            amount: String(it["amount"] ?? 0),
+            taxRate: String(it["taxRate"] ?? 10),
+            isNonPurchase: Boolean(it["isNonPurchase"]),
+            updatedAt: new Date(),
+          };
+          const itemId = Number(it["id"]);
+          // 既存行は更新して id を保つ（現場・事務が付けた工事の割当を残すため）
+          if (Number.isInteger(itemId) && existingIds.has(itemId)) {
+            keptIds.add(itemId);
+            await tx.update(receivedInvoiceItemsTable).set(values).where(eq(receivedInvoiceItemsTable.id, itemId));
+          } else {
+            await tx.insert(receivedInvoiceItemsTable).values({ receivedInvoiceId: id, ...values });
+          }
+        }
+
+        const removed = [...existingIds].filter((x) => !keptIds.has(x));
+        if (removed.length > 0) {
+          await tx.delete(receivedInvoiceItemsTable).where(inArray(receivedInvoiceItemsTable.id, removed));
+        }
+      }
+
+      // 合計を明細から引き直す。請求額（原本に印字された今回ご請求額）は人が入れた値を
+      // 正とし、明細から計算した額とズレたときだけ警告を立てる。
+      const items = (await tx
+        .select()
+        .from(receivedInvoiceItemsTable)
+        .where(eq(receivedInvoiceItemsTable.receivedInvoiceId, id))) as unknown as ItemRow[];
+      const purchase = items.filter((i) => !i.isNonPurchase);
+      const subtotal = purchase.reduce((s, i) => s + parseN(i.amount), 0);
+      const taxAmount = Math.floor(purchase.reduce((s, i) => s + parseN(i.amount) * (parseN(i.taxRate) / 100), 0));
+      const adjust = items.filter((i) => i.isNonPurchase).reduce((s, i) => s + parseN(i.amount), 0);
+      const totalAmount = b.totalAmount !== undefined ? Number(b.totalAmount) : parseN(inv.totalAmount);
+      const computed = subtotal + taxAmount + adjust;
+      const tolerance = Math.max(Math.round(Math.abs(computed) * 0.005), 100);
+      const amountMismatch = Math.abs(computed - totalAmount) > tolerance;
+
+      await tx
+        .update(receivedInvoicesTable)
+        .set({
+          ...(b.invoiceDate !== undefined ? { invoiceDate: b.invoiceDate || null } : {}),
+          ...(b.paymentDueDate !== undefined ? { paymentDueDate: b.paymentDueDate || null } : {}),
+          subtotal: String(subtotal),
+          taxAmount: String(taxAmount),
+          totalAmount: String(totalAmount),
+          amountMismatch,
+          updatedAt: new Date(),
+        })
+        .where(eq(receivedInvoicesTable.id, id));
+    });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "Failed to update received invoice");
+    return res.status(500).json({ message: "保存に失敗しました。" });
+  }
+});
+
 // ── POST /:id/respond  現場担当者の回答送信（全割当済なら answered へ）───────────
 // body: { staffMemberId? }
 router.post("/:id/respond", async (req, res) => {
@@ -612,6 +720,8 @@ router.post("/:id/confirm", async (req, res) => {
                 purchaseInvoiceId: pi.id,
                 lineNumber: idx + 1,
                 category: l.category as "material" | "labor" | "subcontract" | "expense",
+                // 工種を引き継ぐ。ここが抜けると原価が工種別の予算残から漏れる。
+                workTypeId: l.workTypeId,
                 description: l.description,
                 // 納品書番号・納品先を摘要に残す（あとから原本を追える）
                 specification: [l.slipNo ? `伝票${l.slipNo}` : null, l.deliveryTo || null]

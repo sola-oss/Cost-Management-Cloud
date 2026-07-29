@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 import { projectsTable } from "./projects";
 import { vendorsTable } from "./vendors";
 import { staffMembersTable } from "./staff-members";
+import { workTypesTable } from "./work-types";
 import { CostCategory } from "./cost-items";
 
 // ─── 受領請求書（仮デジタル請求書）───────────────────────────────────────────
@@ -61,6 +62,9 @@ export const receivedInvoiceItemsTable = pgTable("received_invoice_items", {
   // 納品先の印字（例: 大田鋼管の摘要「有間様邸」）。現場担当者が工事を選ぶ手掛かり。
   deliveryTo: text("delivery_to"),
   category: text("category").$type<CostCategory>().notNull().default("material"),
+  // 工種。確定時に仕入伝票へ引き継ぎ、工種別の予算・実績に載せる。
+  // ここが空だと原価が「未分類（予算なし）」に落ちて工種別の予算残から漏れる。
+  workTypeId: integer("work_type_id").references(() => workTypesTable.id, { onDelete: "set null" }),
   description: text("description").notNull().default(""),
   quantity: numeric("quantity", { precision: 12, scale: 3 }).notNull().default("1"),
   unit: text("unit").notNull().default(""),

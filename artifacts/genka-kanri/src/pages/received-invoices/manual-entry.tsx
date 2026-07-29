@@ -50,6 +50,10 @@ export function ManualEntry({
   const { data: vendors = [] } = useVendors<{ id: number; name: string }>();
 
   const [vendorId, setVendorId] = useState<string>("");
+  // マスタに無い仕入先。ここで名前だけ書いて先に進み、確認画面で登録する。
+  // 先にマスタへ往復させると、請求書の入力が中断される。
+  const [freeVendor, setFreeVendor] = useState(false);
+  const [freeVendorName, setFreeVendorName] = useState("");
   const [invoiceDate, setInvoiceDate] = useState("");
   const [paymentDueDate, setPaymentDueDate] = useState("");
   const [rows, setRows] = useState<Row[]>([emptyRow()]);
@@ -76,8 +80,8 @@ export function ManualEntry({
   const tax = Math.floor(subtotal * 0.1);
   const total = subtotal + tax + adjust;
 
-  const vendorName = vendors.find((v) => String(v.id) === vendorId)?.name ?? "";
-  const canSave = vendorId !== "" && rows.some((r) => r.description.trim() !== "");
+  const vendorName = freeVendor ? freeVendorName.trim() : (vendors.find((v) => String(v.id) === vendorId)?.name ?? "");
+  const canSave = vendorName !== "" && rows.some((r) => r.description.trim() !== "");
 
   const save = async () => {
     setSaving(true);
@@ -103,7 +107,7 @@ export function ManualEntry({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          vendorId: Number(vendorId),
+          vendorId: freeVendor ? null : Number(vendorId),
           vendorName,
           invoiceDate: invoiceDate || null,
           paymentDueDate: paymentDueDate || null,
@@ -123,7 +127,7 @@ export function ManualEntry({
         lines: items.length,
         blocks: slips.size > 0 ? slips.size : items.length,
       });
-      toast({ title: "作成しました", description: "送り先を選んで送信してください。" });
+      toast({ title: "作成しました", description: "内容を確かめてから現場に送ってください。" });
     } catch (e) {
       toast({ title: "エラー", description: e instanceof Error ? e.message : "", variant: "destructive" });
     } finally {
@@ -137,12 +141,27 @@ export function ManualEntry({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div className="space-y-1">
             <Label className="text-xs">仕入先 <span className="text-red-500">*</span></Label>
-            <Select value={vendorId} onValueChange={setVendorId}>
-              <SelectTrigger><SelectValue placeholder="選択してください" /></SelectTrigger>
-              <SelectContent className="max-h-[300px]" searchPlaceholder="仕入先を検索">
-                {vendors.map((v) => <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            {freeVendor ? (
+              <Input
+                value={freeVendorName}
+                onChange={(e) => setFreeVendorName(e.target.value)}
+                placeholder="請求書に書かれている会社名"
+              />
+            ) : (
+              <Select value={vendorId} onValueChange={setVendorId}>
+                <SelectTrigger><SelectValue placeholder="選択してください" /></SelectTrigger>
+                <SelectContent className="max-h-[300px]" searchPlaceholder="仕入先を検索">
+                  {vendors.map((v) => <SelectItem key={v.id} value={String(v.id)}>{v.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            )}
+            <button
+              type="button"
+              onClick={() => setFreeVendor((p) => !p)}
+              className="text-xs text-slate-500 hover:text-primary underline underline-offset-2"
+            >
+              {freeVendor ? "マスタから選ぶ" : "マスタに無い仕入先を書く"}
+            </button>
           </div>
           <div className="space-y-1">
             <Label className="text-xs">請求日</Label>

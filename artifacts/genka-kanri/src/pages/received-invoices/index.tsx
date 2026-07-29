@@ -1,13 +1,12 @@
 import { useState, useRef } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Upload, FileScan, Send, ChevronRight, AlertTriangle, Sparkles, PencilLine, Trash2 } from "lucide-react";
+import { Loader2, Upload, FileScan, ChevronRight, AlertTriangle, PencilLine, Trash2 } from "lucide-react";
 import { ManualEntry } from "./manual-entry";
 import { useToast } from "@/hooks/use-toast";
-import { useStaffMembers } from "@/hooks/use-staff-members";
 import { useVendors } from "@/hooks/use-vendors";
 import { formatCurrency } from "@/lib/utils";
 
@@ -57,16 +56,15 @@ function daysSince(from: string | null): number | null {
 export default function ReceivedInvoiceList() {
   const { toast } = useToast();
   const qc = useQueryClient();
+  const [, navigate] = useLocation();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const { data: staff = [] } = useStaffMembers();
   const { data: vendors = [] } = useVendors<{ id: number; name: string }>();
 
-  // アップロード〜送信のフォーム状態
+  // アップロードのフォーム状態。
+  // 読み取り・手入力が終わったら、この画面では送らずに確認画面へ送り出す。
+  // 事務が中身（とくに仕入先）を確かめる前に現場へ送れてしまうのを防ぐため。
   const [reading, setReading] = useState(false);
-  const [draftId, setDraftId] = useState<number | null>(null);
-  const [draftSummary, setDraftSummary] = useState<{ vendorName: string; total: number; lines: number; blocks: number; mismatch: boolean; diff?: number; ai: boolean } | null>(null);
-  const [selectedStaff, setSelectedStaff] = useState<number[]>([]);
   const [manual, setManual] = useState(false);
 
   const { data, isLoading } = useQuery({
@@ -87,8 +85,6 @@ export default function ReceivedInvoiceList() {
   // ── AI読み取り → 受領請求書を作成 ─────────────────────────────────────────
   const handleFile = async (file: File) => {
     setReading(true);
-    setDraftId(null);
-    setDraftSummary(null);
     try {
       const base64 = await new Promise<string>((resolve, reject) => {
         const fr = new FileReader();
@@ -133,19 +129,15 @@ export default function ReceivedInvoiceList() {
       const { id } = await create.json();
 
       const lines = (draft.items ?? []).length;
-      const slips = new Set((draft.items ?? []).filter((x: { slipNo?: string }) => x.slipNo).map((x: { slipNo?: string }) => x.slipNo));
-      setDraftId(id);
-      setDraftSummary({
-        vendorName: draft.vendorName ?? "",
-        total: draft.totalAmount ?? 0,
-        lines,
-        blocks: slips.size > 0 ? slips.size : lines,
-        mismatch: !!amountMismatch,
-        diff: amountDiff ?? 0,
-        ai: true,
-      });
       qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
-      toast({ title: "読み取り完了", description: `${lines}行を読み取りました。送り先を選んで送信してください。` });
+      toast({
+        title: "読み取り完了",
+        description: amountMismatch
+          ? `${lines}行を読み取りました。金額が${formatCurrency(Math.abs(amountDiff ?? 0))}ずれています。内容を確かめてください。`
+          : `${lines}行を読み取りました。内容を確かめてから現場に送ってください。`,
+      });
+      // 確認画面へ。ここで仕入先・日付・明細を確かめてから現場に送る。
+      navigate(`/received-invoices/${id}`);
     } catch (e) {
       toast({ title: "エラー", description: e instanceof Error ? e.message : "読み取りに失敗しました", variant: "destructive" });
     } finally {
@@ -165,28 +157,6 @@ export default function ReceivedInvoiceList() {
     },
     onError: (e) => toast({ title: "削除できません", description: e instanceof Error ? e.message : "", variant: "destructive" }),
   });
-
-  const sendMut = useMutation({
-    mutationFn: async () => {
-      if (!draftId) throw new Error("先に書類を読み取ってください");
-      const r = await fetch(`${BASE}/api/received-invoices/${draftId}/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ staffMemberIds: selectedStaff }),
-      });
-      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message ?? "送信に失敗しました");
-    },
-    onSuccess: () => {
-      toast({ title: "送信しました", description: `${selectedStaff.length}名に送りました。` });
-      setDraftId(null);
-      setDraftSummary(null);
-      setSelectedStaff([]);
-      qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
-    },
-    onError: (e) => toast({ title: "エラー", description: e instanceof Error ? e.message : "", variant: "destructive" }),
-  });
-
-  const activeStaff = staff.filter((s) => s.isActive);
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
@@ -228,10 +198,10 @@ export default function ReceivedInvoiceList() {
         </Card>
       </div>
 
-      {/* アップロード＆送信 */}
+      {/* 取り込み。送信はこの画面では行わず、確認画面（詳細）で行う */}
       <Card>
         <CardHeader className="py-3 border-b">
-          <CardTitle className="text-sm font-semibold text-slate-700">書類を送る</CardTitle>
+          <CardTitle className="text-sm font-semibold text-slate-700">書類を取り込む</CardTitle>
         </CardHeader>
         <CardContent className="p-4 space-y-4">
           <input
@@ -242,17 +212,16 @@ export default function ReceivedInvoiceList() {
             onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
           />
 
-          {!draftSummary && manual ? (
+          {manual ? (
             <ManualEntry
               onCancel={() => setManual(false)}
-              onCreated={(id, summary) => {
+              onCreated={(id) => {
                 setManual(false);
-                setDraftId(id);
-                setDraftSummary({ ...summary, mismatch: false, diff: 0, ai: false });
                 qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
+                navigate(`/received-invoices/${id}`);
               }}
             />
-          ) : !draftSummary ? (
+          ) : (
             <div className="space-y-3">
             <button
               type="button"
@@ -270,7 +239,7 @@ export default function ReceivedInvoiceList() {
                 <div className="flex flex-col items-center gap-2">
                   <Upload className="w-6 h-6 text-slate-400" />
                   <span className="text-sm font-semibold text-slate-700">請求書・納品書のPDF・写真を選ぶ</span>
-                  <span className="text-xs text-slate-400">AIが読み取って、送り先を選ぶだけで現場に届きます</span>
+                  <span className="text-xs text-slate-400">AIが読み取ったあと、内容を確かめる画面が開きます</span>
                 </div>
               )}
             </button>
@@ -284,72 +253,6 @@ export default function ReceivedInvoiceList() {
                 AIを使わず手で入力する
               </button>
             </div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex items-start justify-between gap-4 rounded-lg border bg-emerald-50/50 border-emerald-200 p-4">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-emerald-800">
-                    <Sparkles className="w-4 h-4" />
-                    {draftSummary.ai ? "読み取りました" : "入力しました"}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-700">
-                    {draftSummary.vendorName || "（仕入先不明）"} ／ {formatCurrency(draftSummary.total)}
-                  </div>
-                  <div className="text-xs text-slate-500 mt-0.5">
-                    {draftSummary.lines}行 ─ {draftSummary.blocks}ブロック
-                  </div>
-                  {draftSummary.mismatch && (
-                    <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-700">
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                      明細の合計が請求額と{draftSummary.diff && draftSummary.diff !== 0
-                        ? `${formatCurrency(Math.abs(draftSummary.diff))}ずれています`
-                        : "一致しません"}。内容を確認してください。
-                    </div>
-                  )}
-                </div>
-                <Link href={`/received-invoices/${draftId}`}>
-                  <Button variant="outline" size="sm">内容を見る</Button>
-                </Link>
-              </div>
-
-              <div>
-                <div className="text-xs font-medium text-slate-600 mb-2">送り先（複数選べます）</div>
-                <div className="flex flex-wrap gap-2">
-                  {activeStaff.map((s) => {
-                    const on = selectedStaff.includes(s.id);
-                    return (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => setSelectedStaff((p) => (on ? p.filter((x) => x !== s.id) : [...p, s.id]))}
-                        className={`px-3 py-1.5 rounded-md border text-sm transition-colors ${
-                          on ? "border-primary bg-primary/10 text-primary font-semibold" : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                        }`}
-                      >
-                        {s.name}
-                      </button>
-                    );
-                  })}
-                  {activeStaff.length === 0 && (
-                    <span className="text-sm text-slate-400">担当者マスタが未登録です</span>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <Button onClick={() => sendMut.mutate()} disabled={selectedStaff.length === 0 || sendMut.isPending} className="gap-2">
-                  {sendMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  現場に送信
-                </Button>
-                <button
-                  type="button"
-                  className="text-sm text-slate-500 hover:text-slate-700 underline underline-offset-2"
-                  onClick={() => { setDraftId(null); setDraftSummary(null); setSelectedStaff([]); }}
-                >
-                  やめる
-                </button>
-              </div>
             </div>
           )}
         </CardContent>
