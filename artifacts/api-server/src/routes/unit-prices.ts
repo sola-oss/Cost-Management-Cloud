@@ -118,7 +118,7 @@ router.post("/", async (req, res) => {
       if (!forceUpdate) {
         return res.status(409).json({
           status: "conflict",
-          message: "同じ仕入先・工種・品名の単価が既に登録されています。",
+          message: "同じ仕入先・工種・仕様の単価が既に登録されています。",
           existing,
         });
       }

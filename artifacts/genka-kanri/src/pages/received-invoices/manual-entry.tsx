@@ -179,7 +179,7 @@ export function ManualEntry({
               <tr className="bg-slate-50 text-xs text-slate-500">
                 <th className="text-left px-2 py-2 w-24">伝票番号</th>
                 <th className="text-left px-2 py-2 w-32">納品先</th>
-                <th className="text-left px-2 py-2">品名 <span className="text-red-500">*</span></th>
+                <th className="text-left px-2 py-2">仕様 <span className="text-red-500">*</span></th>
                 <th className="text-right px-2 py-2 w-20">数量</th>
                 <th className="text-left px-2 py-2 w-16">単位</th>
                 <th className="text-right px-2 py-2 w-28">単価</th>

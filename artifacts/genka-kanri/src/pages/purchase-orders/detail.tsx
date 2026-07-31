@@ -273,7 +273,7 @@ export default function PurchaseOrderDetail({ id }: { id: number }) {
                   <TableHead className="w-10 text-center font-medium">No.</TableHead>
                   <TableHead className="font-medium w-24">科目</TableHead>
                   <TableHead className="font-medium w-24">工種</TableHead>
-                  <TableHead className="font-medium">品名・摘要</TableHead>
+                  <TableHead className="font-medium">仕様・摘要</TableHead>
                   <TableHead className="font-medium text-right w-20">数量</TableHead>
                   <TableHead className="font-medium text-center w-14">単位</TableHead>
                   <TableHead className="font-medium text-right w-28">単価</TableHead>

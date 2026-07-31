@@ -382,7 +382,7 @@ export default function Purchases() {
       return;
     }
     if (!row.productName.trim()) {
-      toast({ title: "品名を入力してください", variant: "destructive" });
+      toast({ title: "仕様を入力してください", variant: "destructive" });
       return;
     }
     const price = parseFloat(row.unitPrice);
@@ -850,7 +850,7 @@ export default function Purchases() {
                   <th className="px-3 py-2 text-center w-8 font-medium">No</th>
                   <th className="px-3 py-2 text-left w-28 font-medium">科目</th>
                   <th className="px-3 py-2 text-left w-32 font-medium">工種</th>
-                  <th className="px-3 py-2 text-left font-medium">品名・摘要</th>
+                  <th className="px-3 py-2 text-left font-medium">仕様・摘要</th>
                   <th className="px-3 py-2 text-right w-24 font-medium">数量</th>
                   <th className="px-3 py-2 text-center w-14 font-medium">単位</th>
                   <th className="px-3 py-2 text-right w-28 font-medium">単価</th>
@@ -906,7 +906,7 @@ export default function Purchases() {
                             value={row.productName}
                             onChange={v => handleRowChange(idx, "productName", v)}
                             onSelect={(sel: UnitPriceSelection) => applyUnitPrice(idx, sel)}
-                            placeholder="品名"
+                            placeholder="仕様"
                             className="h-8 text-xs flex-1 min-w-[11rem]"
                           />
                           {vendorId && vendorId !== "none" && (
@@ -921,7 +921,7 @@ export default function Purchases() {
                             variant="outline"
                             size="sm"
                             className="gap-1 text-xs h-7 px-2 text-emerald-600 border-emerald-200 hover:bg-emerald-50 shrink-0"
-                            title="この品名・単価を単価マスタに新規登録"
+                            title="この仕様・単価を単価マスタに新規登録"
                             disabled={registeringRow === row.id || !row.productName.trim() || !row.unitPrice}
                             onClick={() => handleRegisterUnitPrice(row)}
                           >
@@ -936,7 +936,7 @@ export default function Purchases() {
                         <Input
                           value={row.spec}
                           onChange={e => handleRowChange(idx, "spec", e.target.value)}
-                          placeholder="仕様・摘要"
+                          placeholder="摘要"
                           className="h-7 text-xs text-slate-500"
                         />
                       </td>

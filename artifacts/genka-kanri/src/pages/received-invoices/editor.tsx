@@ -220,7 +220,7 @@ export function InvoiceEditor({
               <tr className="bg-slate-50 text-xs text-slate-500">
                 <th className="text-left px-2 py-2 w-24">伝票番号</th>
                 <th className="text-left px-2 py-2 w-28">納品先</th>
-                <th className="text-left px-2 py-2">品名</th>
+                <th className="text-left px-2 py-2">仕様</th>
                 <th className="text-left px-2 py-2 w-24">科目</th>
                 <th className="text-left px-2 py-2 w-36">工種</th>
                 <th className="text-right px-2 py-2 w-16">数量</th>

@@ -529,7 +529,7 @@ export default function PurchaseOrders() {
                       <th className="px-2 py-2 text-center w-8">No</th>
                       <th className="px-2 py-2 text-left w-28">科目</th>
                       <th className="px-2 py-2 text-left w-28">工種</th>
-                      <th className="px-2 py-2 text-left">品名・摘要</th>
+                      <th className="px-2 py-2 text-left">仕様・摘要</th>
                       <th className="px-2 py-2 text-right w-20">数量</th>
                       <th className="px-2 py-2 text-center w-14">単位</th>
                       <th className="px-2 py-2 text-right w-28">単価</th>
@@ -578,7 +578,7 @@ export default function PurchaseOrders() {
                             <Input
                               value={row.description}
                               onChange={(e) => handleRowChange(idx, "description", e.target.value)}
-                              placeholder="品名"
+                              placeholder="仕様"
                               className="h-7 text-xs flex-1"
                             />
                             <UnitPricePicker
@@ -600,7 +600,7 @@ export default function PurchaseOrders() {
                           <Input
                             value={row.specification}
                             onChange={(e) => handleRowChange(idx, "specification", e.target.value)}
-                            placeholder="仕様"
+                            placeholder="摘要"
                             className="h-6 text-xs text-slate-500"
                           />
                         </td>
