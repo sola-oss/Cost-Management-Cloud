@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db, vendorsTable, vendorGroupsTable } from "@workspace/db";
 
 const router: IRouter = Router();
@@ -13,7 +13,8 @@ router.get("/", async (req, res) => {
       })
       .from(vendorsTable)
       .leftJoin(vendorGroupsTable, eq(vendorsTable.groupId, vendorGroupsTable.id))
-      .orderBy(vendorsTable.name);
+      // フリガナの五十音順（未入力は末尾・同順は仕入先名順）
+      .orderBy(asc(vendorsTable.kana), asc(vendorsTable.name));
 
     res.json({
       items: rows.map((r) => ({ ...r.vendor, groupName: r.groupName ?? null })),
@@ -28,7 +29,7 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     const {
-      name, code, groupId, address, closingDay, paymentMonths, paymentDay, contactName, phone, email, notes,
+      name, kana, code, groupId, address, closingDay, paymentMonths, paymentDay, contactName, phone, email, notes,
       invoiceRegistrationNumber,
       bankCode, bankName, bankNameKana, bankBranchCode, bankBranch, bankBranchKana,
       bankAccountType, bankAccountNumber, bankAccountHolder, bankAccountHolderKana,
@@ -38,6 +39,7 @@ router.post("/", async (req, res) => {
       .insert(vendorsTable)
       .values({
         name,
+        kana: kana ?? null,
         code: code ?? null,
         groupId: groupId ? Number(groupId) : null,
         address: address ?? "",
@@ -72,7 +74,7 @@ router.patch("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const {
-      name, code, groupId, address, closingDay, paymentMonths, paymentDay, contactName, phone, email, notes,
+      name, kana, code, groupId, address, closingDay, paymentMonths, paymentDay, contactName, phone, email, notes,
       invoiceRegistrationNumber,
       bankCode, bankName, bankNameKana, bankBranchCode, bankBranch, bankBranchKana,
       bankAccountType, bankAccountNumber, bankAccountHolder, bankAccountHolderKana,
@@ -81,6 +83,7 @@ router.patch("/:id", async (req, res) => {
       .update(vendorsTable)
       .set({
         ...(name !== undefined && { name }),
+        ...(kana !== undefined && { kana: kana ?? null }),
         ...(code !== undefined && { code: code ?? null }),
         ...(groupId !== undefined && { groupId: groupId ? Number(groupId) : null }),
         ...(address !== undefined && { address: address ?? "" }),

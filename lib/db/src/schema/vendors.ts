@@ -21,6 +21,8 @@ export type VendorGroup = typeof vendorGroupsTable.$inferSelect;
 export const vendorsTable = pgTable("vendors", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
+  // フリガナ（口座名義カナから法人格の略号を除いて生成。一覧・プルダウンの五十音順に使用）
+  kana: text("kana"),
   code: text("code"),
   groupId: integer("group_id").references(() => vendorGroupsTable.id, { onDelete: "set null" }),
   address: text("address").default(""),

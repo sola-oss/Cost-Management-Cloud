@@ -17,6 +17,7 @@ import { toHankakuKana, cn } from "@/lib/utils";
 interface Vendor {
   id: number;
   name: string;
+  kana: string | null;
   code: string | null;
   groupId: number | null;
   groupName: string | null;
@@ -117,6 +118,7 @@ function useDeleteVendor() {
 
 interface VendorFormState {
   name: string;
+  kana: string;
   code: string;
   groupId: string;
   address: string;
@@ -143,6 +145,7 @@ interface VendorFormState {
 function defaultForm(v?: Vendor | null): VendorFormState {
   return {
     name: v?.name ?? "",
+    kana: v?.kana ?? "",
     code: v?.code ?? "",
     groupId: v?.groupId ? String(v.groupId) : "none",
     address: v?.address ?? "",
@@ -208,6 +211,7 @@ function VendorFormDialog({ open, onClose, initial, onSaved }: VendorFormDialogP
     }
     const payload = {
       name: form.name.trim(),
+      kana: form.kana.trim() || null,
       code: form.code.trim() || null,
       groupId: form.groupId !== "none" && form.groupId ? Number(form.groupId) : null,
       address: form.address.trim(),
@@ -257,6 +261,10 @@ function VendorFormDialog({ open, onClose, initial, onSaved }: VendorFormDialogP
             <div className="col-span-2">
               <Label>仕入先名 <span className="text-destructive">*</span></Label>
               <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="例: 山田建材株式会社" className="mt-1" />
+            </div>
+            <div className="col-span-2">
+              <Label>フリガナ</Label>
+              <Input value={form.kana} onChange={(e) => set("kana", toHankakuKana(e.target.value))} placeholder="例: ﾔﾏﾀﾞｹﾝｻﾞｲ（一覧の五十音順に使います）" className="mt-1" />
             </div>
             <div>
               <Label>仕入先コード</Label>
