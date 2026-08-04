@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db, clientsTable } from "@workspace/db";
 import { isUniqueViolation } from "../lib/db-errors";
 
@@ -7,7 +7,11 @@ const router: IRouter = Router();
 
 router.get("/", async (req, res) => {
   try {
-    const clients = await db.select().from(clientsTable).orderBy(clientsTable.clientCode);
+    // フリガナの五十音順（未入力は末尾・同順は得意先名順）。得意先はコードで管理していないため
+    const clients = await db
+      .select()
+      .from(clientsTable)
+      .orderBy(asc(clientsTable.kana), asc(clientsTable.name));
     res.json({ items: clients });
   } catch (err) {
     req.log.error({ err }, "Failed to list clients");
