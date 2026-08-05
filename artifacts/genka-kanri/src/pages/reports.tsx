@@ -33,6 +33,9 @@ export default function Reports() {
   // 並び替え：低い順（ワースト先頭）が既定。粗利率が算定不可(null)の工事は末尾に回す
   const chartData = (data?.items ?? [])
     .filter(p => matchStatus(p.status))
+    // 小口工事はグラフに出さない。粗利の基準が違う（実績原価ベース）うえ、
+    // 件数が増えると棒が細くなって通常の工事が読めなくなる。CSVには区分付きで入る。
+    .filter(p => p.managementType !== "small")
     .slice()
     .sort((a, b) => {
       const av = a.grossProfitRate ?? (sortOrder === "low" ? Infinity : -Infinity);
@@ -55,24 +58,32 @@ export default function Reports() {
   const handleExportCsv = () => {
     const rows = data?.items ?? [];
     if (rows.length === 0) return;
-    const header = ["工事番号", "工事名", "得意先", "状態", "請負金額", "実行予算", "実績原価", "予算消化率(%)", "粗利率(%)", "予定粗利額", "実績粗利額"];
+    const header = ["工事番号", "工事名", "区分", "得意先", "状態", "請負金額", "実行予算", "実績原価", "予算消化率(%)", "粗利率(%)", "予定粗利額", "実績粗利額"];
     const cell = (v: string | number | null | undefined) => {
       const s = v == null ? "" : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const body = rows.map((p) => [
-      p.projectCode ?? "",
-      p.name ?? "",
-      p.clientName ?? "",
-      statusLabel[p.status as string] ?? p.status ?? "",
-      p.contractAmount ?? 0,
-      p.totalBudget ?? 0,
-      p.totalActualCost ?? 0,
-      p.budgetUsageRate ?? 0,
-      p.grossProfitRate ?? "",
-      (p.contractAmount ?? 0) - (p.totalBudget ?? 0),
-      (p.contractAmount ?? 0) - (p.totalActualCost ?? 0),
-    ].map(cell).join(","));
+    const body = rows.map((p) => {
+      // 小口工事は実行予算を作らない。予定粗利額を「請負 − 実行予算」で出すと
+      // 請負がまるごと粗利になってしまうので、実績原価を引いた額を入れる。
+      const isSmall = p.managementType === "small";
+      return [
+        p.projectCode ?? "",
+        p.name ?? "",
+        isSmall ? "小口" : "通常",
+        p.clientName ?? "",
+        statusLabel[p.status as string] ?? p.status ?? "",
+        p.contractAmount ?? 0,
+        isSmall ? "" : (p.totalBudget ?? 0),
+        p.totalActualCost ?? 0,
+        isSmall ? "" : (p.budgetUsageRate ?? 0),
+        p.grossProfitRate ?? "",
+        isSmall
+          ? (p.contractAmount ?? 0) - (p.totalActualCost ?? 0)
+          : (p.contractAmount ?? 0) - (p.totalBudget ?? 0),
+        (p.contractAmount ?? 0) - (p.totalActualCost ?? 0),
+      ].map(cell).join(",");
+    });
     const csv = "﻿" + [header.join(","), ...body].join("\r\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const d = new Date();
@@ -184,12 +195,20 @@ export default function Reports() {
                       .filter(p => p.budgetUsageRate > 100 || (p.grossProfitRate != null && p.grossProfitRate < 10))
                       .map(p => (
                         <TableRow key={p.id}>
-                          <TableCell className="font-medium text-slate-900">{p.name}</TableCell>
+                          <TableCell className="font-medium text-slate-900">
+                            {p.name}
+                            {/* 小口も採算が悪ければ知らせる。ただし予算の列は作っていないので「—」 */}
+                            {p.managementType === "small" && (
+                              <span className="ml-2 text-xs text-sky-700 bg-sky-50 border border-sky-200 rounded px-1 py-0.5">小口</span>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right">{formatCurrency(p.contractAmount)}</TableCell>
-                          <TableCell className="text-right text-blue-700">{formatCurrency(p.totalBudget)}</TableCell>
+                          <TableCell className="text-right text-blue-700">
+                            {p.managementType === "small" ? <span className="text-slate-300">—</span> : formatCurrency(p.totalBudget)}
+                          </TableCell>
                           <TableCell className="text-right text-orange-700">{formatCurrency(p.totalActualCost)}</TableCell>
                           <TableCell className="text-center font-bold text-destructive">
-                            {p.budgetUsageRate.toFixed(1)}%
+                            {p.managementType === "small" ? <span className="text-slate-300 font-normal">—</span> : `${p.budgetUsageRate.toFixed(1)}%`}
                           </TableCell>
                           <TableCell className={`text-right font-bold ${p.grossProfitRate != null && p.grossProfitRate < 10 ? 'text-destructive' : ''}`}>
                             {p.grossProfitRate == null ? '—' : formatPercent(p.grossProfitRate)}

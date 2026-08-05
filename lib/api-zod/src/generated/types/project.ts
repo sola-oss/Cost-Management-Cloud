@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ContractLine } from "./contractLine";
+import type { ProjectManagementType } from "./projectManagementType";
 import type { ProjectStatus } from "./projectStatus";
 
 export interface Project {
@@ -22,6 +23,8 @@ export interface Project {
   contractAmount: number;
   /** 工事状態 */
   status: ProjectStatus;
+  /** 管理区分。small は「その他（小口工事）」で実行予算・出来高を作らない */
+  managementType?: ProjectManagementType;
   /** 着工日 */
   startDate: Date;
   /** 竣工予定日 */

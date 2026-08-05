@@ -757,6 +757,10 @@ components:
           type: string
           enum: [planning, active, completed, suspended]
           description: 工事状態
+        managementType:
+          type: string
+          enum: [normal, small]
+          description: 管理区分。small は「その他（小口工事）」で実行予算・出来高を作らない
         startDate:
           type: string
           format: date

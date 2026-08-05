@@ -515,7 +515,7 @@ function CostItemsTab({ projectId }: { projectId: number }) {
 
 // ─── 収支状況タブ ─────────────────────────────────────────────────────────────
 
-function FinancialTab({ projectId, contractAmount }: { projectId: number; contractAmount: number }) {
+function FinancialTab({ projectId, contractAmount, isSmall }: { projectId: number; contractAmount: number; isSmall?: boolean }) {
   const { data: summary } = useGetProjectSummary(projectId, {
     query: { enabled: !!projectId, queryKey: getGetProjectSummaryQueryKey(projectId) },
   });
@@ -547,7 +547,11 @@ function FinancialTab({ projectId, contractAmount }: { projectId: number; contra
             <CardTitle className="text-xs text-slate-500 font-medium">実行予算合計</CardTitle>
           </CardHeader>
           <CardContent className="pb-4">
-            <div className="text-lg font-bold text-blue-600">{formatCurrency(summary?.totalBudget ?? 0)}</div>
+            {isSmall ? (
+              <div className="text-sm text-slate-400 pt-1">小口工事のため作りません</div>
+            ) : (
+              <div className="text-lg font-bold text-blue-600">{formatCurrency(summary?.totalBudget ?? 0)}</div>
+            )}
           </CardContent>
         </Card>
         <Card className="bg-slate-50 border-none">
@@ -570,23 +574,27 @@ function FinancialTab({ projectId, contractAmount }: { projectId: number; contra
         </Card>
         <Card className="border-none bg-emerald-50">
           <CardHeader className="py-3 pb-1">
-            <CardTitle className="text-xs text-slate-500 font-medium">粗利（予定／実績）</CardTitle>
+            <CardTitle className="text-xs text-slate-500 font-medium">
+              {isSmall ? "粗利（請負−実績原価）" : "粗利（予定／実績）"}
+            </CardTitle>
           </CardHeader>
           <CardContent className="pb-4 space-y-1.5">
+            {!isSmall && (
+              <div>
+                <span className="text-[11px] text-slate-500 mr-1.5">予定</span>
+                {((summary as any)?.plannedGrossProfitRate ?? null) === null ? (
+                  <span className="text-sm text-slate-300">—（実行予算 未設定）</span>
+                ) : (
+                  <span className="text-sm font-bold text-emerald-700">
+                    {formatCurrency((summary as any)?.plannedGrossProfit ?? 0)}
+                    <span className="text-xs font-medium ml-1">（{formatPercent((summary as any)?.plannedGrossProfitRate ?? 0)}）</span>
+                  </span>
+                )}
+              </div>
+            )}
             <div>
-              <span className="text-[11px] text-slate-500 mr-1.5">予定</span>
-              {((summary as any)?.plannedGrossProfitRate ?? null) === null ? (
-                <span className="text-sm text-slate-300">—（実行予算 未設定）</span>
-              ) : (
-                <span className="text-sm font-bold text-emerald-700">
-                  {formatCurrency((summary as any)?.plannedGrossProfit ?? 0)}
-                  <span className="text-xs font-medium ml-1">（{formatPercent((summary as any)?.plannedGrossProfitRate ?? 0)}）</span>
-                </span>
-              )}
-            </div>
-            <div>
-              <span className="text-[11px] text-slate-500 mr-1.5">実績</span>
-              <span className={`text-sm font-bold ${(summary?.grossProfit ?? 0) < 0 ? "text-destructive" : "text-slate-700"}`}>
+              {!isSmall && <span className="text-[11px] text-slate-500 mr-1.5">実績</span>}
+              <span className={`${isSmall ? "text-lg" : "text-sm"} font-bold ${(summary?.grossProfit ?? 0) < 0 ? "text-destructive" : isSmall ? "text-emerald-700" : "text-slate-700"}`}>
                 {formatCurrency(summary?.grossProfit ?? 0)}
                 <span className="text-xs font-medium ml-1">（{formatPercent(summary?.grossProfitRate ?? 0)}）</span>
               </span>
@@ -595,7 +603,8 @@ function FinancialTab({ projectId, contractAmount }: { projectId: number; contra
         </Card>
       </div>
 
-      {/* 予算実績グラフ */}
+      {/* 予算実績グラフ。小口工事は実行予算を作らないので、全部ゼロの空グラフを出さない */}
+      {!isSmall && (
       <Card>
         <CardHeader>
           <CardTitle className="text-base">予算・実績比較</CardTitle>
@@ -630,8 +639,10 @@ function FinancialTab({ projectId, contractAmount }: { projectId: number; contra
           </div>
         </CardContent>
       </Card>
+      )}
 
-      {/* 収支明細テーブル */}
+      {/* 収支明細テーブル。小口工事は予算が無いので全部ゼロの行になるだけ */}
+      {!isSmall && (
       <Card>
         <CardHeader className="border-b py-3">
           <CardTitle className="text-sm font-semibold text-slate-700">予算・実績収支</CardTitle>
@@ -679,6 +690,14 @@ function FinancialTab({ projectId, contractAmount }: { projectId: number; contra
           </Table>
         </CardContent>
       </Card>
+      )}
+
+      {isSmall && (
+        <p className="text-xs text-slate-400 px-1">
+          小口工事は実行予算と出来高を作りません。原価は仕入の振り分け・仕入入力から積み上がり、
+          粗利は「請負金額 − 実績原価」で計算しています。
+        </p>
+      )}
     </div>
   );
 }
@@ -1547,6 +1566,9 @@ export default function ProjectDetail() {
     query: { enabled: !!projectId, queryKey: getListBudgetItemsQueryKey(projectId) },
   });
   const hasBudgetItems = (budgetItemsCheck?.items?.length ?? 0) > 0;
+  // 小口工事は実行予算を「まだ作っていない」のではなく「作らない」。
+  // 未登録バッジや予算前提の表示を出すと、入力の催促に見えてしまう。
+  const isSmall = project?.managementType === "small";
 
   if (projectLoading) {
     return (
@@ -1583,9 +1605,13 @@ export default function ProjectDetail() {
             <Badge variant="outline" className={STATUS_COLORS[project.status] ?? ""}>
               {STATUS_LABELS[project.status] ?? project.status}
             </Badge>
+            {isSmall && (
+              <Badge variant="outline" className="bg-sky-50 text-sky-700 border-sky-200">小口</Badge>
+            )}
           </div>
           <p className="text-sm text-slate-500 mt-0.5">
-            {project.projectCode} ／ {project.clientName}
+            {/* 小口工事は得意先を入れずに登録できる。区切りの「／」だけが残らないようにする */}
+            {[project.projectCode, project.clientName].filter(Boolean).join(" ／ ")}
           </p>
         </div>
         <Button variant="outline" size="sm" asChild className="shrink-0 gap-1.5 border-teal-600 text-teal-700 hover:bg-teal-50">
@@ -1620,7 +1646,11 @@ export default function ProjectDetail() {
                 <CardTitle className="text-xs text-slate-500 font-medium">実行予算</CardTitle>
               </CardHeader>
               <CardContent className="pb-3">
-                <div className="text-lg font-bold text-blue-600">{formatCurrency(summary.totalBudget)}</div>
+                {isSmall ? (
+                  <div className="text-sm text-slate-400 pt-1">小口工事のため作りません</div>
+                ) : (
+                  <div className="text-lg font-bold text-blue-600">{formatCurrency(summary.totalBudget)}</div>
+                )}
               </CardContent>
             </Card>
             <Card className="border-none shadow-sm">
@@ -1632,37 +1662,43 @@ export default function ProjectDetail() {
               </CardHeader>
               <CardContent className="pb-3">
                 <div className="text-lg font-bold text-orange-600">{formatCurrency(summary.totalActualCost)}</div>
-                <div className="mt-1.5">
-                  <Progress
-                    value={Math.min(summary.budgetUsageRate, 100)}
-                    className="h-1"
-                    indicatorClassName={summary.budgetUsageRate > 100 ? "bg-destructive" : "bg-orange-500"}
-                  />
-                  <div className={`text-xs mt-0.5 ${summary.budgetUsageRate > 100 ? "text-destructive" : "text-slate-500"}`}>
-                    {summary.budgetUsageRate.toFixed(1)}%消化
+                {!isSmall && (
+                  <div className="mt-1.5">
+                    <Progress
+                      value={Math.min(summary.budgetUsageRate, 100)}
+                      className="h-1"
+                      indicatorClassName={summary.budgetUsageRate > 100 ? "bg-destructive" : "bg-orange-500"}
+                    />
+                    <div className={`text-xs mt-0.5 ${summary.budgetUsageRate > 100 ? "text-destructive" : "text-slate-500"}`}>
+                      {summary.budgetUsageRate.toFixed(1)}%消化
+                    </div>
                   </div>
-                </div>
+                )}
               </CardContent>
             </Card>
             <Card className="border-none shadow-sm">
               <CardHeader className="py-3 pb-1">
-                <CardTitle className="text-xs text-slate-500 font-medium">粗利（予定／実績）</CardTitle>
+                <CardTitle className="text-xs text-slate-500 font-medium">
+                  {isSmall ? "粗利（請負−実績原価）" : "粗利（予定／実績）"}
+                </CardTitle>
               </CardHeader>
               <CardContent className="pb-3 space-y-1.5">
+                {!isSmall && (
+                  <div>
+                    <span className="text-[11px] text-slate-500 mr-1.5">予定</span>
+                    {((summary as any).plannedGrossProfitRate ?? null) === null ? (
+                      <span className="text-sm text-slate-300">—（実行予算 未設定）</span>
+                    ) : (
+                      <span className="text-sm font-bold text-emerald-700">
+                        {formatCurrency((summary as any).plannedGrossProfit ?? 0)}
+                        <span className="text-xs font-medium ml-1">（{formatPercent((summary as any).plannedGrossProfitRate ?? 0)}）</span>
+                      </span>
+                    )}
+                  </div>
+                )}
                 <div>
-                  <span className="text-[11px] text-slate-500 mr-1.5">予定</span>
-                  {((summary as any).plannedGrossProfitRate ?? null) === null ? (
-                    <span className="text-sm text-slate-300">—（実行予算 未設定）</span>
-                  ) : (
-                    <span className="text-sm font-bold text-emerald-700">
-                      {formatCurrency((summary as any).plannedGrossProfit ?? 0)}
-                      <span className="text-xs font-medium ml-1">（{formatPercent((summary as any).plannedGrossProfitRate ?? 0)}）</span>
-                    </span>
-                  )}
-                </div>
-                <div>
-                  <span className="text-[11px] text-slate-500 mr-1.5">実績</span>
-                  <span className={`text-sm font-bold ${summary.grossProfit < 0 ? "text-destructive" : "text-slate-700"}`}>
+                  {!isSmall && <span className="text-[11px] text-slate-500 mr-1.5">実績</span>}
+                  <span className={`${isSmall ? "text-lg" : "text-sm"} font-bold ${summary.grossProfit < 0 ? "text-destructive" : isSmall ? "text-emerald-700" : "text-slate-700"}`}>
                     {formatCurrency(summary.grossProfit)}
                     <span className="text-xs font-medium ml-1">（{formatPercent(summary.grossProfitRate)}）</span>
                   </span>
@@ -1691,7 +1727,7 @@ export default function ProjectDetail() {
           >
             <Calculator className="w-3.5 h-3.5 hidden sm:block" />
             実行予算
-            {!hasBudgetItems && (
+            {!hasBudgetItems && !isSmall && (
               <Badge className="ml-1 text-[10px] px-1 py-0 h-4 bg-orange-500 text-white border-none">未登録</Badge>
             )}
           </TabsTrigger>
@@ -1714,7 +1750,7 @@ export default function ProjectDetail() {
         </TabsContent>
 
         <TabsContent value="financial">
-          <FinancialTab projectId={projectId} contractAmount={project.contractAmount} />
+          <FinancialTab projectId={projectId} contractAmount={project.contractAmount} isSmall={isSmall} />
         </TabsContent>
       </Tabs>
     </div>

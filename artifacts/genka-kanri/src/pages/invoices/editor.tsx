@@ -17,7 +17,7 @@ import { generateInvoicePDF } from "./pdf";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 interface Client { id: number; name: string; kana: string | null; address: string | null; }
-interface Project { id: number; name: string; projectCode: string; contractAmount?: number; }
+interface Project { id: number; name: string; projectCode: string; contractAmount?: number; managementType?: string; }
 interface CompanySettings {
   companyName: string; postalCode: string; address: string; tel: string; fax: string;
   invoiceRegistrationNumber: string; representativeName: string; department: string;
@@ -238,7 +238,12 @@ export default function InvoiceEditor({ id }: Props) {
       setContractAmount(proj?.contractAmount ?? 0);
       if (data.items.length === 0) {
         if (!opts?.silent) {
-          toast({ title: "実行予算明細がありません", description: "工事の実行予算タブから明細を登録してください", variant: "destructive" });
+          // 小口工事は実行予算を作らない運用なので、「登録してください」と案内しない
+          toast(
+            proj?.managementType === "small"
+              ? { title: "小口工事は出来高請求を使えません", description: "実行予算を作らないため、明細を手で入力してください", variant: "destructive" }
+              : { title: "実行予算明細がありません", description: "工事の実行予算タブから明細を登録してください", variant: "destructive" },
+          );
         }
         return;
       }

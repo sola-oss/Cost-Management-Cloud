@@ -65,6 +65,7 @@ export * from "./projectListItemManagementType";
 export * from "./projectListItemStatus";
 export * from "./projectListResponse";
 export * from "./projectListResponseCounts";
+export * from "./projectManagementType";
 export * from "./projectStatus";
 export * from "./projectSummary";
 export * from "./projectSummaryCostBreakdown";

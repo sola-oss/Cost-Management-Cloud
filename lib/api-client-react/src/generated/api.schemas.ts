@@ -26,6 +26,17 @@ export const ProjectStatus = {
   suspended: "suspended",
 } as const;
 
+/**
+ * 管理区分。small は「その他（小口工事）」で実行予算・出来高を作らない
+ */
+export type ProjectManagementType =
+  (typeof ProjectManagementType)[keyof typeof ProjectManagementType];
+
+export const ProjectManagementType = {
+  normal: "normal",
+  small: "small",
+} as const;
+
 export interface ContractLine {
   contractDate?: string | null;
   taxExcludedAmount?: number | null;
@@ -45,6 +56,8 @@ export interface Project {
   contractAmount: number;
   /** 工事状態 */
   status: ProjectStatus;
+  /** 管理区分。small は「その他（小口工事）」で実行予算・出来高を作らない */
+  managementType?: ProjectManagementType;
   /** 着工日 */
   startDate: string;
   /** 竣工予定日 */

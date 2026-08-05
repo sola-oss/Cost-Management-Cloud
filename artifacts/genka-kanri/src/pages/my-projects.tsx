@@ -30,6 +30,7 @@ interface ProjectRow {
   totalBudget: number;
   totalActualCost: number;
   budgetUsageRate: number;
+  managementType?: string;
 }
 
 interface InboxItem {
@@ -219,10 +220,16 @@ export default function MyProjects() {
   });
 
   const projects = (data?.items ?? []).filter((p) => p.status !== "completed");
-  const totalBudget = projects.reduce((s, p) => s + p.totalBudget, 0);
-  const totalActual = projects.reduce((s, p) => s + p.totalActualCost, 0);
+  // 小口工事は実行予算を作らない。予算の合計に混ぜると原価だけが引かれ、
+  // 他の工事の「残り」が実際より少なく見えてしまうので分けて数える。
+  const budgetProjects = projects.filter((p) => p.managementType !== "small");
+  const smallProjects = projects.filter((p) => p.managementType === "small");
+  const totalBudget = budgetProjects.reduce((s, p) => s + p.totalBudget, 0);
+  const totalActual = budgetProjects.reduce((s, p) => s + p.totalActualCost, 0);
   const totalRemaining = totalBudget - totalActual;
-  const overCount = projects.filter((p) => p.totalBudget > 0 && p.totalActualCost > p.totalBudget).length;
+  const overCount = budgetProjects.filter((p) => p.totalBudget > 0 && p.totalActualCost > p.totalBudget).length;
+  const smallContract = smallProjects.reduce((s, p) => s + p.contractAmount, 0);
+  const smallActual = smallProjects.reduce((s, p) => s + p.totalActualCost, 0);
 
   const activeStaff = staff.filter((s) => s.isActive);
   const me = staff.find((x) => x.name === name);
@@ -286,6 +293,13 @@ export default function MyProjects() {
                   予算を超えている工事が{overCount}件あります
                 </div>
               )}
+              {smallProjects.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-slate-200 text-xs text-slate-500 flex flex-wrap justify-center gap-x-3 gap-y-1">
+                  <span>小口工事 {smallProjects.length}件（予算なし）</span>
+                  <span className="tabular-nums">請負 {formatCurrency(smallContract)}</span>
+                  <span className="tabular-nums">使った {formatCurrency(smallActual)}</span>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -296,9 +310,13 @@ export default function MyProjects() {
               const remaining = p.totalBudget - p.totalActualCost;
               const tone = rateTone(rate);
               const isOpen = open[p.id] ?? false;
+              // 小口工事は実行予算も出来高も作らない前提。予算バー・出来高入力・工種内訳は出さず、
+              // 請負と使った金額だけ見せる（「予算未設定」と出すと未入力の催促に見えてしまう）
+              const isSmall = p.managementType === "small";
               const noBudget = p.totalBudget === 0;
+              const smallProfit = p.contractAmount - p.totalActualCost;
               return (
-                <Card key={p.id} className={`border-l-4 ${noBudget ? "border-l-slate-300" : remaining < 0 ? "border-l-red-500" : "border-l-emerald-500"}`}>
+                <Card key={p.id} className={`border-l-4 ${isSmall ? "border-l-sky-400" : noBudget ? "border-l-slate-300" : remaining < 0 ? "border-l-red-500" : "border-l-emerald-500"}`}>
                   <CardContent className="p-4 space-y-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -308,7 +326,9 @@ export default function MyProjects() {
                           {p.clientName ? ` ・ ${p.clientName}` : ""}
                         </div>
                       </div>
-                      {noBudget ? (
+                      {isSmall ? (
+                        <Badge variant="outline" className="text-xs shrink-0 bg-sky-50 text-sky-700 border-sky-200">小口</Badge>
+                      ) : noBudget ? (
                         <Badge variant="outline" className="text-xs shrink-0">予算未設定</Badge>
                       ) : (
                         <div className="text-right shrink-0">
@@ -320,36 +340,59 @@ export default function MyProjects() {
                       )}
                     </div>
 
-                    {!noBudget && (
-                      <div className="space-y-1">
-                        <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                          <div className={`h-full rounded-full transition-all ${tone.bar}`} style={{ width: `${Math.min(100, rate)}%` }} />
+                    {isSmall ? (
+                      <div className="grid grid-cols-3 gap-2 text-center text-xs bg-slate-50 rounded py-2">
+                        <div>
+                          <div className="text-slate-500">請負金額</div>
+                          <div className="font-semibold tabular-nums">{formatCurrency(p.contractAmount)}</div>
                         </div>
-                        <div className="flex justify-between text-xs text-slate-500 tabular-nums">
-                          <span>使った {formatCurrency(p.totalActualCost)}</span>
-                          <span className={rate > 100 ? tone.text + " font-semibold" : ""}>{Math.round(rate * 10) / 10}%</span>
-                          <span>予算 {formatCurrency(p.totalBudget)}</span>
+                        <div>
+                          <div className="text-slate-500">使った</div>
+                          <div className="font-semibold tabular-nums">{formatCurrency(p.totalActualCost)}</div>
+                        </div>
+                        <div>
+                          <div className="text-slate-500">粗利</div>
+                          <div className={`font-semibold tabular-nums ${smallProfit < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                            {formatCurrency(smallProfit)}
+                          </div>
                         </div>
                       </div>
+                    ) : (
+                      !noBudget && (
+                        <div className="space-y-1">
+                          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full transition-all ${tone.bar}`} style={{ width: `${Math.min(100, rate)}%` }} />
+                          </div>
+                          <div className="flex justify-between text-xs text-slate-500 tabular-nums">
+                            <span>使った {formatCurrency(p.totalActualCost)}</span>
+                            <span className={rate > 100 ? tone.text + " font-semibold" : ""}>{Math.round(rate * 10) / 10}%</span>
+                            <span>予算 {formatCurrency(p.totalBudget)}</span>
+                          </div>
+                        </div>
+                      )
                     )}
 
                     <div className="flex items-center justify-between gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setOpen((o) => ({ ...o, [p.id]: !isOpen }))}
-                        className="text-xs text-primary hover:underline underline-offset-2 flex items-center gap-1"
-                      >
-                        {isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                        工種ごとの内訳を{isOpen ? "閉じる" : "見る"}
-                      </button>
+                      {isSmall ? (
+                        <span className="text-xs text-slate-400">実行予算・出来高は作りません</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setOpen((o) => ({ ...o, [p.id]: !isOpen }))}
+                          className="text-xs text-primary hover:underline underline-offset-2 flex items-center gap-1"
+                        >
+                          {isOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                          工種ごとの内訳を{isOpen ? "閉じる" : "見る"}
+                        </button>
+                      )}
                       <Link href={`/projects/${p.id}/ledger`}>
                         <span className="text-xs text-slate-400 hover:text-primary underline underline-offset-2">工事台帳</span>
                       </Link>
                     </div>
 
-                    <ProgressInput projectId={p.id} recordedBy={name} />
+                    {!isSmall && <ProgressInput projectId={p.id} recordedBy={name} />}
 
-                    {isOpen && <WorkTypeBreakdown projectId={p.id} />}
+                    {!isSmall && isOpen && <WorkTypeBreakdown projectId={p.id} />}
                   </CardContent>
                 </Card>
               );

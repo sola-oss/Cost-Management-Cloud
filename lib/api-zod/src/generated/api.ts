@@ -148,6 +148,12 @@ export const GetProjectResponse = zod
     status: zod
       .enum(["planning", "active", "completed", "suspended"])
       .describe("工事状態"),
+    managementType: zod
+      .enum(["normal", "small"])
+      .optional()
+      .describe(
+        "管理区分。small は「その他（小口工事）」で実行予算・出来高を作らない",
+      ),
     startDate: zod.coerce.date().describe("着工日"),
     endDate: zod.coerce.date().describe("竣工予定日"),
     completedDate: zod.coerce.date().nullish().describe("竣工日"),
@@ -323,6 +329,12 @@ export const UpdateProjectResponse = zod.object({
   status: zod
     .enum(["planning", "active", "completed", "suspended"])
     .describe("工事状態"),
+  managementType: zod
+    .enum(["normal", "small"])
+    .optional()
+    .describe(
+      "管理区分。small は「その他（小口工事）」で実行予算・出来高を作らない",
+    ),
   startDate: zod.coerce.date().describe("着工日"),
   endDate: zod.coerce.date().describe("竣工予定日"),
   completedDate: zod.coerce.date().nullish().describe("竣工日"),
