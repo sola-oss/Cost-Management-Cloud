@@ -22,6 +22,10 @@ export const listProjectsQueryLimitDefault = 20;
 
 export const ListProjectsQueryParams = zod.object({
   status: zod.enum(["planning", "active", "completed", "suspended"]).optional(),
+  managementType: zod
+    .enum(["normal", "small"])
+    .optional()
+    .describe("管理区分での絞り込み（normal=通常工事 \/ small=小口工事）"),
   page: zod.coerce.number().default(listProjectsQueryPageDefault),
   limit: zod.coerce.number().default(listProjectsQueryLimitDefault),
 });
@@ -35,15 +39,36 @@ export const ListProjectsResponse = zod.object({
       clientName: zod.string(),
       contractAmount: zod.number(),
       status: zod.enum(["planning", "active", "completed", "suspended"]),
+      managementType: zod
+        .enum(["normal", "small"])
+        .optional()
+        .describe(
+          "管理区分。small は「その他（小口工事）」で実行予算・出来高を作らない",
+        ),
+      siteManager: zod.string().nullish().describe("工事担当者"),
       startDate: zod.coerce.date(),
       endDate: zod.coerce.date(),
       totalBudget: zod.number(),
       totalActualCost: zod.number(),
       budgetUsageRate: zod.number().describe("予算消化率（%）"),
-      grossProfitRate: zod.number().describe("粗利率（%）"),
+      grossProfitRate: zod
+        .number()
+        .nullable()
+        .describe(
+          "粗利率（%）。通常工事は請負−実行予算、小口工事は請負−実績原価",
+        ),
     }),
   ),
   total: zod.number(),
+  counts: zod
+    .object({
+      normal: zod.number(),
+      small: zod.number(),
+    })
+    .optional()
+    .describe(
+      "管理区分ごとの件数（区分の絞り込みを外し、検索・ステータスは効かせた件数）",
+    ),
   page: zod.number(),
   limit: zod.number(),
 });
@@ -744,12 +769,24 @@ export const GetDashboardOverviewResponse = zod.object({
         clientName: zod.string(),
         contractAmount: zod.number(),
         status: zod.enum(["planning", "active", "completed", "suspended"]),
+        managementType: zod
+          .enum(["normal", "small"])
+          .optional()
+          .describe(
+            "管理区分。small は「その他（小口工事）」で実行予算・出来高を作らない",
+          ),
+        siteManager: zod.string().nullish().describe("工事担当者"),
         startDate: zod.coerce.date(),
         endDate: zod.coerce.date(),
         totalBudget: zod.number(),
         totalActualCost: zod.number(),
         budgetUsageRate: zod.number().describe("予算消化率（%）"),
-        grossProfitRate: zod.number().describe("粗利率（%）"),
+        grossProfitRate: zod
+          .number()
+          .nullable()
+          .describe(
+            "粗利率（%）。通常工事は請負−実行予算、小口工事は請負−実績原価",
+          ),
       }),
     )
     .describe("最近の工事一覧"),
@@ -762,12 +799,24 @@ export const GetDashboardOverviewResponse = zod.object({
         clientName: zod.string(),
         contractAmount: zod.number(),
         status: zod.enum(["planning", "active", "completed", "suspended"]),
+        managementType: zod
+          .enum(["normal", "small"])
+          .optional()
+          .describe(
+            "管理区分。small は「その他（小口工事）」で実行予算・出来高を作らない",
+          ),
+        siteManager: zod.string().nullish().describe("工事担当者"),
         startDate: zod.coerce.date(),
         endDate: zod.coerce.date(),
         totalBudget: zod.number(),
         totalActualCost: zod.number(),
         budgetUsageRate: zod.number().describe("予算消化率（%）"),
-        grossProfitRate: zod.number().describe("粗利率（%）"),
+        grossProfitRate: zod
+          .number()
+          .nullable()
+          .describe(
+            "粗利率（%）。通常工事は請負−実行予算、小口工事は請負−実績原価",
+          ),
       }),
     )
     .describe("予算超過リスク工事"),

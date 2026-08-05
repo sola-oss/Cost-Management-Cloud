@@ -39,6 +39,7 @@ interface ProjectRow {
   forecastProfitRate: number | null;
   forecastUnavailableReason: string | null;
   overBudget: boolean;
+  isSmall: boolean;
 }
 interface AlertRow extends ProjectRow { reasons: string[]; severity: number }
 interface Data {
@@ -48,6 +49,7 @@ interface Data {
     forecastProfit: number | null; forecastProfitRate: number | null;
     activeProjects: number;
   };
+  smallSummary: { count: number; contractTotal: number; actualCostTotal: number; profit: number };
   alerts: AlertRow[];
   projects: ProjectRow[];
   freshness: {
@@ -147,7 +149,10 @@ export default function Executive() {
 
   const s = data.summary;
   const f = data.freshness;
-  const shown = openAll ? data.projects : data.projects.slice(0, 5);
+  const small = data.smallSummary;
+  // 一覧は通常の工事を先に。小口は件数が多くなるので後ろにまとめる
+  const sortedProjects = [...data.projects].sort((a, b) => Number(a.isSmall) - Number(b.isSmall));
+  const shown = openAll ? sortedProjects : sortedProjects.slice(0, 5);
 
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto space-y-4">
@@ -156,7 +161,11 @@ export default function Executive() {
           <TrendingUp className="w-6 h-6 text-primary" />
           ダッシュボード
         </h1>
-        <p className="text-sm text-slate-500 mt-1">施工中 {s.activeProjects} 件の状況と、このあとの着地見込みです。</p>
+        <p className="text-sm text-slate-500 mt-1">
+          施工中 {s.activeProjects} 件
+          {small.count > 0 && <span>（ほかに小口 {small.count} 件）</span>}
+          の状況と、このあとの着地見込みです。
+        </p>
       </div>
 
       {/* 注意が要る工事を最初に。見に行かせるのではなく、危ない方から知らせる */}
@@ -248,6 +257,38 @@ export default function Executive() {
               発注済みで請求がまだ来ていない分が {formatCurrency(s.unbilledOrderTotal)} あります。この分は実績原価にまだ入っていません。
             </p>
           )}
+
+          {small.count > 0 && (
+            <div className="border-t pt-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs font-semibold text-slate-600">
+                  うち小口工事（その他） {small.count} 件
+                </div>
+                <Link href="/projects">
+                  <span className="text-xs text-primary hover:underline cursor-pointer">一覧を見る</span>
+                </Link>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <div className="text-xs text-slate-500">請負金額</div>
+                  <div className="text-sm font-bold tabular-nums">{formatCurrency(small.contractTotal)}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500">実績原価</div>
+                  <div className="text-sm font-bold tabular-nums text-slate-700">{formatCurrency(small.actualCostTotal)}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500">粗利</div>
+                  <div className={`text-sm font-bold tabular-nums ${profitTone(small.contractTotal > 0 ? (small.profit / small.contractTotal) * 100 : null)}`}>
+                    {formatCurrency(small.profit)}
+                  </div>
+                </div>
+              </div>
+              <p className="text-xs text-slate-400 mt-1.5">
+                小口工事は実行予算を作らないため、粗利は「請負金額 − 実績原価」で計算しています。上の全体の数字にも含まれています。
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -284,14 +325,19 @@ export default function Executive() {
             <CardContent className="p-4 space-y-2">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="font-medium text-slate-800 truncate">{p.name}</div>
+                  <div className="font-medium text-slate-800 truncate flex items-center gap-2">
+                    <span className="truncate">{p.name}</span>
+                    {p.isSmall && (
+                      <Badge variant="outline" className="text-xs bg-sky-50 text-sky-700 border-sky-200 shrink-0">小口</Badge>
+                    )}
+                  </div>
                   <div className="text-xs text-slate-500">
                     <span className="font-mono">{p.projectCode}</span>
                     {p.siteManager ? ` ・ ${p.siteManager}` : ""}
                   </div>
                 </div>
                 <div className="text-right shrink-0">
-                  <div className="text-xs text-slate-500">着地見込み</div>
+                  <div className="text-xs text-slate-500">{p.isSmall ? "粗利（実績）" : "着地見込み"}</div>
                   <div className={`font-bold tabular-nums ${profitTone(p.forecastProfitRate)}`}>
                     {p.forecastProfit != null ? formatCurrency(p.forecastProfit) : "—"}
                   </div>
@@ -305,35 +351,51 @@ export default function Executive() {
                 </div>
               </div>
 
-              {/* 進捗と原価の対比。ズレが危険信号 */}
-              <div className="grid grid-cols-3 gap-2 text-center text-xs bg-slate-50 rounded py-2">
-                <div>
-                  <div className="text-slate-500">出来高</div>
-                  <div className="font-semibold tabular-nums">
-                    {p.progressRate != null ? `${p.progressRate}%` : <span className="text-amber-600">未入力</span>}
+              {/* 小口工事は出来高も予算も作らないので、対比ではなく請負と原価をそのまま見せる */}
+              {p.isSmall ? (
+                <div className="grid grid-cols-2 gap-2 text-center text-xs bg-slate-50 rounded py-2">
+                  <div>
+                    <div className="text-slate-500">請負金額</div>
+                    <div className="font-semibold tabular-nums">{formatCurrency(p.contractAmount)}</div>
+                  </div>
+                  <div>
+                    <div className="text-slate-500">実績原価</div>
+                    <div className="font-semibold tabular-nums">{formatCurrency(p.totalActualCost)}</div>
                   </div>
                 </div>
-                <div>
-                  <div className="text-slate-500">原価消化</div>
-                  <div className="font-semibold tabular-nums">
-                    {p.costConsumptionRate != null ? `${p.costConsumptionRate}%` : "—"}
+              ) : (
+                /* 進捗と原価の対比。ズレが危険信号 */
+                <div className="grid grid-cols-3 gap-2 text-center text-xs bg-slate-50 rounded py-2">
+                  <div>
+                    <div className="text-slate-500">出来高</div>
+                    <div className="font-semibold tabular-nums">
+                      {p.progressRate != null ? `${p.progressRate}%` : <span className="text-amber-600">未入力</span>}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-slate-500">原価消化</div>
+                    <div className="font-semibold tabular-nums">
+                      {p.costConsumptionRate != null ? `${p.costConsumptionRate}%` : "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-slate-500">ズレ</div>
+                    <div className={`font-semibold tabular-nums ${p.gap != null && p.gap >= 15 ? "text-red-600" : p.gap != null && p.gap > 0 ? "text-amber-600" : "text-slate-600"}`}>
+                      {p.gap != null ? `${p.gap > 0 ? "+" : ""}${p.gap}pt` : "—"}
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <div className="text-slate-500">ズレ</div>
-                  <div className={`font-semibold tabular-nums ${p.gap != null && p.gap >= 15 ? "text-red-600" : p.gap != null && p.gap > 0 ? "text-amber-600" : "text-slate-600"}`}>
-                    {p.gap != null ? `${p.gap > 0 ? "+" : ""}${p.gap}pt` : "—"}
-                  </div>
-                </div>
-              </div>
+              )}
 
-              <div className="flex justify-between text-xs text-slate-500 tabular-nums">
-                <span>
-                  予定粗利 {p.plannedProfit != null ? formatCurrency(p.plannedProfit) : "—"}
-                  {p.plannedProfitRate != null && `（${p.plannedProfitRate}%）`}
-                </span>
-                {p.unbilledOrder > 0 && <span className="text-amber-600">発注残 {formatCurrency(p.unbilledOrder)}</span>}
-              </div>
+              {!p.isSmall && (
+                <div className="flex justify-between text-xs text-slate-500 tabular-nums">
+                  <span>
+                    予定粗利 {p.plannedProfit != null ? formatCurrency(p.plannedProfit) : "—"}
+                    {p.plannedProfitRate != null && `（${p.plannedProfitRate}%）`}
+                  </span>
+                  {p.unbilledOrder > 0 && <span className="text-amber-600">発注残 {formatCurrency(p.unbilledOrder)}</span>}
+                </div>
+              )}
             </CardContent>
           </Card>
         ))}

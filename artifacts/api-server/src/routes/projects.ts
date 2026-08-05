@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq, sql, and, or, ilike, inArray } from "drizzle-orm";
+import { eq, sql, and, or, ilike, inArray, desc } from "drizzle-orm";
 import { db, projectsTable, costItemsTable, budgetsTable, budgetItemsTable, invoicesTable, invoicePaymentsTable, companySettingsTable, constructionHistoriesTable, estimatesTable, purchaseOrdersTable, purchaseInvoicesTable, paymentsTable } from "@workspace/db";
+import { isUniqueViolation } from "../lib/db-errors";
 
 const router: IRouter = Router();
 
@@ -22,11 +23,14 @@ function toDateString(val: unknown): string | null {
 
 function buildProjectListItem(project: typeof projectsTable.$inferSelect, totalBudget: number, totalActualCost: number) {
   const contractAmount = parseNumeric(project.contractAmount);
+  const isSmall = project.managementType === "small";
   // 粗利率は「予定」ベース：（請負金額 − 実行予算）÷ 請負金額。実行予算が未設定なら算定不可（null）
-  const plannedGrossProfit = contractAmount - totalBudget;
-  const grossProfitRate = (contractAmount > 0 && totalBudget > 0)
-    ? Math.round((plannedGrossProfit / contractAmount) * 1000) / 10
-    : null;
+  // 小口工事は実行予算を作らないので、代わりに実績原価で見る（請負 − 実績原価）。
+  const grossProfitRate = isSmall
+    ? (contractAmount > 0 ? Math.round(((contractAmount - totalActualCost) / contractAmount) * 1000) / 10 : null)
+    : (contractAmount > 0 && totalBudget > 0
+        ? Math.round(((contractAmount - totalBudget) / contractAmount) * 1000) / 10
+        : null);
   const budgetUsageRate = totalBudget > 0 ? (totalActualCost / totalBudget) * 100 : 0;
 
   return {
@@ -36,6 +40,7 @@ function buildProjectListItem(project: typeof projectsTable.$inferSelect, totalB
     clientName: project.clientName,
     contractAmount,
     status: project.status,
+    managementType: project.managementType,
     siteManager: project.siteManager,
     startDate: project.startDate,
     endDate: project.endDate,
@@ -48,37 +53,56 @@ function buildProjectListItem(project: typeof projectsTable.$inferSelect, totalB
 
 router.get("/", async (req, res) => {
   try {
-    const { status, search, siteManager, page = "1", limit = "20" } = req.query as Record<string, string>;
+    const { status, search, siteManager, managementType, page = "1", limit = "20" } = req.query as Record<string, string>;
     // 不正な値で .limit(NaN)/.offset(NaN) になり500化するのを防ぎ、上限もクランプする。
     const pageNum = Math.max(1, parseInt(page) || 1);
     const limitNum = Math.min(Math.max(1, parseInt(limit) || 20), 2000);
     const offset = (pageNum - 1) * limitNum;
 
-    const conditions = [];
-    if (status) conditions.push(eq(projectsTable.status, status as any));
+    // 管理区分「以外」の絞り込み。タブの件数は区分を外した同じ条件で数える
+    // （「通常(4) / 小口(12)」を出すため。検索やステータスの絞り込みには追従させる）
+    const baseConditions = [];
+    if (status) baseConditions.push(eq(projectsTable.status, status as any));
     // 工事担当で絞る（現場担当者が自分の担当工事だけを見るため）
     if (siteManager && siteManager.trim()) {
-      conditions.push(eq(projectsTable.siteManager, siteManager.trim()));
+      baseConditions.push(eq(projectsTable.siteManager, siteManager.trim()));
     }
     if (search && search.trim()) {
       const q = `%${search.trim()}%`;
       // 工事名・工事番号・得意先名で検索
-      conditions.push(or(
+      baseConditions.push(or(
         ilike(projectsTable.name, q),
         ilike(projectsTable.projectCode, q),
         ilike(projectsTable.clientName, q),
       ));
     }
-    const whereConditions = conditions.length > 0 ? and(...conditions) : undefined;
 
-    const [projects, countResult] = await Promise.all([
+    const isSmallOnly = managementType === "small";
+    const conditions = [...baseConditions];
+    // 管理区分で絞る（通常の工事一覧に小口が大量に混ざって埋もれるのを防ぐ）
+    if (managementType === "normal" || managementType === "small") {
+      conditions.push(eq(projectsTable.managementType, managementType));
+    }
+    const whereConditions = conditions.length > 0 ? and(...conditions) : undefined;
+    const baseWhere = baseConditions.length > 0 ? and(...baseConditions) : undefined;
+
+    const [projects, countResult, typeCounts] = await Promise.all([
       db.select().from(projectsTable)
         .where(whereConditions)
         .limit(limitNum)
         .offset(offset)
-        .orderBy(projectsTable.createdAt),
+        // 小口は件数が増え続けるので新しい順。通常の工事はこれまで通り登録順
+        .orderBy(isSmallOnly ? desc(projectsTable.createdAt) : projectsTable.createdAt),
       db.select({ count: sql<number>`count(*)` }).from(projectsTable).where(whereConditions),
+      db.select({ managementType: projectsTable.managementType, count: sql<number>`count(*)` })
+        .from(projectsTable).where(baseWhere).groupBy(projectsTable.managementType),
     ]);
+
+    const counts = { normal: 0, small: 0 };
+    for (const row of typeCounts) {
+      if (row.managementType === "small") counts.small = Number(row.count);
+      else counts.normal += Number(row.count);
+    }
 
     const projectIds = projects.map(p => p.id);
 
@@ -107,6 +131,7 @@ router.get("/", async (req, res) => {
     res.json({
       items,
       total: Number(countResult[0]?.count ?? 0),
+      counts,
       page: pageNum,
       limit: limitNum,
     });
@@ -186,6 +211,65 @@ router.post("/", async (req, res) => {
   }
 });
 
+/**
+ * POST /api/projects/small — 小口工事（その他）の簡易登録
+ *
+ * 金額の小さい工事まで通常の登録画面（工事番号・場所・得意先・着工日・竣工予定日…）を
+ * 埋めるのは手間に合わないため、**工事名・請負金額・担当者の3つだけ**で登録する。
+ * 残りはここで既定値を入れる：工事番号は自動採番、日付は登録日、場所と得意先は空。
+ * あとから通常の編集画面で足せる（区分を「通常」に変えれば普通の工事として扱える）。
+ */
+router.post("/small", async (req, res) => {
+  try {
+    const { name, contractAmount, siteManager } = req.body;
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ message: "工事名は必須です" });
+    }
+    const amount = typeof contractAmount === "string" ? parseFloat(contractAmount) : Number(contractAmount);
+    if (!Number.isFinite(amount) || amount < 0) {
+      return res.status(400).json({ message: "請負金額を正しく入力してください" });
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const yearMonth = today.slice(0, 4) + today.slice(5, 7);
+
+    // 既存と同じ体系（YYYYMM####-00）で採番する。事務が手で採番した番号と
+    // ぶつかることがあるため、一意制約に当たったら次の番号で数回やり直す。
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const [maxRow] = await db
+        .select({ max: sql<string | null>`MAX(${projectsTable.projectCode})` })
+        .from(projectsTable)
+        .where(ilike(projectsTable.projectCode, `${yearMonth}%`));
+      const currentSeq = maxRow?.max ? parseInt(maxRow.max.slice(6, 10)) || 0 : 0;
+      const projectCode = `${yearMonth}${String(currentSeq + 1 + attempt).padStart(4, "0")}-00`;
+
+      try {
+        const [project] = await db.insert(projectsTable).values({
+          projectCode,
+          name: String(name).trim(),
+          clientName: "",
+          location: "",
+          contractAmount: String(amount),
+          status: "active",
+          managementType: "small",
+          startDate: today,
+          endDate: today,
+          siteManager: siteManager ? String(siteManager).trim() : null,
+        }).returning();
+
+        return res.status(201).json({ ...project, contractAmount: parseNumeric(project.contractAmount) });
+      } catch (err) {
+        if (isUniqueViolation(err)) continue;
+        throw err;
+      }
+    }
+    return res.status(409).json({ message: "工事番号の自動採番に失敗しました。時間をおいて再度お試しください。" });
+  } catch (err) {
+    req.log.error({ err }, "Failed to create small project");
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
 router.get("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
@@ -254,7 +338,7 @@ router.put("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const {
-      projectCode, name, clientName, location, contractAmount, status, startDate, endDate, completedDate, description,
+      projectCode, name, clientName, location, contractAmount, status, managementType, startDate, endDate, completedDate, description,
       shortName, estimateNumber, orderType, orderDate, taxRate, taxExcludedAmount, taxAmount, taxIncludedAmount,
       overview, department, salesStaff, siteManager, category1, category2, category3,
       handoverDate, progressRate, recognitionBasis,
@@ -265,6 +349,7 @@ router.put("/:id", async (req, res) => {
 
     const updateData: Partial<typeof projectsTable.$inferInsert> = {};
     if (projectCode !== undefined) updateData.projectCode = projectCode;
+    if (managementType === "normal" || managementType === "small") updateData.managementType = managementType;
     if (name !== undefined) updateData.name = name;
     if (clientName !== undefined) updateData.clientName = clientName;
     if (location !== undefined) updateData.location = location;

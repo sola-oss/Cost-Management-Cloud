@@ -5,6 +5,7 @@
  * 建設業向け原価管理クラウドシステム API
  * OpenAPI spec version: 0.1.0
  */
+import type { ProjectListItemManagementType } from "./projectListItemManagementType";
 import type { ProjectListItemStatus } from "./projectListItemStatus";
 
 export interface ProjectListItem {
@@ -14,12 +15,16 @@ export interface ProjectListItem {
   clientName: string;
   contractAmount: number;
   status: ProjectListItemStatus;
+  /** 管理区分。small は「その他（小口工事）」で実行予算・出来高を作らない */
+  managementType?: ProjectListItemManagementType;
+  /** 工事担当者 */
+  siteManager?: string | null;
   startDate: Date;
   endDate: Date;
   totalBudget: number;
   totalActualCost: number;
   /** 予算消化率（%） */
   budgetUsageRate: number;
-  /** 粗利率（%） */
-  grossProfitRate: number;
+  /** 粗利率（%）。通常工事は請負−実行予算、小口工事は請負−実績原価 */
+  grossProfitRate: number | null;
 }

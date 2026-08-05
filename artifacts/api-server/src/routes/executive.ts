@@ -42,7 +42,8 @@ router.get("/", async (req, res) => {
     const ids = projects.map((p) => p.id);
     if (ids.length === 0) {
       return res.json({
-        summary: { contractTotal: 0, budgetTotal: 0, actualCostTotal: 0, plannedProfit: 0, plannedProfitRate: null, forecastProfit: null, forecastProfitRate: null, unbilledOrderTotal: 0 },
+        summary: { contractTotal: 0, budgetTotal: 0, actualCostTotal: 0, plannedProfit: 0, plannedProfitRate: null, forecastProfit: null, forecastProfitRate: null, unbilledOrderTotal: 0, activeProjects: 0 },
+        smallSummary: { count: 0, contractTotal: 0, actualCostTotal: 0, profit: 0 },
         alerts: [], projects: [], freshness: { projectsWithoutProgress: 0, staleProgressProjects: 0, pendingReceivedInvoices: 0, lastCostAt: null },
       });
     }
@@ -106,6 +107,28 @@ router.get("/", async (req, res) => {
       const progressRate = prog?.rate ?? p.progressRate ?? null;
       const costRate = budget > 0 ? (actual / budget) * 100 : null;
 
+      // 小口工事（その他）は実行予算も出来高も作らない。
+      // 予算が無いぶん「請負 − 実績原価」を粗利とみなし、着地見込みも同じ値を使う
+      // （予算ゼロのまま全体に足すと請負金額がまるごと粗利に見えてしまうため）。
+      const isSmall = p.managementType === "small";
+      if (isSmall) {
+        const profit = contract - actual;
+        return {
+          id: p.id, projectCode: p.projectCode, name: p.name, clientName: p.clientName,
+          siteManager: p.siteManager, isSmall: true,
+          contractAmount: contract, totalBudget: 0, totalActualCost: actual,
+          budgetRemaining: 0, unbilledOrder,
+          progressRate: null, progressYearMonth: null, costConsumptionRate: null, gap: null,
+          plannedProfit: profit,
+          plannedProfitRate: contract > 0 ? round1((profit / contract) * 100) : null,
+          forecastCost: actual,
+          forecastProfit: profit,
+          forecastUnavailableReason: null,
+          forecastProfitRate: contract > 0 ? round1((profit / contract) * 100) : null,
+          overBudget: false,
+        };
+      }
+
       // 予定粗利：請負 − 実行予算
       const plannedProfit = budget > 0 ? contract - budget : null;
 
@@ -133,6 +156,7 @@ router.get("/", async (req, res) => {
         name: p.name,
         clientName: p.clientName,
         siteManager: p.siteManager,
+        isSmall: false,
         contractAmount: contract,
         totalBudget: budget,
         totalActualCost: actual,
@@ -157,7 +181,21 @@ router.get("/", async (req, res) => {
     const budgetTotal = items.reduce((s, i) => s + i.totalBudget, 0);
     const actualCostTotal = items.reduce((s, i) => s + i.totalActualCost, 0);
     const unbilledOrderTotal = items.reduce((s, i) => s + i.unbilledOrder, 0);
-    const plannedProfit = contractTotal - budgetTotal;
+    // 予定粗利は工事ごとに基準が違う（通常＝請負−実行予算／小口＝請負−実績原価）ので、
+    // 合計どうしの引き算にはしない。小口を予算ゼロで引くと請負が丸ごと粗利になってしまう。
+    const plannedProfit = items.reduce(
+      (s, i) => s + (i.isSmall ? (i.plannedProfit ?? 0) : i.contractAmount - i.totalBudget),
+      0,
+    );
+
+    // ── 小口工事（その他）だけの内訳。件数が多くなるので合計だけ別に見せる ───────
+    const smallItems = items.filter((i) => i.isSmall);
+    const smallSummary = {
+      count: smallItems.length,
+      contractTotal: smallItems.reduce((s, i) => s + i.contractAmount, 0),
+      actualCostTotal: smallItems.reduce((s, i) => s + i.totalActualCost, 0),
+      profit: smallItems.reduce((s, i) => s + (i.plannedProfit ?? 0), 0),
+    };
 
     // 全体の着地見込みは、見込みが出せる工事だけを合計する（出せない工事は予定値で代替）
     const forecastProfit = Math.round(items.reduce((s, i) => s + (i.forecastProfit ?? i.plannedProfit ?? 0), 0));
@@ -166,6 +204,13 @@ router.get("/", async (req, res) => {
     const alerts = items
       .map((i) => {
         const reasons: string[] = [];
+        // 小口工事は予算も出来高も作らないため、予算超過・進捗ズレでは判定しない
+        // （毎回そろって注意欄に並び、本当に危ない工事が埋もれてしまう）。
+        // 実績原価が請負を超えた＝実際に赤字のときだけ知らせる。
+        if (i.isSmall) {
+          if (i.plannedProfit != null && i.plannedProfit < 0) reasons.push("原価が請負金額を超過");
+          return { ...i, reasons, severity: reasons.length > 0 ? 90 : 0 };
+        }
         if (i.overBudget) reasons.push("予算超過");
         if (i.gap != null && i.gap >= 15) reasons.push(`原価が進捗より${i.gap}ポイント先行`);
         if (i.forecastProfitRate != null && i.forecastProfitRate < 0) reasons.push("着地見込みが赤字");
@@ -180,7 +225,8 @@ router.get("/", async (req, res) => {
       .sort((a, b) => b.severity - a.severity);
 
     // ── データの鮮度（数字を信じてよいかの判断材料）───────────────────────
-    const projectsWithoutProgress = items.filter((i) => i.progressRate == null).length;
+    // 小口工事は出来高を入力しない前提なので「未入力」として数えない
+    const projectsWithoutProgress = items.filter((i) => !i.isSmall && i.progressRate == null).length;
     const staleProgressProjects = items.filter(
       (i) => i.progressYearMonth != null && i.progressYearMonth < prevYm,
     ).length;
@@ -195,8 +241,10 @@ router.get("/", async (req, res) => {
         plannedProfitRate: contractTotal > 0 ? round1((plannedProfit / contractTotal) * 100) : null,
         forecastProfit,
         forecastProfitRate: contractTotal > 0 ? round1((forecastProfit / contractTotal) * 100) : null,
-        activeProjects: items.length,
+        // 小口は件数が多くなるので「施工中◯件」には数えず、smallSummary 側で見せる
+        activeProjects: items.length - smallItems.length,
       },
+      smallSummary,
       alerts: alerts.slice(0, 10),
       projects: items,
       freshness: {

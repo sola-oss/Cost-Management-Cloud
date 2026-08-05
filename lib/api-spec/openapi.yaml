@@ -52,6 +52,12 @@ paths:
             type: string
             enum: [planning, active, completed, suspended]
         - in: query
+          name: managementType
+          description: 管理区分での絞り込み（normal=通常工事 / small=小口工事）
+          schema:
+            type: string
+            enum: [normal, small]
+        - in: query
           name: page
           schema:
             type: integer
@@ -960,6 +966,17 @@ components:
             $ref: "#/components/schemas/ProjectListItem"
         total:
           type: integer
+        counts:
+          type: object
+          description: 管理区分ごとの件数（区分の絞り込みを外し、検索・ステータスは効かせた件数）
+          properties:
+            normal:
+              type: integer
+            small:
+              type: integer
+          required:
+            - normal
+            - small
         page:
           type: integer
         limit:
@@ -986,6 +1003,14 @@ components:
         status:
           type: string
           enum: [planning, active, completed, suspended]
+        managementType:
+          type: string
+          enum: [normal, small]
+          description: 管理区分。small は「その他（小口工事）」で実行予算・出来高を作らない
+        siteManager:
+          type: string
+          nullable: true
+          description: 工事担当者
         startDate:
           type: string
           format: date
@@ -1001,7 +1026,8 @@ components:
           description: 予算消化率（%）
         grossProfitRate:
           type: number
-          description: 粗利率（%）
+          nullable: true
+          description: 粗利率（%）。通常工事は請負−実行予算、小口工事は請負−実績原価
       required:
         - id
         - projectCode

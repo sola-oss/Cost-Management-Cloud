@@ -5,10 +5,15 @@
  * 建設業向け原価管理クラウドシステム API
  * OpenAPI spec version: 0.1.0
  */
+import type { ListProjectsManagementType } from "./listProjectsManagementType";
 import type { ListProjectsStatus } from "./listProjectsStatus";
 
 export type ListProjectsParams = {
   status?: ListProjectsStatus;
+  /**
+   * 管理区分での絞り込み（normal=通常工事 / small=小口工事）
+   */
+  managementType?: ListProjectsManagementType;
   page?: number;
   limit?: number;
 };

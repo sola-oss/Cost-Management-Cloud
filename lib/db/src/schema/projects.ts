@@ -5,6 +5,13 @@ import { z } from "zod/v4";
 export const projectStatusEnum = ["planning", "active", "completed", "suspended"] as const;
 export type ProjectStatus = typeof projectStatusEnum[number];
 
+// 管理区分。small =「その他（小口工事）」。
+// 金額の小さい工事まで実行予算・出来高を作るのは手間に合わないため、
+// 工事名・請負金額・担当者だけで登録し、粗利は「請負 − 実績原価」で見る。
+// 全体の売上・原価・粗利には通常工事と同じように含める（入れないと全体が分からないため）。
+export const projectManagementTypeEnum = ["normal", "small"] as const;
+export type ProjectManagementType = typeof projectManagementTypeEnum[number];
+
 export type ContractLine = {
   contractDate: string | null;
   taxExcludedAmount: number | null;
@@ -18,6 +25,7 @@ export const projectsTable = pgTable("projects", {
   location: text("location").notNull(),
   contractAmount: numeric("contract_amount", { precision: 15, scale: 2 }).notNull(),
   status: text("status").$type<ProjectStatus>().notNull().default("planning"),
+  managementType: text("management_type").$type<ProjectManagementType>().notNull().default("normal"),
   startDate: date("start_date").notNull(),
   endDate: date("end_date").notNull(),
   completedDate: date("completed_date"),

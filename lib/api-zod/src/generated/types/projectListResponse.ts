@@ -6,10 +6,13 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ProjectListItem } from "./projectListItem";
+import type { ProjectListResponseCounts } from "./projectListResponseCounts";
 
 export interface ProjectListResponse {
   items: ProjectListItem[];
   total: number;
+  /** 管理区分ごとの件数（区分の絞り込みを外し、検索・ステータスは効かせた件数） */
+  counts?: ProjectListResponseCounts;
   page: number;
   limit: number;
 }

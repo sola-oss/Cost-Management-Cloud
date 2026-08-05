@@ -225,6 +225,14 @@ export type ProjectDetail = Project & {
   budgets: Budget[];
 };
 
+/**
+ * 管理区分ごとの件数（区分の絞り込みを外し、検索・ステータスは効かせた件数）
+ */
+export type ProjectListResponseCounts = {
+  normal: number;
+  small: number;
+};
+
 export type ProjectListItemStatus =
   (typeof ProjectListItemStatus)[keyof typeof ProjectListItemStatus];
 
@@ -235,6 +243,17 @@ export const ProjectListItemStatus = {
   suspended: "suspended",
 } as const;
 
+/**
+ * 管理区分。small は「その他（小口工事）」で実行予算・出来高を作らない
+ */
+export type ProjectListItemManagementType =
+  (typeof ProjectListItemManagementType)[keyof typeof ProjectListItemManagementType];
+
+export const ProjectListItemManagementType = {
+  normal: "normal",
+  small: "small",
+} as const;
+
 export interface ProjectListItem {
   id: number;
   projectCode: string;
@@ -242,19 +261,25 @@ export interface ProjectListItem {
   clientName: string;
   contractAmount: number;
   status: ProjectListItemStatus;
+  /** 管理区分。small は「その他（小口工事）」で実行予算・出来高を作らない */
+  managementType?: ProjectListItemManagementType;
+  /** 工事担当者 */
+  siteManager?: string | null;
   startDate: string;
   endDate: string;
   totalBudget: number;
   totalActualCost: number;
   /** 予算消化率（%） */
   budgetUsageRate: number;
-  /** 粗利率（%） */
-  grossProfitRate: number;
+  /** 粗利率（%）。通常工事は請負−実行予算、小口工事は請負−実績原価 */
+  grossProfitRate: number | null;
 }
 
 export interface ProjectListResponse {
   items: ProjectListItem[];
   total: number;
+  /** 管理区分ごとの件数（区分の絞り込みを外し、検索・ステータスは効かせた件数） */
+  counts?: ProjectListResponseCounts;
   page: number;
   limit: number;
 }
@@ -825,6 +850,10 @@ export interface BulkCreatePurchaseOrdersResponse {
 
 export type ListProjectsParams = {
   status?: ListProjectsStatus;
+  /**
+   * 管理区分での絞り込み（normal=通常工事 / small=小口工事）
+   */
+  managementType?: ListProjectsManagementType;
   page?: number;
   limit?: number;
 };
@@ -837,6 +866,14 @@ export const ListProjectsStatus = {
   active: "active",
   completed: "completed",
   suspended: "suspended",
+} as const;
+
+export type ListProjectsManagementType =
+  (typeof ListProjectsManagementType)[keyof typeof ListProjectsManagementType];
+
+export const ListProjectsManagementType = {
+  normal: "normal",
+  small: "small",
 } as const;
 
 export type ListCostItemsParams = {
