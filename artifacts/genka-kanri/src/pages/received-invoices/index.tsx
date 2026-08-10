@@ -72,8 +72,9 @@ export default function ReceivedInvoiceList() {
   // 取り込んだばかりの書類。どこまで確認したか見失わないよう一覧に印を付ける。
   const [justImported, setJustImported] = useState<number[]>([]);
 
-  // 1件45秒前後かかるので、一度に投げられる数は絞る（20件で15分ほど）
-  const MAX_FILES = 20;
+  // 1件あたりの読み取りは、1枚ものなら30秒ほどだが、9ページ40行の請求書で
+  // 2分43秒かかった実測がある。10件で30分前後を見込んで上限を決めている。
+  const MAX_FILES = 10;
 
   const { data, isLoading } = useQuery({
     queryKey: ["/api/received-invoices"],
@@ -356,7 +357,7 @@ export default function ReceivedInvoiceList() {
                     <span className="text-xs text-slate-500 max-w-xs truncate">{progress.current}</span>
                   )}
                   <span className="text-xs text-slate-400">
-                    1件あたり30秒〜2分ほどかかります（明細が多いほど長くなります）
+                    1件あたり30秒〜3分ほどかかります（ページ数・明細が多いほど長くなります）
                   </span>
                   <span className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1">
                     終わるまでこのタブを閉じないでください（閉じると残りが取り込まれません）
@@ -372,7 +373,7 @@ export default function ReceivedInvoiceList() {
                     ここにドラッグしても取り込めます。1件だけなら、読み取ったあと確認画面が開きます
                   </span>
                   <span className="text-xs text-slate-400">
-                    一度に{MAX_FILES}件まで。手書きの請求書はAIが金額を読み違えるので、手入力のほうが確実です
+                    一度に{MAX_FILES}件まで（1件30秒〜3分）。手書きの請求書はAIが金額を読み違えるので、手入力のほうが確実です
                   </span>
                 </div>
               )}
