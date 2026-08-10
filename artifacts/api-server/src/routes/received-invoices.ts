@@ -298,6 +298,16 @@ router.get("/", async (req, res) => {
       recipsByInv.set(r.receivedInvoiceId, arr);
     }
 
+    // 仕入先を選び直しても vendor_name（AIが読んだ社名）は書き換わらない。
+    // 一覧がその列だけを見ていたため、紐づけ済みでも「（仕入先不明）」のままだった。
+    // 詳細画面と同じく、紐づけた仕入先マスタの名前を優先する。
+    const vendorIds = [...new Set(invoices.map((i) => i.vendorId).filter((v): v is number => v != null))];
+    const vendorRows = vendorIds.length > 0
+      ? await db.select({ id: vendorsTable.id, name: vendorsTable.name })
+          .from(vendorsTable).where(inArray(vendorsTable.id, vendorIds))
+      : [];
+    const vendorNameById = new Map(vendorRows.map((v) => [v.id, v.name]));
+
     const out = invoices.map((inv) => {
       const its = itemsByInv.get(inv.id) ?? [];
       // 進捗は仕入ブロックだけで数える（入金・値引などの非仕入ブロックは分母にも入れない）
@@ -306,7 +316,7 @@ router.get("/", async (req, res) => {
       return {
         id: inv.id,
         vendorId: inv.vendorId,
-        vendorName: inv.vendorName,
+        vendorName: (inv.vendorId != null ? vendorNameById.get(inv.vendorId) : null) ?? inv.vendorName,
         invoiceDate: inv.invoiceDate,
         paymentDueDate: inv.paymentDueDate,
         status: inv.status,

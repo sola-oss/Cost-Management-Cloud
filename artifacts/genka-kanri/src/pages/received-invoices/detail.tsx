@@ -128,7 +128,11 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message ?? "保存に失敗しました");
       return r.json();
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/received-invoices", id] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/received-invoices", id] });
+      // 一覧の「未割当」と進捗（0/3 など）もこの操作で変わる
+      qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
+    },
     onError: (e) => toast({ title: "エラー", description: e instanceof Error ? e.message : "", variant: "destructive" }),
   });
 
@@ -199,7 +203,12 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
       });
       if (!r.ok) throw new Error("仕入先の保存に失敗しました");
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/received-invoices", id] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/received-invoices", id] });
+      // 一覧にも仕入先名が出ているので、ここを忘れると
+      // 直したはずの「（仕入先不明）」が一覧に残り続ける
+      qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
+    },
     onError: (e) => toast({ title: "エラー", description: e instanceof Error ? e.message : "", variant: "destructive" }),
   });
 
