@@ -128,6 +128,11 @@ function InboxSection({ staffId }: { staffId: number }) {
   // 書類は「未回答」のまま残るので、状態だけで数えるといつまでも催促されてしまう。
   const myAnswer = (i: InboxItem) => i.recipients.find((r) => r.staffMemberId === staffId)?.respondedAt ?? null;
   const unanswered = items.filter((i) => i.status === "sent" && !myAnswer(i));
+  // 返した書類も同じ場所に残り続けると、こなすほど画面が見にくくなる（温品様の指摘）。
+  // 既定は「未回答」だけを出し、返した分は畳んでおく。
+  const responded = items.filter((i) => !(i.status === "sent" && !myAnswer(i)));
+  const [tab, setTab] = useState<"unanswered" | "responded">("unanswered");
+  const shown = tab === "unanswered" ? unanswered : responded;
 
   if (isLoading) return null;
   if (items.length === 0) return null;
@@ -138,15 +143,42 @@ function InboxSection({ staffId }: { staffId: number }) {
         <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
           <Inbox className={`w-4 h-4 ${unanswered.length > 0 ? "text-amber-600" : "text-slate-400"}`} />
           届いている書類
-          {unanswered.length > 0 && (
-            <Badge variant="outline" className="bg-amber-100 text-amber-700 border-amber-300 text-xs">
-              未回答 {unanswered.length}件
-            </Badge>
-          )}
         </div>
 
+        <div className="flex items-center gap-1 border-b -mt-1">
+          {([
+            { key: "unanswered" as const, label: "未回答", count: unanswered.length },
+            { key: "responded" as const, label: "返信済み", count: responded.length },
+          ]).map((t) => {
+            const active = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                  active
+                    ? "border-primary text-primary"
+                    : "border-transparent text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                {t.label}
+                <span className={`ml-1.5 text-xs tabular-nums ${active ? "text-primary" : "text-slate-400"}`}>
+                  {t.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {shown.length === 0 && (
+          <div className="py-6 text-center text-xs text-slate-400">
+            {tab === "unanswered" ? "未回答の書類はありません" : "返信済みの書類はまだありません"}
+          </div>
+        )}
+
         <div className="space-y-2">
-          {items.map((inv) => {
+          {shown.map((inv) => {
             const done = inv.status === "answered";
             const iAnswered = myAnswer(inv) != null;
             return (
