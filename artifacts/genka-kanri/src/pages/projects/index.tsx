@@ -43,7 +43,7 @@ const STATUS_COLORS: Record<string, string> = {
  * 金額の小さい工事を件数だけ登録するには重すぎる。ここは3つだけ聞いて、
  * 残りはサーバ側で埋める（工事番号は自動採番・日付は登録日）。
  */
-function SmallProjectDialog({ open, onClose, onSaved }: { open: boolean; onClose: () => void; onSaved: () => void }) {
+function SmallProjectForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data: staffMembers = [] } = useStaffMembers();
@@ -53,10 +53,6 @@ function SmallProjectDialog({ open, onClose, onSaved }: { open: boolean; onClose
   const [contractAmount, setContractAmount] = useState("");
   const [siteManager, setSiteManager] = useState("");
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (open) { setName(""); setContractAmount(""); setSiteManager(""); }
-  }, [open]);
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -93,8 +89,7 @@ function SmallProjectDialog({ open, onClose, onSaved }: { open: boolean; onClose
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-md">
+    <>
         <DialogHeader>
           <DialogTitle>小口工事の登録</DialogTitle>
         </DialogHeader>
@@ -143,6 +138,78 @@ function SmallProjectDialog({ open, onClose, onSaved }: { open: boolean; onClose
             登録
           </Button>
         </DialogFooter>
+    </>
+  );
+}
+
+/**
+ * 「新規工事登録」を押したときに、先に金額を聞く画面。
+ *
+ * 登録ボタンが「小口工事を登録」と「新規工事登録」の2つ並んでいると、
+ * どちらを押せばよいか毎回迷う。入口は1つにして、答えに合う画面へ案内する。
+ * 金額はここで縛らない（100万ちょうど付近や、あとから請負金額が変わる工事が
+ * 必ず出るため）。あとから工事の編集画面で区分を変えられる。
+ */
+function NewProjectDialog({
+  open,
+  onClose,
+  onSavedSmall,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSavedSmall: () => void;
+}) {
+  // 金額を聞く画面と小口の入力画面は、同じダイアログの中で差し替える。
+  // 別々のダイアログにすると、切り替わる一瞬だけ2枚重なって見える。
+  const [step, setStep] = useState<"kind" | "small">("kind");
+
+  useEffect(() => {
+    if (open) setStep("kind");
+  }, [open]);
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-md">
+        {step === "small" ? (
+          <SmallProjectForm onClose={onClose} onSaved={onSavedSmall} />
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>登録する工事の請負金額は？</DialogTitle>
+            </DialogHeader>
+            <p className="text-xs text-slate-500">
+              税込の金額でお答えください。金額に応じて入力する項目が変わります。
+            </p>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => setStep("small")}
+                className="w-full text-left rounded-lg border border-slate-200 p-4 hover:border-primary hover:bg-primary/5 transition-colors"
+              >
+                <div className="font-semibold text-slate-800">100万円以下</div>
+                <div className="text-xs text-slate-500 mt-1 leading-relaxed">
+                  小口工事として登録します。工事名・請負金額・担当者の3つだけ。
+                  実行予算と出来高は作らず、粗利は「請負金額 − 実績原価」で見ます。
+                </div>
+              </button>
+              <Link href="/projects/new">
+                <div
+                  onClick={onClose}
+                  className="w-full text-left rounded-lg border border-slate-200 p-4 hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer"
+                >
+                  <div className="font-semibold text-slate-800">100万円を超える</div>
+                  <div className="text-xs text-slate-500 mt-1 leading-relaxed">
+                    通常の工事として登録します。工事番号・得意先・工期などを入力し、
+                    実行予算と出来高で採算を管理します。
+                  </div>
+                </div>
+              </Link>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={onClose}>キャンセル</Button>
+            </DialogFooter>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -150,9 +217,10 @@ function SmallProjectDialog({ open, onClose, onSaved }: { open: boolean; onClose
 
 export default function Projects() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  // 「新規工事登録」→ 金額を聞く → 小口ならその場で入力、通常なら従来の登録画面へ
   // 既定は「通常の工事」。小口は件数が増え続けるので、開いた直後の一覧を埋めさせない
   const [typeFilter, setTypeFilter] = useState<string>("normal");
-  const [smallDialogOpen, setSmallDialogOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
@@ -206,23 +274,19 @@ export default function Projects() {
           <p className="text-sm text-slate-500 mt-1">すべての工事プロジェクトと進捗状況を管理します。</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" onClick={() => setSmallDialogOpen(true)}>
+          {/* 入口は1つだけ。登録ボタンが2つ並んでいると、どちらを押すか毎回迷う。
+              まず金額を聞いて、答えに合う登録画面へ案内する。 */}
+          <Button onClick={() => setPickerOpen(true)}>
             <Plus className="w-4 h-4 mr-2" />
-            小口工事を登録
-          </Button>
-          <Button asChild>
-            <Link href="/projects/new">
-              <Plus className="w-4 h-4 mr-2" />
-              新規工事登録
-            </Link>
+            新規工事登録
           </Button>
         </div>
       </div>
 
-      <SmallProjectDialog
-        open={smallDialogOpen}
-        onClose={() => setSmallDialogOpen(false)}
-        onSaved={() => setTypeFilter("small")}
+      <NewProjectDialog
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSavedSmall={() => { setPickerOpen(false); setTypeFilter("small"); }}
       />
 
       <Card>
