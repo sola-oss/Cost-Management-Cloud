@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -66,6 +66,14 @@ export default function ReceivedInvoiceList() {
   // 事務が中身（とくに仕入先）を確かめる前に現場へ送れてしまうのを防ぐため。
   const [reading, setReading] = useState(false);
   const [manual, setManual] = useState(false);
+  // 一括読み取りの進み具合。1件ずつ順番に投げるので、何件目を読んでいるかを見せる。
+  const [progress, setProgress] = useState<{ done: number; total: number; current: string } | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  // 取り込んだばかりの書類。どこまで確認したか見失わないよう一覧に印を付ける。
+  const [justImported, setJustImported] = useState<number[]>([]);
+
+  // 1件45秒前後かかるので、一度に投げられる数は絞る（20件で15分ほど）
+  const MAX_FILES = 20;
 
   const { data, isLoading } = useQuery({
     queryKey: ["/api/received-invoices"],
@@ -90,10 +98,22 @@ export default function ReceivedInvoiceList() {
     : tab === "confirmed" ? confirmed
     : items;
 
-  // ── AI読み取り → 受領請求書を作成 ─────────────────────────────────────────
-  const handleFile = async (file: File) => {
-    setReading(true);
-    try {
+  // 読み取りはブラウザから1件ずつ投げているので、タブを閉じると残りが止まる。
+  // 画面にも注意書きを出しているが、うっかり閉じる事故は確認で止める。
+  useEffect(() => {
+    if (!reading) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [reading]);
+
+  // ── AI読み取り → 受領請求書を作成（1件ぶん）───────────────────────────────
+  // 失敗は投げっぱなしにして、束で読むときに呼び出し側が「その1件だけ飛ばす」判断をする。
+  const readOne = async (file: File): Promise<{ id: number; lines: number; amountMismatch: boolean; amountDiff: number }> => {
+    {
       const base64 = await new Promise<string>((resolve, reject) => {
         const fr = new FileReader();
         fr.onload = () => resolve(String(fr.result).split(",")[1] ?? "");
@@ -141,22 +161,86 @@ export default function ReceivedInvoiceList() {
       if (!create.ok) throw new Error("受領請求書の作成に失敗しました");
       const { id } = await create.json();
 
-      const lines = (draft.items ?? []).length;
-      qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
+      return {
+        id,
+        lines: (draft.items ?? []).length,
+        amountMismatch: !!amountMismatch,
+        amountDiff: Math.abs(amountDiff ?? 0),
+      };
+    }
+  };
+
+  /**
+   * 選ばれたファイルを順に読み取る。
+   *
+   * 1件だけのときは、これまで通り確認画面へ送り出す（毎日の「1枚だけ届いた」を
+   * 遠回りにしたくないため）。複数のときは一覧に留まり、下書きが並んだ状態にして
+   * 上から順に確認してもらう。
+   */
+  const handleFiles = async (selected: File[]) => {
+    if (selected.length === 0) return;
+    const files = selected.slice(0, MAX_FILES);
+    const dropped = selected.length - files.length;
+
+    setReading(true);
+    setJustImported([]);
+    const createdIds: number[] = [];
+    const failed: string[] = [];
+    let firstResult: Awaited<ReturnType<typeof readOne>> | null = null;
+
+    for (let i = 0; i < files.length; i++) {
+      setProgress({ done: i, total: files.length, current: files[i].name });
+      try {
+        const r = await readOne(files[i]);
+        createdIds.push(r.id);
+        if (!firstResult) firstResult = r;
+      } catch (e) {
+        failed.push(files[i].name);
+        // AIそのものが使えない状態なら、残りを投げても同じように失敗するだけなので止める
+        if (e instanceof Error && e.message.includes("AIの読み取りは今は使えません")) {
+          toast({ title: "エラー", description: e.message, variant: "destructive" });
+          break;
+        }
+      }
+    }
+
+    setProgress(null);
+    setReading(false);
+    if (fileRef.current) fileRef.current.value = "";
+    qc.invalidateQueries({ queryKey: ["/api/received-invoices"] });
+
+    if (createdIds.length === 0) {
+      toast({
+        title: "読み取れませんでした",
+        description: failed.length > 0 ? `${failed.join("、")}／「AIを使わず手で入力する」からお願いします。` : "",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // 1件だけ → これまで通り確認画面へ
+    if (files.length === 1 && createdIds.length === 1 && firstResult) {
       toast({
         title: "読み取り完了",
-        description: amountMismatch
-          ? `${lines}行を読み取りました。金額が${formatCurrency(Math.abs(amountDiff ?? 0))}ずれています。内容を確かめてください。`
-          : `${lines}行を読み取りました。内容を確かめてから現場に送ってください。`,
+        description: firstResult.amountMismatch
+          ? `${firstResult.lines}行を読み取りました。金額が${formatCurrency(firstResult.amountDiff)}ずれています。内容を確かめてください。`
+          : `${firstResult.lines}行を読み取りました。内容を確かめてから現場に送ってください。`,
       });
-      // 確認画面へ。ここで仕入先・日付・明細を確かめてから現場に送る。
-      navigate(`/received-invoices/${id}`);
-    } catch (e) {
-      toast({ title: "エラー", description: e instanceof Error ? e.message : "読み取りに失敗しました", variant: "destructive" });
-    } finally {
-      setReading(false);
-      if (fileRef.current) fileRef.current.value = "";
+      navigate(`/received-invoices/${createdIds[0]}`);
+      return;
     }
+
+    // 複数 → 一覧に留まり、取り込んだ分に印を付ける
+    setJustImported(createdIds);
+    const notes = [
+      failed.length > 0 ? `${failed.length}件は読み取れませんでした（${failed.join("、")}）` : "",
+      dropped > 0 ? `${dropped}件は一度に取り込める上限（${MAX_FILES}件）を超えたので取り込んでいません` : "",
+    ].filter(Boolean);
+    toast({
+      title: `${createdIds.length}件を取り込みました`,
+      description: [`下の一覧から1件ずつ内容を確かめてください。`, ...notes].join(" "),
+      variant: failed.length > 0 ? "destructive" : undefined,
+    });
   };
 
   const delMut = useMutation({
@@ -227,9 +311,10 @@ export default function ReceivedInvoiceList() {
           <input
             ref={fileRef}
             type="file"
+            multiple
             accept="application/pdf,image/png,image/jpeg,image/webp"
             className="hidden"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+            onChange={(e) => handleFiles(Array.from(e.target.files ?? []))}
           />
 
           {manual ? (
@@ -247,19 +332,48 @@ export default function ReceivedInvoiceList() {
               type="button"
               disabled={reading}
               onClick={() => fileRef.current?.click()}
-              className="w-full border-2 border-dashed border-slate-200 rounded-lg py-10 text-center hover:border-primary hover:bg-slate-50 transition-colors disabled:opacity-60"
+              onDragOver={(e) => { e.preventDefault(); if (!reading) setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOver(false);
+                if (reading) return;
+                handleFiles(Array.from(e.dataTransfer.files ?? []));
+              }}
+              className={`w-full border-2 border-dashed rounded-lg py-10 text-center transition-colors disabled:opacity-60 ${
+                dragOver ? "border-primary bg-primary/5" : "border-slate-200 hover:border-primary hover:bg-slate-50"
+              }`}
             >
               {reading ? (
                 <div className="flex flex-col items-center gap-2 text-slate-600">
                   <Loader2 className="w-6 h-6 animate-spin" />
-                  <span className="text-sm font-medium">AIが読み取っています…</span>
-                  <span className="text-xs text-slate-400">30秒〜2分ほどかかります（明細が多いほど長くなります）</span>
+                  <span className="text-sm font-medium">
+                    {progress && progress.total > 1
+                      ? `AIが読み取っています… ${progress.done + 1} / ${progress.total} 件目`
+                      : "AIが読み取っています…"}
+                  </span>
+                  {progress && progress.total > 1 && (
+                    <span className="text-xs text-slate-500 max-w-xs truncate">{progress.current}</span>
+                  )}
+                  <span className="text-xs text-slate-400">
+                    1件あたり30秒〜2分ほどかかります（明細が多いほど長くなります）
+                  </span>
+                  <span className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1">
+                    終わるまでこのタブを閉じないでください（閉じると残りが取り込まれません）
+                  </span>
                 </div>
               ) : (
                 <div className="flex flex-col items-center gap-2">
                   <Upload className="w-6 h-6 text-slate-400" />
-                  <span className="text-sm font-semibold text-slate-700">請求書・納品書のPDF・写真を選ぶ</span>
-                  <span className="text-xs text-slate-400">AIが読み取ったあと、内容を確かめる画面が開きます</span>
+                  <span className="text-sm font-semibold text-slate-700">
+                    請求書・納品書のPDF・写真を選ぶ（まとめて選べます）
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    ここにドラッグしても取り込めます。1件だけなら、読み取ったあと確認画面が開きます
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    一度に{MAX_FILES}件まで。手書きの請求書はAIが金額を読み違えるので、手入力のほうが確実です
+                  </span>
                 </div>
               )}
             </button>
@@ -339,6 +453,12 @@ export default function ReceivedInvoiceList() {
                         <td className="px-4 py-3">
                           <div className="font-medium text-slate-800 flex items-center gap-2">
                             {inv.vendorName || "（仕入先不明）"}
+                            {/* まとめて取り込んだ直後の印。上から順に確認していくときの目印 */}
+                            {justImported.includes(inv.id) && (
+                              <span className="text-[10px] font-semibold text-sky-700 bg-sky-50 border border-sky-200 rounded px-1.5 py-0.5 shrink-0">
+                                取り込んだばかり
+                              </span>
+                            )}
                             {inv.amountMismatch && (
                               <span title="明細合計と請求総額が不一致">
                                 <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
