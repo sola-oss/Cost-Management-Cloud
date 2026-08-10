@@ -271,8 +271,9 @@ export default function Executive() {
           )}
 
           {/* 区分ごとの内訳。全体だけだと「大きい工事で稼いで小口で溶かしている」
-              といった偏りが見えないため、100万円を境にした2区分で並べる */}
-          {small.count > 0 && (
+              といった偏りが見えないため、100万円を境にした2区分で並べる。
+              小口が0件でも出す。隠すと、まだ使っていない人には機能があること自体が伝わらない。 */}
+          {data.projects.length > 0 && (
             <div className="border-t pt-3">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-xs font-semibold text-slate-600">区分ごとの内訳</div>
