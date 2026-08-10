@@ -767,7 +767,24 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
 
             {data.status === "draft" && (
               <div className="space-y-2 pb-3 mb-3 border-b">
-                <div className="text-xs font-medium text-slate-600">送り先（複数選べます）</div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs font-medium text-slate-600">送り先（複数選べます）</div>
+                  {/* 1枚に複数現場の明細が混ざる書類は全員に送ることが多い。
+                      人数分クリックさせないよう、まとめて選べるようにする。 */}
+                  {(() => {
+                    const activeIds = staff.filter((x) => x.isActive).map((x) => x.id);
+                    const allOn = activeIds.length > 0 && activeIds.every((id) => selectedStaff.includes(id));
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedStaff(allOn ? [] : activeIds)}
+                        className="text-xs text-primary hover:underline underline-offset-2 shrink-0"
+                      >
+                        {allOn ? "選択を全部外す" : "全員を選ぶ"}
+                      </button>
+                    );
+                  })()}
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {staff.filter((x) => x.isActive).map((x) => {
                     const on = selectedStaff.includes(x.id);

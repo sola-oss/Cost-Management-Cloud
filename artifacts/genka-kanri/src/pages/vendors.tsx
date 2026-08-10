@@ -8,7 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Users, Plus, Pencil, Trash2, Loader2, Save, ChevronDown, ChevronRight } from "lucide-react";
+import { Users, Plus, Pencil, Trash2, Loader2, Save, ChevronDown, ChevronRight, Search } from "lucide-react";
+import { searchMatch } from "@/lib/search";
 import { useToast } from "@/hooks/use-toast";
 import { useHighlightNew } from "@/hooks/use-highlight-new";
 import { useVendors } from "@/hooks/use-vendors";
@@ -434,7 +435,18 @@ function paymentDayLabel(day: number) {
 
 export default function Vendors() {
   const { toast } = useToast();
-  const { data: items = [], isLoading } = useVendors<Vendor>();
+  const { data: allItems = [], isLoading } = useVendors<Vendor>();
+  const [search, setSearch] = useState("");
+
+  // 200社近くあるので目で探すのは無理。社名・フリガナ・コードのどれでも引ける。
+  // searchMatch は表記ゆれとローマ字入力も吸収する（プルダウンと同じ規則）。
+  const q = search.trim();
+  const items = q
+    ? allItems.filter((v) =>
+        searchMatch(v.name ?? "", q) ||
+        searchMatch(v.kana ?? "", q) ||
+        searchMatch(v.code ?? "", q))
+    : allItems;
   const deleteVendor = useDeleteVendor();
   const { mark, isNew } = useHighlightNew();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -467,6 +479,20 @@ export default function Vendors() {
       </div>
 
       <Card>
+        <div className="p-4 border-b flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Input
+              placeholder="仕入先名・フリガナ・コードで検索..."
+              className="pl-9 bg-slate-50"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="text-xs text-slate-500 tabular-nums shrink-0">
+            {q ? `${items.length} / ${allItems.length} 件` : `${allItems.length} 件`}
+          </div>
+        </div>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -488,7 +514,7 @@ export default function Vendors() {
               ) : items.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center py-8 text-slate-400">
-                    仕入先が登録されていません
+                    {q ? `「${q}」に一致する仕入先がありません` : "仕入先が登録されていません"}
                   </TableCell>
                 </TableRow>
               ) : (
