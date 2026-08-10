@@ -44,6 +44,10 @@ router.get("/", async (req, res) => {
       return res.json({
         summary: { contractTotal: 0, budgetTotal: 0, actualCostTotal: 0, plannedProfit: 0, plannedProfitRate: null, forecastProfit: null, forecastProfitRate: null, unbilledOrderTotal: 0, activeProjects: 0 },
         smallSummary: { count: 0, contractTotal: 0, actualCostTotal: 0, profit: 0 },
+        breakdown: {
+          normal: { count: 0, contractTotal: 0, budgetTotal: 0, actualCostTotal: 0, profit: 0, profitRate: null },
+          small: { count: 0, contractTotal: 0, budgetTotal: 0, actualCostTotal: 0, profit: 0, profitRate: null },
+        },
         alerts: [], projects: [], freshness: { projectsWithoutProgress: 0, staleProgressProjects: 0, pendingReceivedInvoices: 0, lastCostAt: null },
       });
     }
@@ -188,13 +192,33 @@ router.get("/", async (req, res) => {
       0,
     );
 
-    // ── 小口工事（その他）だけの内訳。件数が多くなるので合計だけ別に見せる ───────
+    // ── 区分ごとの内訳（通常の工事 ／ 小口工事）──────────────────────────────
+    // 全体だけだと「大きい工事で稼いで小口で溶かしている」といった偏りが見えない。
+    // 粗利の基準は区分ごとに違う（通常＝請負−実行予算／小口＝請負−実績原価）。
     const smallItems = items.filter((i) => i.isSmall);
+    const normalItems = items.filter((i) => !i.isSmall);
+    const summarize = (list: typeof items) => {
+      const contractTotal = list.reduce((s, i) => s + i.contractAmount, 0);
+      const profit = list.reduce(
+        (s, i) => s + (i.isSmall ? (i.plannedProfit ?? 0) : i.contractAmount - i.totalBudget),
+        0,
+      );
+      return {
+        count: list.length,
+        contractTotal,
+        budgetTotal: list.reduce((s, i) => s + i.totalBudget, 0),
+        actualCostTotal: list.reduce((s, i) => s + i.totalActualCost, 0),
+        profit,
+        profitRate: contractTotal > 0 ? round1((profit / contractTotal) * 100) : null,
+      };
+    };
+    const breakdown = { normal: summarize(normalItems), small: summarize(smallItems) };
+    // 既存の画面が参照している小口の内訳（形はそのまま）
     const smallSummary = {
-      count: smallItems.length,
-      contractTotal: smallItems.reduce((s, i) => s + i.contractAmount, 0),
-      actualCostTotal: smallItems.reduce((s, i) => s + i.totalActualCost, 0),
-      profit: smallItems.reduce((s, i) => s + (i.plannedProfit ?? 0), 0),
+      count: breakdown.small.count,
+      contractTotal: breakdown.small.contractTotal,
+      actualCostTotal: breakdown.small.actualCostTotal,
+      profit: breakdown.small.profit,
     };
 
     // 全体の着地見込みは、見込みが出せる工事だけを合計する（出せない工事は予定値で代替）
@@ -245,6 +269,7 @@ router.get("/", async (req, res) => {
         activeProjects: items.length - smallItems.length,
       },
       smallSummary,
+      breakdown,
       alerts: alerts.slice(0, 10),
       projects: items,
       freshness: {

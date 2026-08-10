@@ -41,6 +41,14 @@ interface ProjectRow {
   overBudget: boolean;
   isSmall: boolean;
 }
+interface KindSummary {
+  count: number;
+  contractTotal: number;
+  budgetTotal: number;
+  actualCostTotal: number;
+  profit: number;
+  profitRate: number | null;
+}
 interface AlertRow extends ProjectRow { reasons: string[]; severity: number }
 interface Data {
   summary: {
@@ -50,6 +58,10 @@ interface Data {
     activeProjects: number;
   };
   smallSummary: { count: number; contractTotal: number; actualCostTotal: number; profit: number };
+  breakdown: {
+    normal: KindSummary;
+    small: KindSummary;
+  };
   alerts: AlertRow[];
   projects: ProjectRow[];
   freshness: {
@@ -258,34 +270,65 @@ export default function Executive() {
             </p>
           )}
 
+          {/* 区分ごとの内訳。全体だけだと「大きい工事で稼いで小口で溶かしている」
+              といった偏りが見えないため、100万円を境にした2区分で並べる */}
           {small.count > 0 && (
             <div className="border-t pt-3">
               <div className="flex items-center justify-between mb-2">
-                <div className="text-xs font-semibold text-slate-600">
-                  うち小口工事（その他） {small.count} 件
-                </div>
+                <div className="text-xs font-semibold text-slate-600">区分ごとの内訳</div>
                 <Link href="/projects">
-                  <span className="text-xs text-primary hover:underline cursor-pointer">一覧を見る</span>
+                  <span className="text-xs text-primary hover:underline cursor-pointer">工事一覧を見る</span>
                 </Link>
               </div>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <div className="text-xs text-slate-500">請負金額</div>
-                  <div className="text-sm font-bold tabular-nums">{formatCurrency(small.contractTotal)}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-slate-500">実績原価</div>
-                  <div className="text-sm font-bold tabular-nums text-slate-700">{formatCurrency(small.actualCostTotal)}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-slate-500">粗利</div>
-                  <div className={`text-sm font-bold tabular-nums ${profitTone(small.contractTotal > 0 ? (small.profit / small.contractTotal) * 100 : null)}`}>
-                    {formatCurrency(small.profit)}
-                  </div>
-                </div>
+              <div className="overflow-x-auto -mx-1 px-1">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-slate-500">
+                      <th className="text-left font-medium pb-1.5"></th>
+                      <th className="text-right font-medium pb-1.5">件数</th>
+                      <th className="text-right font-medium pb-1.5">請負金額</th>
+                      <th className="text-right font-medium pb-1.5">実績原価</th>
+                      <th className="text-right font-medium pb-1.5">粗利</th>
+                    </tr>
+                  </thead>
+                  <tbody className="tabular-nums">
+                    {([
+                      { label: "通常の工事（100万超）", d: data.breakdown.normal },
+                      { label: "小口工事（100万以下）", d: data.breakdown.small },
+                    ]).map((row) => (
+                      <tr key={row.label} className="border-t border-slate-100">
+                        <td className="py-1.5 text-slate-600 whitespace-nowrap pr-2">{row.label}</td>
+                        <td className="py-1.5 text-right text-slate-600">{row.d.count}</td>
+                        <td className="py-1.5 text-right font-medium">{formatCurrency(row.d.contractTotal)}</td>
+                        <td className="py-1.5 text-right text-slate-700">{formatCurrency(row.d.actualCostTotal)}</td>
+                        <td className={`py-1.5 text-right font-semibold ${profitTone(row.d.profitRate)}`}>
+                          {formatCurrency(row.d.profit)}
+                          {row.d.profitRate != null && (
+                            <span className="ml-1 text-[10px] font-normal text-slate-400">{row.d.profitRate}%</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="border-t border-slate-200 font-semibold">
+                      <td className="py-1.5 text-slate-700">合計</td>
+                      <td className="py-1.5 text-right text-slate-700">
+                        {data.breakdown.normal.count + data.breakdown.small.count}
+                      </td>
+                      <td className="py-1.5 text-right">{formatCurrency(s.contractTotal)}</td>
+                      <td className="py-1.5 text-right text-slate-700">{formatCurrency(s.actualCostTotal)}</td>
+                      <td className={`py-1.5 text-right ${profitTone(s.plannedProfitRate)}`}>
+                        {formatCurrency(s.plannedProfit)}
+                        {s.plannedProfitRate != null && (
+                          <span className="ml-1 text-[10px] font-normal text-slate-400">{s.plannedProfitRate}%</span>
+                        )}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
               <p className="text-xs text-slate-400 mt-1.5">
-                小口工事は実行予算を作らないため、粗利は「請負金額 − 実績原価」で計算しています。上の全体の数字にも含まれています。
+                粗利は、通常の工事が「請負金額 − 実行予算」、小口工事は実行予算を作らないため
+                「請負金額 − 実績原価」で計算しています。
               </p>
             </div>
           )}
