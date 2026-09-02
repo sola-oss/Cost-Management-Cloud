@@ -53,6 +53,11 @@ function daysSince(from: string | null): number | null {
   return Math.floor((Date.now() - new Date(from).getTime()) / 86400000);
 }
 
+// AIそのものが使えない状態（キー未設定・キー無効・AI側の不調）を表す例外。
+// 束で読むときは、この場合だけ残りを打ち切る。文面での判定はサーバ側のメッセージを
+// 変えると壊れるので、型で見分ける。
+class AiUnavailableError extends Error {}
+
 export default function ReceivedInvoiceList() {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -129,10 +134,11 @@ export default function ReceivedInvoiceList() {
       });
       if (!ex.ok) {
         const e = await ex.json().catch(() => ({}));
-        // AIキーが未設定のときは、環境変数の話を使う人に見せても手が止まるだけなので
-        // 手入力へ案内する。
+        // AIが使えないとき（キー未設定・キー無効・AI側の不調）は、サーバが理由を
+        // 日本語で返す。それをそのまま見せたうえで手入力へ案内する。
         if (ex.status === 503) {
-          throw new Error("AIの読み取りは今は使えません。下の「AIを使わず手で入力する」からお願いします。");
+          const why = e.message ?? "AI読み取りは今は使えません。";
+          throw new AiUnavailableError(`${why}下の「AIを使わず手で入力する」からお願いします。`);
         }
         throw new Error(e.message ?? "AI読み取りに失敗しました");
       }
@@ -198,7 +204,7 @@ export default function ReceivedInvoiceList() {
       } catch (e) {
         failed.push(files[i].name);
         // AIそのものが使えない状態なら、残りを投げても同じように失敗するだけなので止める
-        if (e instanceof Error && e.message.includes("AIの読み取りは今は使えません")) {
+        if (e instanceof AiUnavailableError) {
           toast({ title: "エラー", description: e.message, variant: "destructive" });
           break;
         }

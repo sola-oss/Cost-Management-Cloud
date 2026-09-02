@@ -104,7 +104,7 @@ router.post("/purchase-invoice", async (req, res) => {
   try {
     if (!process.env["ANTHROPIC_API_KEY"]) {
       return res.status(503).json({
-        message: "AI読み取りが未設定です。環境変数 ANTHROPIC_API_KEY を設定してください。",
+        message: "AI読み取りは今は使えません（APIキーが未設定です）。管理者に設定を依頼してください。",
       });
     }
 
@@ -127,7 +127,13 @@ router.post("/purchase-invoice", async (req, res) => {
         ? ({ type: "document", source: { type: "base64", media_type: "application/pdf", data: fileBase64 } } as const)
         : ({ type: "image", source: { type: "base64", media_type: media as "image/png" | "image/jpeg" | "image/webp" | "image/gif", data: fileBase64 } } as const);
 
-    const client = new Anthropic();
+    // キーがワークスペースに紐づいていないとき（コンソールでワークスペースを選ばずに
+    // 作ったキー）は、どのワークスペースの請求で使うかをヘッダーで伝える必要がある。
+    // キー作成時にワークスペースを選んであれば ANTHROPIC_WORKSPACE_ID は不要。
+    const workspaceId = process.env["ANTHROPIC_WORKSPACE_ID"];
+    const client = new Anthropic(
+      workspaceId ? { defaultHeaders: { "anthropic-workspace-id": workspaceId } } : {},
+    );
     // 明細が多い請求書（大田鋼管は3ページ25行）は出力が長くなり、8192では
     // JSONが途中で切れて解析に失敗していた。上限を上げ、長い応答でHTTPが
     // タイムアウトしないようストリーミングで受ける。
@@ -236,6 +242,35 @@ router.post("/purchase-invoice", async (req, res) => {
     return res.json({ draft, vendorMatches, amountMismatch, amountDiff, expectedNet, purchaseSum });
   } catch (err) {
     req.log.error({ err }, "Failed to AI-extract purchase invoice");
+    // Anthropic 側で断られた場合は原因ごとに言い分ける。以前はすべて
+    // 「AI読み取り中にエラーが発生しました」で、キーが失効しているのか
+    // 一時的に混んでいるのか、画面からは区別がつかなかった。
+    if (err instanceof Anthropic.APIError) {
+      // キーが失効・無効。未設定と同じく「今は使えない」扱いにして手入力へ回す。
+      if (err.status === 401 || err.status === 403) {
+        return res.status(503).json({
+          message: "AI読み取りは今は使えません（APIキーが無効です）。管理者にキーの再設定を依頼してください。",
+        });
+      }
+      // ワークスペースに紐づいていないキー。ヘッダーが要る。
+      if (err.status === 400 && /anthropic-workspace-id/i.test(err.message)) {
+        return res.status(503).json({
+          message: "AI読み取りは今は使えません（APIキーにワークスペースの指定が必要です）。管理者にご連絡ください。",
+        });
+      }
+      // 残高切れ。400 で返ってくるので文面で見分ける。
+      if (err.status === 400 && /credit balance|insufficient/i.test(err.message)) {
+        return res.status(503).json({
+          message: "AI読み取りは今は使えません（利用残高が不足しています）。管理者にご連絡ください。",
+        });
+      }
+      if (err.status === 429) {
+        return res.status(429).json({ message: "AIが混み合っています。少し待ってからもう一度お試しください。" });
+      }
+      if (err.status && err.status >= 500) {
+        return res.status(503).json({ message: "AI側が一時的に応答していません。少し待ってからもう一度お試しください。" });
+      }
+    }
     return res.status(500).json({ message: "AI読み取り中にエラーが発生しました。" });
   }
 });
