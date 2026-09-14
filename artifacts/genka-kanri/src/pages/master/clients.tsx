@@ -7,7 +7,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useHighlightNew } from "@/hooks/use-highlight-new";
 import { cn } from "@/lib/utils";
-import { Plus, Pencil, Trash2, Loader2, Users } from "lucide-react";
+import { Plus, Pencil, Trash2, Loader2, Users, Search } from "lucide-react";
+import { searchMatch } from "@/lib/search";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -58,7 +59,18 @@ export default function ClientMaster() {
     queryFn: fetchClients,
   });
 
-  const clients = data?.items ?? [];
+  const allClients = data?.items ?? [];
+  const [search, setSearch] = useState("");
+
+  // 700件近くあるので目で探すのは無理。得意先名・フリガナ・コードのどれでも引ける。
+  // searchMatch は表記ゆれとローマ字入力も吸収する（プルダウンの検索と同じ規則）。
+  const q = search.trim();
+  const clients = q
+    ? allClients.filter((c) =>
+        searchMatch(c.name ?? "", q) ||
+        searchMatch(c.kana ?? "", q) ||
+        searchMatch(c.clientCode ?? "", q))
+    : allClients;
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Client | null>(null);
@@ -181,6 +193,20 @@ export default function ClientMaster() {
       </div>
 
       <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+        <div className="p-4 border-b flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Input
+              placeholder="得意先名・フリガナ・コードで検索..."
+              className="pl-9 bg-slate-50"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="text-xs text-slate-500 tabular-nums shrink-0">
+            {q ? `${clients.length} / ${allClients.length} 件` : `${allClients.length} 件`}
+          </div>
+        </div>
         <Table>
           <TableHeader>
             <TableRow className="bg-teal-700">
