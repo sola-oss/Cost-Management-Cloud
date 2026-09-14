@@ -130,6 +130,20 @@ const SelectContent = React.forwardRef<
     matched = visible.filter(isItem).length
   }
 
+  // 矢印キーで選択肢へ移っている最中か。移っている間だけ選択肢を「焦点を受け取れる」状態に戻す。
+  const [navigating, setNavigating] = React.useState(false)
+
+  // 検索中は選択肢から tabindex を外し、そもそも焦点を受け取れなくする。
+  // Radixは開いた直後・絞り込み・マウスが乗ったとき等に選択肢へ焦点を移そうとするが、
+  // tabindex が無い要素は .focus() を呼ばれても焦点を持てないため、何も起きなくなる。
+  if (showSearch && !navigating) {
+    visible = visible.map((c) =>
+      isItem(c)
+        ? React.cloneElement(c as React.ReactElement<{ tabIndex?: number }>, { tabIndex: undefined })
+        : c
+    )
+  }
+
   // 開いた直後に必ず検索欄が見える位置（先頭）へスクロールする
   // （Radixが選択中の項目まで自動スクロールし、検索欄が画面外に出てしまうため）。
   React.useEffect(() => {
@@ -144,53 +158,32 @@ const SelectContent = React.forwardRef<
     if (!contentEl) setSearch("")
   }, [contentEl])
 
-  // 矢印キーで選択肢へ移動している間だけ、下のフォーカス戻しを止める
-  const navigatingRef = React.useRef(false)
-
-  // 検索欄が開いている間、フォーカスを検索欄に置き続ける。
-  // 日本語入力（IME）は焦点のある入力欄にしか付かないので、選択肢側にフォーカスがあると
-  // 1文字目が半角英数で入ってしまう。Radixは (1) 開いた直後 (2) 絞り込みで選択中の項目が
-  // 変わったとき (3) マウスが項目に乗ったとき に選択肢へフォーカスを移す。
+  // 検索欄へ焦点を置き、そこから動かさない。
   //
-  // 大事なのは「奪われたら即座に取り返す」をやらないこと。即座に取り返すと Radix と
-  // 奪い合いになり、1ミリ秒の間に焦点が4〜5回動く。その直後は画面と日本語入力の間で
-  // 焦点の伝達が追いつかず、やはり1文字目だけ英数で入る（工事登録の画面で再現）。
-  // そこで、移すのは必ず1拍おいてから・まとめて1回だけにする。
+  // 日本語入力は焦点のある入力欄にしか付かない。以前は「Radixに奪われたら取り返す」
+  // 方式にしていたが、工事登録のように一覧の上にマウスが乗る配置だと、
+  // 検索欄⇄リスト の間で焦点が1フレームごとに往復し続ける（実機のログで確認）。
+  // 打った瞬間にリスト側へ行っていると、1文字目が変換されず英数で入ってしまう。
+  //
+  // そこで取り返すのをやめ、上で選択肢の tabindex を外して「焦点が動かない」ようにした。
+  // ここでやるのは、開いたときに一度だけ検索欄へ焦点を置くことだけ。
   React.useEffect(() => {
     if (!showSearch || !contentEl) return
     const input = searchInputRef.current
     if (!input) return
-    navigatingRef.current = false
-
-    let timer: number | undefined
-    const focusSearchSoon = () => {
-      if (timer !== undefined) return // すでに予約済みなら二重に動かさない
-      timer = window.setTimeout(() => {
-        timer = undefined
-        if (navigatingRef.current) return
-        if (document.activeElement !== input) input.focus({ preventScroll: true })
-      }, 0)
-    }
-    const onFocusIn = (e: FocusEvent) => {
-      if (navigatingRef.current || e.target === input) return
-      focusSearchSoon()
-    }
-    contentEl.addEventListener("focusin", onFocusIn)
-    // Radixが選択肢へフォーカスを移さなかったとき（該当なし等）の保険。
-    // 移した場合は上のfocusinで先に検索欄へ入っているので、ここは何もしない。
-    const fallback = window.setTimeout(() => {
-      if (document.activeElement !== input) input.focus({ preventScroll: true })
-    }, 150)
+    setNavigating(false)
+    // Radixはリスト本体（listbox）にも焦点を移そうとする。こちらは要素が1つなので
+    // focus() を無効にして防ぐ（閉じるときに元へ戻す）。
+    const realFocus = contentEl.focus
+    contentEl.focus = () => {}
+    input.focus({ preventScroll: true })
     return () => {
-      if (timer !== undefined) window.clearTimeout(timer)
-      window.clearTimeout(fallback)
-      contentEl.removeEventListener("focusin", onFocusIn)
+      contentEl.focus = realFocus
     }
   }, [showSearch, contentEl])
 
-  // 矢印キーで選択肢へ移ったあとに文字を打った場合の受け皿。
-  // ここで拾える文字はIMEを通っていない（＝かなを打っても英数で届く）ので、
-  // 検索欄へ入れずに捨て、フォーカスだけ検索欄へ戻す。打ち直しは1文字で済む。
+  // 選択肢へ焦点が渡っている（矢印キー操作中）ときに文字を打った場合の受け皿。
+  // ここで拾える文字は日本語入力を通っていないので、検索欄へ入れずに捨て、焦点だけ戻す。
   const handleContentKeyDown = (e: React.KeyboardEvent) => {
     if (!showSearch) return
     if (e.target === searchInputRef.current) return // 検索欄自身の入力はそのまま
@@ -198,10 +191,26 @@ const SelectContent = React.forwardRef<
     if (printable || e.key === "Backspace") {
       e.preventDefault()
       e.stopPropagation()
-      navigatingRef.current = false
+      setNavigating(false)
       searchInputRef.current?.focus({ preventScroll: true })
     }
   }
+
+  // 矢印キーで選択肢へ移る。選択肢は tabindex を外してあるので、
+  // まず戻す（navigating を立てる）→ 描き直されたあとに焦点を渡す、の順で行う。
+  const pendingNavRef = React.useRef<"down" | "up" | null>(null)
+  const startNavigating = (dir: "down" | "up") => {
+    pendingNavRef.current = dir
+    setNavigating(true)
+  }
+  React.useEffect(() => {
+    if (!navigating || !pendingNavRef.current || !contentEl) return
+    const dir = pendingNavRef.current
+    pendingNavRef.current = null
+    const items = contentEl.querySelectorAll<HTMLElement>('[role="option"]')
+    if (items.length === 0) return
+    ;(dir === "down" ? items[0] : items[items.length - 1]).focus()
+  }, [navigating, contentEl])
 
   return (
     <SelectPrimitive.Portal>
@@ -242,14 +251,13 @@ const SelectContent = React.forwardRef<
                 className="w-full text-sm outline-none bg-transparent placeholder:text-slate-400"
                 placeholder={searchPlaceholder ?? "検索..."}
                 value={search}
-                onChange={(e) => {
-                  navigatingRef.current = false
-                  setSearch(e.target.value)
-                }}
+                onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={(e) => {
-                  // 矢印キーは選択肢の移動に渡す（この間だけフォーカス戻しを止める）
+                  // 矢印キーで選択肢へ移る。以降の上下移動と決定はRadixに任せる
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                    navigatingRef.current = true
+                    e.preventDefault()
+                    e.stopPropagation()
+                    startNavigating(e.key === "ArrowDown" ? "down" : "up")
                     return
                   }
                   // それ以外はRadixのタイプアヘッドに奪われないよう止める
