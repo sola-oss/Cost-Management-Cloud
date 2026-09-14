@@ -91,10 +91,21 @@ const SelectContent = React.forwardRef<
     searchPlaceholder?: string
   }
 >(({ className, children, position = "popper", searchable, searchPlaceholder, ...props }, ref) => {
-  // 閉じると SelectContent はアンマウントされるので、検索文字列は自動でリセットされる
   const [search, setSearch] = React.useState("")
   const searchInputRef = React.useRef<HTMLInputElement>(null)
-  const contentRef = React.useRef<HTMLDivElement | null>(null)
+  // 中身のDOMは ref ではなく state で持つ。
+  // Radixは閉じている間も子要素を画面外（DocumentFragment）に描いていて、そのときref は null。
+  // ref のままだと「開いた瞬間」に処理を走らせられず、下のフォーカス合わせが一度も動かなかった。
+  const [contentEl, setContentEl] = React.useState<HTMLDivElement | null>(null)
+  // ref のコールバックは毎描画で作り直すと null→要素 の往復で無限ループになるため固定する
+  const setContentNode = React.useCallback(
+    (node: HTMLDivElement | null) => {
+      setContentEl(node)
+      if (typeof ref === "function") ref(node)
+      else if (ref) (ref as React.MutableRefObject<HTMLDivElement | null>).current = node
+    },
+    [ref]
+  )
 
   const flat = React.Children.toArray(children)
   const isItem = (c: React.ReactNode): boolean =>
@@ -122,54 +133,51 @@ const SelectContent = React.forwardRef<
   // 開いた直後に必ず検索欄が見える位置（先頭）へスクロールする
   // （Radixが選択中の項目まで自動スクロールし、検索欄が画面外に出てしまうため）。
   React.useEffect(() => {
-    if (!showSearch) return
-    const t = setTimeout(() => contentRef.current?.scrollTo({ top: 0 }), 60)
+    if (!showSearch || !contentEl) return
+    const t = setTimeout(() => contentEl.scrollTo({ top: 0 }), 60)
     return () => clearTimeout(t)
-  }, [showSearch])
+  }, [showSearch, contentEl])
 
-  // 検索欄にフォーカスを移す（IME入力は焦点のある編集要素にしか入らないため必須）。
-  // Radixは開く過程で何度か選択肢へフォーカスを移すため、開いてから一定時間は
-  // フォーカスが選択肢側に行くたびに検索欄へ戻す（安定したら手を引く）。
+  // 閉じたら検索文字列を消す。Radixは閉じている間も中身を画面外に描き続けるので、
+  // 何もしないと前回の絞り込みが残ったまま次に開き、「1件しか出ない」ように見える。
   React.useEffect(() => {
-    if (!showSearch) return
-    let cancelled = false
-    let attempt = 0
-    let stable = 0
-    const tick = () => {
-      if (cancelled) return
-      const el = searchInputRef.current
-      if (el) {
-        if (document.activeElement === el) {
-          stable++
-          if (stable >= 3) return // 3tick連続で保持できたら終了
-        } else {
-          stable = 0
-          el.focus({ preventScroll: true })
-        }
-      }
-      if (++attempt < 30) setTimeout(tick, 50)
-    }
-    const t = setTimeout(tick, 50)
-    return () => {
-      cancelled = true
-      clearTimeout(t)
-    }
-  }, [showSearch])
+    if (!contentEl) setSearch("")
+  }, [contentEl])
 
-  // フォーカスがまだ選択肢側にある間に打たれた文字も検索欄に流し込む（取りこぼし防止）。
+  // 矢印キーで選択肢へ移動している間だけ、下のフォーカス戻しを止める
+  const navigatingRef = React.useRef(false)
+
+  // 検索欄が開いている間、フォーカスを検索欄に置き続ける。
+  // 日本語入力（IME）は焦点のある入力欄にしか付かないので、選択肢側にフォーカスがあるまま
+  // 打つと1文字目だけ半角英数で入ってしまう。Radixは (1) 開いた直後 (2) 絞り込みで選択中の
+  // 項目が変わったとき (3) マウスが項目に乗ったとき に選択肢へフォーカスを移すため、
+  // focusin を捕まえてその都度戻す（時間で見張るのをやめ、取りこぼしを無くす）。
+  React.useEffect(() => {
+    if (!showSearch || !contentEl) return
+    const input = searchInputRef.current
+    if (!input) return
+    navigatingRef.current = false
+    input.focus({ preventScroll: true })
+    const onFocusIn = (e: FocusEvent) => {
+      if (navigatingRef.current) return
+      if (e.target === input) return
+      input.focus({ preventScroll: true })
+    }
+    contentEl.addEventListener("focusin", onFocusIn)
+    return () => contentEl.removeEventListener("focusin", onFocusIn)
+  }, [showSearch, contentEl])
+
+  // 矢印キーで選択肢へ移ったあとに文字を打った場合の受け皿。
+  // ここで拾える文字はIMEを通っていない（＝かなを打っても英数で届く）ので、
+  // 検索欄へ入れずに捨て、フォーカスだけ検索欄へ戻す。打ち直しは1文字で済む。
   const handleContentKeyDown = (e: React.KeyboardEvent) => {
     if (!showSearch) return
     if (e.target === searchInputRef.current) return // 検索欄自身の入力はそのまま
     const printable = e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey
-    if (printable) {
+    if (printable || e.key === "Backspace") {
       e.preventDefault()
       e.stopPropagation()
-      setSearch((s) => s + e.key)
-      searchInputRef.current?.focus({ preventScroll: true })
-    } else if (e.key === "Backspace") {
-      e.preventDefault()
-      e.stopPropagation()
-      setSearch((s) => s.slice(0, -1))
+      navigatingRef.current = false
       searchInputRef.current?.focus({ preventScroll: true })
     }
   }
@@ -177,11 +185,7 @@ const SelectContent = React.forwardRef<
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
-        ref={(node) => {
-          contentRef.current = node
-          if (typeof ref === "function") ref(node)
-          else if (ref) (ref as React.MutableRefObject<HTMLDivElement | null>).current = node
-        }}
+        ref={setContentNode}
         className={cn(
           "relative z-50 max-h-[--radix-select-content-available-height] min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-[--radix-select-content-transform-origin]",
           position === "popper" &&
@@ -214,12 +218,18 @@ const SelectContent = React.forwardRef<
                 className="w-full text-sm outline-none bg-transparent placeholder:text-slate-400"
                 placeholder={searchPlaceholder ?? "検索..."}
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  navigatingRef.current = false
+                  setSearch(e.target.value)
+                }}
                 onKeyDown={(e) => {
-                  // 矢印キーは選択肢の移動に渡し、それ以外はRadixのタイプアヘッドに奪われないよう止める
-                  if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Escape") {
-                    e.stopPropagation()
+                  // 矢印キーは選択肢の移動に渡す（この間だけフォーカス戻しを止める）
+                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    navigatingRef.current = true
+                    return
                   }
+                  // それ以外はRadixのタイプアヘッドに奪われないよう止める
+                  if (e.key !== "Escape") e.stopPropagation()
                 }}
               />
             </div>
@@ -255,7 +265,9 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      // hover: は検索欄からフォーカスを離さないため（IME対策）。マウスを乗せた項目が
+      // フォーカスを得なくなったので、見た目の強調はCSSのhoverで出す
+      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none focus:bg-accent focus:text-accent-foreground hover:bg-accent hover:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[disabled]:hover:bg-transparent",
       className
     )}
     {...props}
