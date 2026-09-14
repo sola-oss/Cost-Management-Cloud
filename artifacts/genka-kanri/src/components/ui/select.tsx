@@ -148,23 +148,44 @@ const SelectContent = React.forwardRef<
   const navigatingRef = React.useRef(false)
 
   // 検索欄が開いている間、フォーカスを検索欄に置き続ける。
-  // 日本語入力（IME）は焦点のある入力欄にしか付かないので、選択肢側にフォーカスがあるまま
-  // 打つと1文字目だけ半角英数で入ってしまう。Radixは (1) 開いた直後 (2) 絞り込みで選択中の
-  // 項目が変わったとき (3) マウスが項目に乗ったとき に選択肢へフォーカスを移すため、
-  // focusin を捕まえてその都度戻す（時間で見張るのをやめ、取りこぼしを無くす）。
+  // 日本語入力（IME）は焦点のある入力欄にしか付かないので、選択肢側にフォーカスがあると
+  // 1文字目が半角英数で入ってしまう。Radixは (1) 開いた直後 (2) 絞り込みで選択中の項目が
+  // 変わったとき (3) マウスが項目に乗ったとき に選択肢へフォーカスを移す。
+  //
+  // 大事なのは「奪われたら即座に取り返す」をやらないこと。即座に取り返すと Radix と
+  // 奪い合いになり、1ミリ秒の間に焦点が4〜5回動く。その直後は画面と日本語入力の間で
+  // 焦点の伝達が追いつかず、やはり1文字目だけ英数で入る（工事登録の画面で再現）。
+  // そこで、移すのは必ず1拍おいてから・まとめて1回だけにする。
   React.useEffect(() => {
     if (!showSearch || !contentEl) return
     const input = searchInputRef.current
     if (!input) return
     navigatingRef.current = false
-    input.focus({ preventScroll: true })
+
+    let timer: number | undefined
+    const focusSearchSoon = () => {
+      if (timer !== undefined) return // すでに予約済みなら二重に動かさない
+      timer = window.setTimeout(() => {
+        timer = undefined
+        if (navigatingRef.current) return
+        if (document.activeElement !== input) input.focus({ preventScroll: true })
+      }, 0)
+    }
     const onFocusIn = (e: FocusEvent) => {
-      if (navigatingRef.current) return
-      if (e.target === input) return
-      input.focus({ preventScroll: true })
+      if (navigatingRef.current || e.target === input) return
+      focusSearchSoon()
     }
     contentEl.addEventListener("focusin", onFocusIn)
-    return () => contentEl.removeEventListener("focusin", onFocusIn)
+    // Radixが選択肢へフォーカスを移さなかったとき（該当なし等）の保険。
+    // 移した場合は上のfocusinで先に検索欄へ入っているので、ここは何もしない。
+    const fallback = window.setTimeout(() => {
+      if (document.activeElement !== input) input.focus({ preventScroll: true })
+    }, 150)
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer)
+      window.clearTimeout(fallback)
+      contentEl.removeEventListener("focusin", onFocusIn)
+    }
   }, [showSearch, contentEl])
 
   // 矢印キーで選択肢へ移ったあとに文字を打った場合の受け皿。
