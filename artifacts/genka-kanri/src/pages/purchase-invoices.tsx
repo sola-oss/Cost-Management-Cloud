@@ -113,7 +113,7 @@ export default function PurchaseInvoices() {
                 <SelectTrigger className="w-56 text-sm h-8">
                   <SelectValue placeholder="すべての工事" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent searchable searchPlaceholder="工事名・工事番号で検索">
                   <SelectItem value="__all__">すべての工事</SelectItem>
                   {projects.map((p) => (
                     <SelectItem key={p.id} value={String(p.id)}>

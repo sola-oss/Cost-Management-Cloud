@@ -695,7 +695,7 @@ export default function Purchases() {
                 <SelectTrigger className="text-sm disabled:opacity-70 disabled:bg-slate-50">
                   <SelectValue placeholder="工事を選択してください" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent searchable searchPlaceholder="工事名・工事番号で検索">
                   {projects.map(p => (
                     <SelectItem key={p.id} value={String(p.id)}>
                       {p.projectCode} {p.name}
@@ -1124,7 +1124,7 @@ export default function Purchases() {
               <SelectTrigger className="w-56 text-sm h-8">
                 <SelectValue placeholder="すべての工事" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent searchable searchPlaceholder="工事名・工事番号で検索">
                 <SelectItem value="__all__">すべての工事</SelectItem>
                 {projects.map((p) => (
                   <SelectItem key={p.id} value={String(p.id)}>

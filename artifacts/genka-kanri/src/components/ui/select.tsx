@@ -190,9 +190,12 @@ const SelectContent = React.forwardRef<
           "relative z-50 max-h-[--radix-select-content-available-height] min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-[--radix-select-content-transform-origin]",
           position === "popper" &&
             "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
-          // 検索付きは高さを一定に固定する：巨大リストが画面を覆うのを防ぎ、
-          // 絞り込みで高さが変わって開く向きがパタパタ切り替わるのも防ぐ
-          showSearch && "h-[min(360px,var(--radix-select-content-available-height))]",
+          // 件数が多いときは高さを一定に固定する：巨大リストが画面を覆うのを防ぎ、
+          // 絞り込みで高さが変わって開く向きがパタパタ切り替わるのも防ぐ。
+          // 少ない件数で固定すると、下半分が空っぽの大きな箱に見えるので付けない
+          showSearch &&
+            itemCount >= SEARCH_THRESHOLD &&
+            "h-[min(360px,var(--radix-select-content-available-height))]",
           className
         )}
         position={position}

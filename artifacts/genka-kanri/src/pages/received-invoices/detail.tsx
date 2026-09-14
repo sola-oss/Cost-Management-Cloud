@@ -648,7 +648,7 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
                       <SelectTrigger className={`h-11 ${!assigned ? "border-amber-400 text-amber-700" : ""}`}>
                         <SelectValue placeholder="選択してください" />
                       </SelectTrigger>
-                      <SelectContent className="max-h-[300px]" searchPlaceholder="工事名で検索">
+                      <SelectContent searchable className="max-h-[300px]" searchPlaceholder="工事名で検索">
                         <SelectItem value={NONE} className="text-slate-400">（未選択）</SelectItem>
                         {myProjects.length > 0 && (
                           <div className="px-2 py-1 text-[11px] font-semibold text-slate-400">自分の担当</div>

@@ -804,10 +804,11 @@ export default function Payments() {
                 <SelectTrigger className="h-8 w-[160px] text-xs">
                   <SelectValue placeholder="工事で絞込" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent searchable searchPlaceholder="工事名・工事番号で検索">
                   <SelectItem value="all">全工事</SelectItem>
+                  {/* 表示は工事番号だけなので、工事名でも探せるよう data-search-text を渡す */}
                   {projects?.items.map((p) => (
-                    <SelectItem key={p.id} value={String(p.id)}>
+                    <SelectItem key={p.id} value={String(p.id)} data-search-text={p.name}>
                       {p.projectCode}
                     </SelectItem>
                   ))}

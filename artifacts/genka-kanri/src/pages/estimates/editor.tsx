@@ -524,7 +524,7 @@ export default function EstimateEditor({ id }: { id?: number }) {
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder="未設定" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent searchable searchPlaceholder="工事名・工事番号で検索">
                   <SelectItem value="none">未設定</SelectItem>
                   {projectsData?.items?.map((p) => (
                     <SelectItem key={p.id} value={String(p.id)}>

@@ -544,7 +544,7 @@ export default function InvoiceEditor({ id }: Props) {
                 <SelectTrigger className="mt-1">
                   <SelectValue placeholder="工事を選択..." />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent searchable searchPlaceholder="工事名・工事番号で検索">
                   {projects?.items.map((p) => (
                     <SelectItem key={p.id} value={String(p.id)}>{p.projectCode} - {p.name}</SelectItem>
                   ))}
