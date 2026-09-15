@@ -244,6 +244,7 @@ function CostItemsTab({ projectId }: { projectId: number }) {
   const [addOpen, setAddOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [filterCat, setFilterCat] = useState<Category | "all">("all");
+  const [filterStage, setFilterStage] = useState<"all" | "confirmed" | "provisional">("all");
   const [searchText, setSearchText] = useState("");
 
   const { data: costItems, isLoading } = useListCostItems(
@@ -325,22 +326,31 @@ function CostItemsTab({ projectId }: { projectId: number }) {
   const totalByCategory: Record<Category, number> = {
     material: 0, labor: 0, subcontract: 0, expense: 0,
   };
+  // 上の「実績原価」と合わせるため、区分別の合計は確定原価だけで数える
   items.forEach((item) => {
-    if (item.category in totalByCategory) {
+    const stage = (item as { stage?: string }).stage ?? "confirmed";
+    if (stage === "confirmed" && item.category in totalByCategory) {
       totalByCategory[item.category as Category] += item.amount;
     }
   });
 
+  // 仮原価（納品書だけ届いている分）の合計
+  const provisionalTotal = items
+    .filter((i) => ((i as { stage?: string }).stage ?? "confirmed") === "provisional")
+    .reduce((s, i) => s + i.amount, 0);
+
   // フィルタ適用
   const filteredItems = items.filter((item) => {
     const catMatch = filterCat === "all" || item.category === filterCat;
+    const stage = (item as { stage?: string }).stage ?? "confirmed";
+    const stageMatch = filterStage === "all" || stage === filterStage;
     const q = searchText.trim().toLowerCase();
     const textMatch =
       !q ||
       item.description.toLowerCase().includes(q) ||
       (item.vendor?.toLowerCase().includes(q) ?? false) ||
       (item.invoiceNumber?.toLowerCase().includes(q) ?? false);
-    return catMatch && textMatch;
+    return catMatch && stageMatch && textMatch;
   });
 
   return (
@@ -358,6 +368,13 @@ function CostItemsTab({ projectId }: { projectId: number }) {
                 <span className="text-sm font-medium">{formatCurrency(totalByCategory[cat])}</span>
               </div>
             ))}
+            {provisionalTotal > 0 && (
+              <div className="flex items-center gap-1.5">
+                <Badge variant="outline" className={`${STAGE_COLORS.provisional} text-xs`}>仮原価</Badge>
+                <span className="text-sm font-medium text-amber-700">{formatCurrency(provisionalTotal)}</span>
+                <span className="text-xs text-slate-400">（未計上）</span>
+              </div>
+            )}
           </div>
           {/* 原価の登録は仕入入力に一本化（このタブは閲覧専用） */}
           <Button size="sm" variant="outline" asChild className="text-teal-700 border-teal-300 hover:bg-teal-50">
@@ -388,6 +405,26 @@ function CostItemsTab({ projectId }: { projectId: number }) {
               )}
             </button>
           ))}
+
+          {/* 段階の絞り込み。仮原価が1件も無いときは出さない（選べても意味がないため） */}
+          {provisionalTotal > 0 && (
+            <div className="flex items-center gap-1 ml-1 pl-2 border-l border-slate-200">
+              {([["all", "全段階"], ["confirmed", "確定原価"], ["provisional", "仮原価"]] as const).map(([v, label]) => (
+                <button
+                  key={v}
+                  onClick={() => setFilterStage(v)}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                    filterStage === v
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="relative ml-auto">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
             <Input
@@ -589,6 +626,12 @@ function FinancialTab({ projectId, contractAmount, isSmall }: { projectId: numbe
                   indicatorClassName={summary.budgetUsageRate > 100 ? "bg-destructive" : "bg-orange-500"}
                 />
                 <div className="text-xs text-slate-500 mt-0.5">{summary.budgetUsageRate.toFixed(1)}%消化</div>
+              </div>
+            )}
+            {/* 仮原価：納品書だけ届いている分。原価には入れないが、見えないと気づけないので別に出す */}
+            {(summary?.provisionalCost ?? 0) > 0 && (
+              <div className="mt-1.5 text-xs text-amber-700">
+                仮原価 {formatCurrency(summary?.provisionalCost ?? 0)}（請求書待ち・未計上）
               </div>
             )}
           </CardContent>
@@ -1693,6 +1736,12 @@ export default function ProjectDetail() {
                     <div className={`text-xs mt-0.5 ${summary.budgetUsageRate > 100 ? "text-destructive" : "text-slate-500"}`}>
                       {summary.budgetUsageRate.toFixed(1)}%消化
                     </div>
+                  </div>
+                )}
+                {/* 仮原価：納品書だけ届いている分。原価には入れていないことが分かるように出す */}
+                {(summary.provisionalCost ?? 0) > 0 && (
+                  <div className="mt-1.5 text-xs text-amber-700">
+                    仮原価 {formatCurrency(summary.provisionalCost ?? 0)}（請求書待ち・未計上）
                   </div>
                 )}
               </CardContent>

@@ -1,6 +1,7 @@
 import { pgTable, serial, text, numeric, date, integer, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import type { CostStage } from "./cost-items";
 import { projectsTable } from "./projects";
 import { vendorsTable } from "./vendors";
 import { workTypesTable } from "./work-types";
@@ -28,6 +29,9 @@ export const purchaseInvoicesTable = pgTable("purchase_invoices", {
   status: text("status").$type<PurchaseInvoiceStatus>().notNull().default("confirmed"),
   taxCalculationMethod: text("tax_calculation_method").$type<TaxCalculationMethod>().notNull().default("detail_exclusive"),
   isProvisional: boolean("is_provisional").notNull().default(false),
+  // 原価計上の段階。ここで選んだ段階が、生成される原価（cost_items）に引き継がれる。
+  // 納品書だけ先に届いたときは provisional（仮原価）、請求書が届いたら confirmed（確定原価）。
+  stage: text("stage").$type<CostStage>().notNull().default("confirmed"),
   invoiceRegistrationNumber: text("invoice_registration_number"),
   isTaxableInvoice: boolean("is_taxable_invoice").notNull().default(true),
   subtotal: numeric("subtotal", { precision: 15, scale: 2 }).notNull().default("0"),

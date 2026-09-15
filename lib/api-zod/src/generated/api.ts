@@ -401,6 +401,10 @@ export const GetProjectSummaryResponse = zod.object({
   contractAmount: zod.number(),
   totalBudget: zod.number(),
   totalActualCost: zod.number(),
+  provisionalCost: zod
+    .number()
+    .optional()
+    .describe("仮原価の合計（納品書だけ届いている分。実績原価には含めない）"),
   grossProfit: zod.number(),
   grossProfitRate: zod.number(),
   budgetUsageRate: zod.number(),

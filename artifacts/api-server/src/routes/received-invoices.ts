@@ -912,7 +912,8 @@ router.post("/:id/confirm", async (req, res) => {
             projectId,
             purchaseDate,
             voucherNumber,
-            false,
+            // 振り分けから確定するのは請求書なので確定原価
+            "confirmed",
             vendorName,
             inv.vendorId as number,
             insertedItems,

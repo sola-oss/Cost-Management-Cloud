@@ -1,5 +1,5 @@
 import { eq, inArray } from "drizzle-orm";
-import { db, purchaseInvoicesTable, purchaseInvoiceItemsTable, costItemsTable } from "@workspace/db";
+import { db, purchaseInvoicesTable, purchaseInvoiceItemsTable, costItemsTable, type CostStage } from "@workspace/db";
 import type { Tx } from "./unique-number";
 
 // ─── 仕入伝票の生成ヘルパー ─────────────────────────────────────────────────
@@ -33,7 +33,7 @@ export async function syncCostItemsAfterInvoice(
   projectId: number,
   purchaseDate: string,
   voucherNumber: string,
-  isProvisional: boolean,
+  stage: CostStage,
   vendorName: string,
   vendorId: number,
   insertedItems: typeof purchaseInvoiceItemsTable.$inferSelect[],
@@ -53,7 +53,9 @@ export async function syncCostItemsAfterInvoice(
         amount: item.amount,
         incurredDate: purchaseDate,
         invoiceNumber: voucherNumber,
-        notes: isProvisional ? "仮伝票" : null,
+        notes: null,
+        // 伝票で選んだ段階をそのまま原価に引き継ぐ（納品書＝仮原価／請求書＝確定原価）
+        stage,
         sourceType: "purchase_invoice",
         sourceId: item.id,
         workTypeId: item.workTypeId ?? null,

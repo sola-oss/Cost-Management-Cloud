@@ -11,7 +11,7 @@ import {
   paymentsTable,
   costItemsTable,
 } from "@workspace/db";
-import type { PurchaseInvoiceStatus } from "@workspace/db";
+import type { PurchaseInvoiceStatus, CostStage } from "@workspace/db";
 import { withUniqueNumberTransaction, type Tx } from "../lib/unique-number";
 import { deleteCostItemsByInvoiceId } from "../lib/purchase-invoice-create";
 
@@ -92,7 +92,7 @@ async function syncCostItemsAfterInvoice(
   projectId: number,
   purchaseDate: string,
   voucherNumber: string,
-  isProvisional: boolean,
+  stage: CostStage,
   vendorName: string,
   vendorId: number,
   insertedItems: typeof purchaseInvoiceItemsTable.$inferSelect[]
@@ -112,7 +112,9 @@ async function syncCostItemsAfterInvoice(
         amount: item.amount,
         incurredDate: purchaseDate,
         invoiceNumber: voucherNumber,
-        notes: isProvisional ? "仮伝票" : null,
+        notes: null,
+        // 伝票で選んだ段階をそのまま原価に引き継ぐ（納品書＝仮原価／請求書＝確定原価）
+        stage,
         sourceType: "purchase_invoice",
         sourceId: item.id,
         workTypeId: item.workTypeId ?? null,
@@ -209,7 +211,7 @@ router.post("/", async (req, res) => {
   try {
     const {
       projectId, vendorId, purchaseDate, purchaseOrderId,
-      paymentDueDate, status, taxCalculationMethod, isProvisional,
+      paymentDueDate, status, taxCalculationMethod, isProvisional, stage,
       invoiceRegistrationNumber, isTaxableInvoice,
       subtotal, taxAmount, totalAmount, notes, items,
       createPayment, paymentDescription,
@@ -245,6 +247,7 @@ router.post("/", async (req, res) => {
             status: (status ?? "confirmed") as PurchaseInvoiceStatus,
             taxCalculationMethod: taxCalculationMethod ?? "detail_exclusive",
             isProvisional: isProvisional ?? false,
+            stage: (stage ?? "confirmed") as CostStage,
             invoiceRegistrationNumber: invoiceRegistrationNumber ?? null,
             isTaxableInvoice: isTaxableInvoice ?? true,
             subtotal: String(calcedSubtotal),
@@ -281,7 +284,7 @@ router.post("/", async (req, res) => {
             parseInt(projectId),
             purchaseDate,
             voucherNumber,
-            isProvisional ?? false,
+            (stage ?? "confirmed") as CostStage,
             vendorName,
             parseInt(vendorId),
             insertedItems
@@ -323,7 +326,7 @@ router.post("/", async (req, res) => {
 router.post("/from-order/:orderId", async (req, res) => {
   try {
     const orderId = parseInt(req.params.orderId);
-    const { paymentDueDate, isProvisional, notes, createPayment } = req.body;
+    const { paymentDueDate, isProvisional, stage, notes, createPayment } = req.body;
 
     const [order] = await db
       .select()
@@ -393,6 +396,7 @@ router.post("/from-order/:orderId", async (req, res) => {
             status: "confirmed" as PurchaseInvoiceStatus,
             taxCalculationMethod: "detail_exclusive",
             isProvisional: isProvisional ?? false,
+            stage: (stage ?? "confirmed") as CostStage,
             isTaxableInvoice: true,
             subtotal: String(subtotal),
             taxAmount: String(taxAmt),
@@ -426,7 +430,7 @@ router.post("/from-order/:orderId", async (req, res) => {
           order.projectId,
           purchaseDate,
           voucherNumber,
-          isProvisional ?? false,
+          (stage ?? "confirmed") as CostStage,
           vendorName,
           order.vendorId,
           insertedItems
@@ -465,7 +469,7 @@ router.patch("/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const {
-      purchaseDate, paymentDueDate, status, isProvisional, notes,
+      purchaseDate, paymentDueDate, status, isProvisional, stage, notes,
       subtotal, taxAmount, totalAmount, items,
     } = req.body;
 
@@ -480,6 +484,7 @@ router.patch("/:id", async (req, res) => {
     if (paymentDueDate !== undefined) updates.paymentDueDate = paymentDueDate ?? null;
     if (status !== undefined) updates.status = status;
     if (isProvisional !== undefined) updates.isProvisional = isProvisional;
+    if (stage !== undefined) updates.stage = stage;
     if (notes !== undefined) updates.notes = notes ?? null;
 
     // 明細の差し替え（旧cost_items削除→旧明細削除→新明細→新cost_items→納品数量）と
@@ -534,7 +539,7 @@ router.patch("/:id", async (req, res) => {
             existing.projectId,
             (purchaseDate ?? existing.purchaseDate) as string,
             existing.voucherNumber,
-            isProvisional !== undefined ? (isProvisional as boolean) : existing.isProvisional,
+            (stage ?? existing.stage) as CostStage,
             vendorName,
             existing.vendorId,
             newInsertedItems

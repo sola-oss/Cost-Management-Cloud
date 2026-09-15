@@ -1057,6 +1057,9 @@ components:
           type: number
         totalActualCost:
           type: number
+        provisionalCost:
+          type: number
+          description: 仮原価の合計（納品書だけ届いている分。実績原価には含めない）
         grossProfit:
           type: number
         grossProfitRate:

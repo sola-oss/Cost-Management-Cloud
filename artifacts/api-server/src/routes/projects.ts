@@ -499,12 +499,17 @@ router.get("/:id/summary", async (req, res) => {
       ? Math.round((plannedGrossProfit / contractAmount) * 1000) / 10
       : null;
     const budgetUsageRate = totalBudget > 0 ? (totalActualCost / totalBudget) * 100 : 0;
+    // 仮原価（納品書だけ届いている分）。原価には入れないが、見えないと不安なので別に返す
+    const provisionalCost = costItems
+      .filter((c) => c.stage === "provisional")
+      .reduce((s, c) => s + parseNumeric(c.amount), 0);
 
     return res.json({
       projectId: id,
       contractAmount,
       totalBudget,
       totalActualCost,
+      provisionalCost,
       grossProfit,
       grossProfitRate: Math.round(grossProfitRate * 10) / 10,
       plannedGrossProfit,

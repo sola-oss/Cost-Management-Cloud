@@ -12,6 +12,8 @@ export interface ProjectSummary {
   contractAmount: number;
   totalBudget: number;
   totalActualCost: number;
+  /** 仮原価の合計（納品書だけ届いている分。実績原価には含めない） */
+  provisionalCost?: number;
   grossProfit: number;
   grossProfitRate: number;
   budgetUsageRate: number;

@@ -102,6 +102,7 @@ interface PurchaseInvoiceSummary {
   paymentDueDate: string | null;
   status: string;
   isProvisional: boolean;
+  stage: string;
   totalAmount: number;
   vendorName: string;
   projectCode: string;
@@ -206,6 +207,7 @@ interface PurchaseInvoiceDetail {
   purchaseDate: string;
   paymentDueDate: string | null;
   isProvisional: boolean;
+  stage: string;
   notes: string | null;
   items: Array<{
     category: string;
@@ -289,6 +291,9 @@ export default function Purchases() {
   const [orderNumber,     setOrderNumber]     = useState("");
   const [taxCalcType,     setTaxCalcType]     = useState("外税明細単位");
   const [isDraft,         setIsDraft]         = useState(false);
+  // 原価計上の段階。納品書だけ先に届いたときは「仮原価」、請求書が届いたら「確定原価」。
+  // 工事の原価に数えるのは確定原価だけ（仮原価は金額の推移を残すための記録）。
+  const [stage,           setStage]           = useState<"provisional" | "confirmed">("confirmed");
   const [memo,            setMemo]            = useState("");
 
   // ── 支払予定生成フラグ ────────────────────────────────────────────────────
@@ -308,6 +313,7 @@ export default function Purchases() {
     setPaymentDueDate(editInvoiceData.paymentDueDate ?? "");
     setSelectedProject(String(editInvoiceData.projectId));
     setIsDraft(editInvoiceData.isProvisional);
+    setStage(editInvoiceData.stage === "provisional" ? "provisional" : "confirmed");
     setMemo(editInvoiceData.notes ?? "");
 
     setRows(
@@ -518,6 +524,7 @@ export default function Purchases() {
             purchaseDate,
             paymentDueDate: paymentDueDate || null,
             isProvisional: isDraft,
+            stage,
             notes: memo || null,
             items: itemsPayload,
           }),
@@ -540,6 +547,7 @@ export default function Purchases() {
             purchaseDate,
             paymentDueDate: paymentDueDate || null,
             isProvisional: isDraft,
+            stage,
             taxCalculationMethod: taxCalcMethodMap[taxCalcType] ?? "detail_exclusive",
             notes: memo || null,
             items: itemsPayload,
@@ -637,9 +645,9 @@ export default function Purchases() {
               ? `仕入伝票 編集${editInvoiceData ? ` — ${editInvoiceData.voucherNumber}` : ""}`
               : "仕入入力"}
           </h1>
-          {isDraft && (
+          {stage === "provisional" && (
             <Badge variant="outline" className="text-amber-600 border-amber-400 bg-amber-50">
-              仮伝票
+              仮原価
             </Badge>
           )}
         </div>
@@ -745,6 +753,25 @@ export default function Purchases() {
                 className="text-sm"
               />
             </div>
+
+            {/* 段階（原価計上の段階）。納品書だけ先に届いたときは仮原価にする */}
+            <div className="space-y-1">
+              <Label className="text-xs text-slate-600 font-medium">段階</Label>
+              <Select value={stage} onValueChange={(v) => setStage(v as "provisional" | "confirmed")}>
+                <SelectTrigger className="text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="confirmed">確定原価（請求書）</SelectItem>
+                  <SelectItem value="provisional">仮原価（納品書）</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-slate-400">
+                {stage === "confirmed"
+                  ? "工事の原価に計上されます。"
+                  : "まだ原価に計上しません。請求書が届いたら確定原価に変えてください。"}
+              </p>
+            </div>
           </div>
 
           {/* ── 詳細設定（折りたたみ）── */}
@@ -752,7 +779,7 @@ export default function Purchases() {
             <summary className="flex items-center gap-1.5 cursor-pointer text-xs text-slate-400 hover:text-slate-600 select-none py-1">
               <ChevronRight className="w-3.5 h-3.5 transition-transform group-open:rotate-90" />
               詳細設定
-              {(orderNumber || paymentDueDate || isDraft || taxCalcType !== "外税明細単位") && (
+              {(orderNumber || paymentDueDate || taxCalcType !== "外税明細単位") && (
                 <span className="ml-1 text-[10px] bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded-full">設定あり</span>
               )}
             </summary>
@@ -812,15 +839,7 @@ export default function Purchases() {
               {/* チェックボックス群 */}
               <div className="space-y-2 md:col-span-2">
                 <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="isDraft"
-                    checked={isDraft}
-                    onCheckedChange={v => setIsDraft(!!v)}
-                    className="accent-teal-600"
-                  />
-                  <Label htmlFor="isDraft" className="text-sm text-slate-700 cursor-pointer">
-                    仮伝票として保存する
-                  </Label>
+                  {/* 「仮伝票」は段階（確定原価／仮原価）に置き換えた。基本情報の「段階」で選ぶ */}
                 </div>
               </div>
             </div>
@@ -1186,8 +1205,8 @@ export default function Purchases() {
                       {inv.voucherNumber}
                       <Pencil className="w-3 h-3 opacity-50" />
                     </Link>
-                    {inv.isProvisional && (
-                      <Badge variant="outline" className="mt-1 text-[10px] text-amber-600 border-amber-400 bg-amber-50">仮</Badge>
+                    {inv.stage === "provisional" && (
+                      <Badge variant="outline" className="mt-1 text-[10px] text-amber-600 border-amber-400 bg-amber-50">仮原価</Badge>
                     )}
                   </TableCell>
                   <TableCell className="text-sm">
