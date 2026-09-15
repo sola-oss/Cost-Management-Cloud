@@ -1,3 +1,4 @@
+export * from "./attendances";
 export * from "./projects";
 export * from "./project-progress";
 export * from "./cost-items";

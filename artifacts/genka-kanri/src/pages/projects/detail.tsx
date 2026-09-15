@@ -13,6 +13,7 @@ import {
 import type { ProjectDetail } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ProvisionalLinks } from "@/components/provisional-links";
+import { AttendanceSheet } from "@/components/attendance-sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -31,6 +32,7 @@ import {
 import {
   ArrowLeft, Plus, Save, X, AlertTriangle, CheckCircle, TrendingUp,
   FileText, Calculator, BarChart2, ClipboardList, Loader2, Trash2, Search, ExternalLink, Edit, ShoppingCart,
+  HardHat,
 } from "lucide-react";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { useForm } from "react-hook-form";
@@ -246,6 +248,18 @@ function CostItemsTab({ projectId }: { projectId: number }) {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [filterCat, setFilterCat] = useState<Category | "all">("all");
   const [filterStage, setFilterStage] = useState<"all" | "confirmed" | "provisional">("all");
+
+  // 出面（人工）の合計。労務費の隣に出して、日数と原価を並べて見られるようにする。
+  // 金額（人工×単価）は職人単価の扱いが決まってから。
+  const { data: attendance } = useQuery({
+    queryKey: ["/api/attendances/summary", projectId],
+    queryFn: async () => {
+      const r = await fetch(`${import.meta.env.BASE_URL.replace(/\/$/, "")}/api/attendances/summary?projectId=${projectId}`);
+      if (!r.ok) throw new Error("読み込みに失敗しました");
+      return (await r.json()) as { total: { manDays: number } };
+    },
+    enabled: !!projectId,
+  });
   const [searchText, setSearchText] = useState("");
 
   const { data: costItems, isLoading } = useListCostItems(
@@ -372,6 +386,13 @@ function CostItemsTab({ projectId }: { projectId: number }) {
                 <span className="text-sm font-medium">{formatCurrency(totalByCategory[cat])}</span>
               </div>
             ))}
+            {(attendance?.total.manDays ?? 0) > 0 && (
+              <div className="flex items-center gap-1.5">
+                <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 text-xs">出面</Badge>
+                <span className="text-sm font-medium">{attendance?.total.manDays} 人工</span>
+                <span className="text-xs text-slate-400">（「出面」タブ）</span>
+              </div>
+            )}
             {provisionalTotal > 0 && (
               <div className="flex items-center gap-1.5">
                 <Badge variant="outline" className={`${STAGE_COLORS.provisional} text-xs`}>仮原価</Badge>
@@ -1786,10 +1807,15 @@ export default function ProjectDetail() {
       {/* ── タブ ── */}
       {/* 「実行予算」タブはクリックで編集画面へ直接遷移（タブ表示は持たない） */}
       <Tabs defaultValue="financial" className="w-full">
-        <TabsList className="grid w-full grid-cols-4 mb-2">
+        <TabsList className="grid w-full grid-cols-5 mb-2">
           <TabsTrigger value="basic" className="text-xs sm:text-sm gap-1">
             <FileText className="w-3.5 h-3.5 hidden sm:block" />
             基本情報
+          </TabsTrigger>
+          {/* 出面（誰が何日この現場に入ったか）。基本情報の隣に置く */}
+          <TabsTrigger value="attendance" className="text-xs sm:text-sm gap-1">
+            <HardHat className="w-3.5 h-3.5 hidden sm:block" />
+            出面
           </TabsTrigger>
           <TabsTrigger
             value="budget"
@@ -1817,6 +1843,10 @@ export default function ProjectDetail() {
 
         <TabsContent value="basic">
           <BasicInfoTab project={project} projectId={projectId} />
+        </TabsContent>
+
+        <TabsContent value="attendance">
+          <AttendanceSheet projectId={projectId} />
         </TabsContent>
 
         <TabsContent value="costs">
