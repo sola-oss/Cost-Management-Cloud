@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -75,8 +76,19 @@ export function ProvisionalLinks({ projectId }: { projectId: number }) {
     onError: (e) => toast({ title: "エラー", description: e instanceof Error ? e.message : "", variant: "destructive" }),
   });
 
-  const rows = data?.items ?? [];
-  if (rows.length === 0) return null;
+  const all = data?.items ?? [];
+  const pending = all.filter((r) => !r.settledByInvoiceId);
+  const settled = all.filter((r) => r.settledByInvoiceId);
+
+  // 工事が長くなると納品書は溜まり続ける。既定は「請求書待ち」だけを、それも先頭5件だけ出す。
+  const [showSettled, setShowSettled] = useState(false);
+  const [showAll, setShowAll] = useState(false);
+  const LIMIT = 5;
+
+  if (all.length === 0) return null;
+  const base = showSettled ? all : pending;
+  const rows = showAll ? base : base.slice(0, LIMIT);
+  const hidden = base.length - rows.length;
 
   return (
     <Card className="border-amber-200">
@@ -84,6 +96,18 @@ export function ProvisionalLinks({ projectId }: { projectId: number }) {
         <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
           <Link2 className="w-4 h-4 text-amber-600" />
           納品書と請求書の紐づけ
+          <Badge variant="outline" className="bg-white text-amber-700 border-amber-200 font-normal">
+            請求書待ち {pending.length}件
+          </Badge>
+          {settled.length > 0 && (
+            <button
+              type="button"
+              onClick={() => { setShowSettled((v) => !v); setShowAll(false); }}
+              className="ml-auto text-xs font-normal text-slate-500 hover:text-slate-700 underline underline-offset-2"
+            >
+              {showSettled ? "紐づけ済みを隠す" : `紐づけ済み ${settled.length}件も見る`}
+            </button>
+          )}
         </CardTitle>
         <p className="text-xs text-slate-500 mt-1">
           請求書が届いたら、どの納品書のものかを選びます。選ぶと「請求書待ち」から外れます。
@@ -91,6 +115,9 @@ export function ProvisionalLinks({ projectId }: { projectId: number }) {
         </p>
       </CardHeader>
       <CardContent className="p-0 divide-y">
+        {rows.length === 0 && (
+          <p className="p-4 text-xs text-slate-500">請求書待ちの納品書はありません。</p>
+        )}
         {rows.map((row) => (
           <div key={row.id} className="p-4 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
@@ -162,6 +189,15 @@ export function ProvisionalLinks({ projectId }: { projectId: number }) {
             )}
           </div>
         ))}
+        {hidden > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowAll(true)}
+            className="w-full py-2.5 text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+          >
+            ほかに{hidden}件あります（すべて表示）
+          </button>
+        )}
       </CardContent>
     </Card>
   );
