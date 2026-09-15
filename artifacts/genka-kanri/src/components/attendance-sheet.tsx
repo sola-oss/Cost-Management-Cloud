@@ -9,7 +9,7 @@ import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 // ─── 出面表（でづらひょう）────────────────────────────────────────────────────
 //
 // 現行のExcel（工事ごとのシート）と同じ形：縦に社員、横に日、マスに人工。
-// 早出・残業は既定では隠しておき、必要なときだけ出す（毎日は使わないため）。
+// 1人につき 工数／早出／残業 の3行。使わない現場はチェックを外して工数だけにできる。
 //
 // 金額は出さない。職人単価をシステムに持ってよいかが未確定のため（温品様へ確認中）。
 // 日数さえ入っていれば、単価が決まった時点で金額は足せる。
@@ -47,7 +47,8 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [month, setMonth] = useState(thisMonth());
-  const [showExtra, setShowExtra] = useState(false);
+  // Excelと同じく 工数／早出／残業 の3行を既定で出す。使わない現場は隠せる
+  const [showExtra, setShowExtra] = useState(true);
   // 画面で編集中の値。キーは "社員ID|日付|種類"
   const [edits, setEdits] = useState<Record<string, string>>({});
 
@@ -160,7 +161,7 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
 
         <label className="flex items-center gap-1.5 text-xs text-slate-600 ml-2 cursor-pointer">
           <input type="checkbox" checked={showExtra} onChange={(e) => setShowExtra(e.target.checked)} />
-          早出・残業も入力する
+          早出・残業も表示する
         </label>
 
         <Badge variant="outline" className="ml-auto bg-slate-50">
@@ -175,13 +176,13 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
       <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="text-sm border-collapse">
+            <table className="text-sm border-collapse w-max">
               <thead>
                 <tr className="bg-slate-50">
-                  <th className="sticky left-0 z-10 bg-slate-50 border-b border-r px-3 py-2 text-left font-medium w-[140px]">
+                  <th className="sticky left-0 z-10 bg-slate-50 border-b border-r px-3 py-2 text-left font-medium w-[140px] whitespace-nowrap">
                     社員
                   </th>
-                  {showExtra && <th className="border-b border-r px-2 py-2 font-medium w-[52px]">種類</th>}
+                  {showExtra && <th className="border-b border-r px-2 py-2 font-medium w-[56px] whitespace-nowrap">種類</th>}
                   {Array.from({ length: days }, (_, i) => i + 1).map((d) => {
                     const w = new Date(y, mo - 1, d).getDay();
                     return (
@@ -220,13 +221,13 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
                       {ki === 0 && (
                         <td
                           rowSpan={kinds.length}
-                          className="sticky left-0 z-10 bg-white border-b border-r px-3 py-1.5 align-middle"
+                          className="sticky left-0 z-10 bg-white border-b border-r px-3 py-1.5 align-middle whitespace-nowrap"
                         >
                           {st.name}
                         </td>
                       )}
                       {showExtra && (
-                        <td className="border-b border-r px-2 py-1 text-[11px] text-slate-500 text-center">
+                        <td className="border-b border-r px-2 py-1 text-[11px] text-slate-500 text-center whitespace-nowrap">
                           {KIND_LABEL[kind]}
                         </td>
                       )}
@@ -262,7 +263,7 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
                 )}
                 {staff.length > 0 && (
                   <tr className="bg-slate-100 font-medium">
-                    <td className="sticky left-0 z-10 bg-slate-100 border-r px-3 py-1.5">合計（人工）</td>
+                    <td className="sticky left-0 z-10 bg-slate-100 border-r px-3 py-1.5 whitespace-nowrap">合計（人工）</td>
                     {showExtra && <td className="border-r" />}
                     {Array.from({ length: days }, (_, i) => i + 1).map((d) => (
                       <td key={d} className="border-r px-0 py-1 text-center tabular-nums text-xs">
