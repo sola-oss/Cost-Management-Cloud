@@ -10,7 +10,10 @@ import { useToast } from "@/hooks/use-toast";
 import { useVendors } from "@/hooks/use-vendors";
 import { formatCurrency } from "@/lib/utils";
 
+import { readOneFile, AiUnavailableError, type ImportResult } from "./import";
+
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
 
 // ── 型 ──────────────────────────────────────────────────────────────────────
 interface RecipientRow { staffMemberId: number; name: string; respondedAt: string | null }
@@ -56,7 +59,6 @@ function daysSince(from: string | null): number | null {
 // AIそのものが使えない状態（キー未設定・キー無効・AI側の不調）を表す例外。
 // 束で読むときは、この場合だけ残りを打ち切る。文面での判定はサーバ側のメッセージを
 // 変えると壊れるので、型で見分ける。
-class AiUnavailableError extends Error {}
 
 export default function ReceivedInvoiceList() {
   const { toast } = useToast();
@@ -116,67 +118,6 @@ export default function ReceivedInvoiceList() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [reading]);
 
-  // ── AI読み取り → 受領請求書を作成（1件ぶん）───────────────────────────────
-  // 失敗は投げっぱなしにして、束で読むときに呼び出し側が「その1件だけ飛ばす」判断をする。
-  const readOne = async (file: File): Promise<{ id: number; lines: number; amountMismatch: boolean; amountDiff: number }> => {
-    {
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const fr = new FileReader();
-        fr.onload = () => resolve(String(fr.result).split(",")[1] ?? "");
-        fr.onerror = reject;
-        fr.readAsDataURL(file);
-      });
-
-      const ex = await fetch(`${BASE}/api/ai-extract/purchase-invoice`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileBase64: base64, mediaType: file.type || "application/pdf" }),
-      });
-      if (!ex.ok) {
-        const e = await ex.json().catch(() => ({}));
-        // AIが使えないとき（キー未設定・キー無効・AI側の不調）は、サーバが理由を
-        // 日本語で返す。それをそのまま見せたうえで手入力へ案内する。
-        if (ex.status === 503) {
-          const why = e.message ?? "AI読み取りは今は使えません。";
-          throw new AiUnavailableError(`${why}下の「AIを使わず手で入力する」からお願いします。`);
-        }
-        throw new Error(e.message ?? "AI読み取りに失敗しました");
-      }
-      const { draft, vendorMatches, amountMismatch, amountDiff } = await ex.json();
-
-      // 仕入先マスタの候補（完全一致 or 最有力）を初期値にする
-      const vendorId: number | null = vendorMatches?.[0]?.id ?? null;
-
-      const create = await fetch(`${BASE}/api/received-invoices`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          vendorId,
-          vendorName: draft.vendorName ?? "",
-          invoiceDate: draft.invoiceDate || null,
-          paymentDueDate: draft.paymentDueDate || null,
-          subtotal: draft.subtotal ?? 0,
-          taxAmount: draft.taxAmount ?? 0,
-          totalAmount: draft.totalAmount ?? 0,
-          aiExtracted: true,
-          amountMismatch: !!amountMismatch,
-          items: draft.items ?? [],
-          fileBase64: base64,
-          mediaType: file.type || "application/pdf",
-        }),
-      });
-      if (!create.ok) throw new Error("受領請求書の作成に失敗しました");
-      const { id } = await create.json();
-
-      return {
-        id,
-        lines: (draft.items ?? []).length,
-        amountMismatch: !!amountMismatch,
-        amountDiff: Math.abs(amountDiff ?? 0),
-      };
-    }
-  };
-
   /**
    * 選ばれたファイルを順に読み取る。
    *
@@ -193,12 +134,12 @@ export default function ReceivedInvoiceList() {
     setJustImported([]);
     const createdIds: number[] = [];
     const failed: string[] = [];
-    let firstResult: Awaited<ReturnType<typeof readOne>> | null = null;
+    let firstResult: ImportResult | null = null;
 
     for (let i = 0; i < files.length; i++) {
       setProgress({ done: i, total: files.length, current: files[i].name });
       try {
-        const r = await readOne(files[i]);
+        const r = await readOneFile(files[i]);
         createdIds.push(r.id);
         if (!firstResult) firstResult = r;
       } catch (e) {

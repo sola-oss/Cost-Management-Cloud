@@ -149,6 +149,7 @@ router.post("/", async (req, res) => {
       totalAmount?: number;
       aiExtracted?: boolean;
       amountMismatch?: boolean;
+      stage?: "provisional" | "confirmed";
       notes?: string | null;
       fileBase64?: string;
       mediaType?: string;
@@ -173,6 +174,7 @@ router.post("/", async (req, res) => {
           invoiceDate: b.invoiceDate || null,
           paymentDueDate: b.paymentDueDate || null,
           status: "draft",
+          stage: b.stage ?? "confirmed",
           aiExtracted: b.aiExtracted ?? false,
           amountMismatch: b.amountMismatch ?? false,
           filePath,

@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, Calculator, Users, FileText, Wrench, Settings, Receipt, ClipboardList, DollarSign, KeyRound, LogOut, UserCircle, Tags, UserRound, UserCog, FileScan, TrendingUp } from "lucide-react";
+import { ScanLine, HardHat, LayoutDashboard, FolderKanban, FileSpreadsheet, Building2, ShoppingCart, Calculator, Users, FileText, Wrench, Settings, Receipt, ClipboardList, DollarSign, KeyRound, LogOut, UserCircle, Tags, UserRound, UserCog, FileScan, TrendingUp } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarProvider, SidebarRail, SidebarTrigger, SidebarGroup, SidebarGroupLabel, SidebarGroupContent } from "./ui/sidebar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { useCompanySettings } from "@/hooks/use-company-settings";
@@ -21,6 +21,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   ];
 
   const operationNav = [
+    // 書類のスキャンを起点に登録する入口（おおつか様の依頼）。作業の起点なので先頭に置く
+    { title: "スキャンする", icon: ScanLine, url: "/scan" },
     { title: "見積書", icon: FileText, url: "/estimates" },
     { title: "注文書", icon: ClipboardList, url: "/purchase-orders" },
     { title: "仕入の振り分け", icon: FileScan, url: "/received-invoices" },
