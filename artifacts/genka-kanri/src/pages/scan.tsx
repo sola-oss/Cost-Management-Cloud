@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -95,6 +95,19 @@ export default function Scan() {
   const [reading, setReading] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number; current: string } | null>(null);
 
+  // 読み取りはブラウザから1件ずつ投げている。画面を移っても続くが、タブを閉じると止まる。
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
+  useEffect(() => {
+    if (!reading) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [reading]);
+
   const start = (t: DocType) => {
     setPicked(t);
     // 種類を選んでからファイルを選ぶ。選んだ種類で段階が決まる
@@ -148,7 +161,8 @@ export default function Scan() {
           ? `${first.lines}行を読み取りました。金額が${formatCurrency(first.amountDiff)}ずれています。内容を確かめてください。`
           : `${first.lines}行を読み取りました。内容を確かめてから現場に送ってください。`,
       });
-      navigate(`/received-invoices/${createdIds[0]}`);
+      // この画面を離れて別の作業をしているときに、勝手に画面を奪わない
+      if (mounted.current) navigate(`/received-invoices/${createdIds[0]}`);
       return;
     }
 
@@ -161,7 +175,7 @@ export default function Scan() {
       description: ["1件ずつ内容を確かめてください。", ...notes].join(" "),
       variant: failed.length > 0 ? "destructive" : undefined,
     });
-    navigate("/received-invoices");
+    if (mounted.current) navigate("/received-invoices");
   };
 
   return (

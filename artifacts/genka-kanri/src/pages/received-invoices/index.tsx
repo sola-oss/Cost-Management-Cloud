@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useVendors } from "@/hooks/use-vendors";
 import { formatCurrency } from "@/lib/utils";
 
-import { readOneFile, AiUnavailableError, type ImportResult } from "./import";
+import { readOneFile, AiUnavailableError, type ImportResult, type ImportStage } from "./import";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -102,9 +102,16 @@ export default function ReceivedInvoiceList() {
 
   // 一覧のタブ。使い続けると確定済がたまり、対応が要るものが埋もれるため既定は「対応中」。
   const [tab, setTab] = useState<"open" | "confirmed" | "all">("open");
+  // 取り込む書類の種類。請求書なら確定原価、納品書なら仮原価（原価に入れない）。
+  // 「スキャンする」画面から入ると種類を先に選ぶが、この画面から直接取り込むこともできる。
+  const [importStage, setImportStage] = useState<ImportStage>("confirmed");
   const shown = tab === "open" ? items.filter((i) => i.status !== "confirmed")
     : tab === "confirmed" ? confirmed
     : items;
+
+  // 画面を移ったあとに読み取りが終わっても、勝手に確認画面へ飛ばさない
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
 
   // 読み取りはブラウザから1件ずつ投げているので、タブを閉じると残りが止まる。
   // 画面にも注意書きを出しているが、うっかり閉じる事故は確認で止める。
@@ -139,7 +146,7 @@ export default function ReceivedInvoiceList() {
     for (let i = 0; i < files.length; i++) {
       setProgress({ done: i, total: files.length, current: files[i].name });
       try {
-        const r = await readOneFile(files[i]);
+        const r = await readOneFile(files[i], importStage);
         createdIds.push(r.id);
         if (!firstResult) firstResult = r;
       } catch (e) {
@@ -174,7 +181,7 @@ export default function ReceivedInvoiceList() {
           ? `${firstResult.lines}行を読み取りました。金額が${formatCurrency(firstResult.amountDiff)}ずれています。内容を確かめてください。`
           : `${firstResult.lines}行を読み取りました。内容を確かめてから現場に送ってください。`,
       });
-      navigate(`/received-invoices/${createdIds[0]}`);
+      if (mounted.current) navigate(`/received-invoices/${createdIds[0]}`);
       return;
     }
 
@@ -276,6 +283,29 @@ export default function ReceivedInvoiceList() {
             />
           ) : (
             <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-slate-500">書類の種類</span>
+              {([["confirmed", "請求書（確定原価）"], ["provisional", "納品書（仮原価）"]] as const).map(([v, label]) => (
+                <button
+                  key={v}
+                  type="button"
+                  disabled={reading}
+                  onClick={() => setImportStage(v)}
+                  className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                    importStage === v
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+              <span className="text-[11px] text-slate-400">
+                {importStage === "confirmed"
+                  ? "確定すると工事の原価に計上されます"
+                  : "確定しても原価には計上しません（請求書待ち）"}
+              </span>
+            </div>
             <button
               type="button"
               disabled={reading}
