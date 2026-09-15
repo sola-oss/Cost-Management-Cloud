@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, asc, and, desc, inArray, sql } from "drizzle-orm";
+import { confirmedCostOnly } from "../lib/cost-stage";
 import {
   db,
   budgetItemsTable,
@@ -426,7 +427,7 @@ router.get("/monitor", async (req, res) => {
         })
         .from(costItemsTable)
         .leftJoin(workTypesTable, eq(costItemsTable.workTypeId, workTypesTable.id))
-        .where(eq(costItemsTable.projectId, projectId))
+        .where(and(eq(costItemsTable.projectId, projectId), confirmedCostOnly))
         .groupBy(sql`coalesce(${workTypesTable.name}, '未分類')`),
 
       db
@@ -454,7 +455,7 @@ router.get("/monitor", async (req, res) => {
       })
       .from(costItemsTable)
       .leftJoin(workTypesTable, eq(costItemsTable.workTypeId, workTypesTable.id))
-      .where(eq(costItemsTable.projectId, projectId))
+      .where(and(eq(costItemsTable.projectId, projectId), confirmedCostOnly))
       .groupBy(sql`coalesce(${workTypesTable.name}, '未分類')`, costItemsTable.vendorId);
 
     const costByWorkTypeVendor = costByVendorRows.map((r) => ({

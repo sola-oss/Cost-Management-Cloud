@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { confirmedCostOnly } from "../lib/cost-stage";
 import {
   db,
   projectProgressRecordsTable,
@@ -53,7 +54,7 @@ router.get("/", async (req, res) => {
       db
         .select({ total: sql<string>`COALESCE(SUM(${costItemsTable.amount}),0)` })
         .from(costItemsTable)
-        .where(eq(costItemsTable.projectId, projectId)),
+        .where(and(eq(costItemsTable.projectId, projectId), confirmedCostOnly)),
     ]);
 
     if (!project) return res.status(404).json({ message: "工事が見つかりません" });

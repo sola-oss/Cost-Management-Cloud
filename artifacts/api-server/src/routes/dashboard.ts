@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, sql, desc, inArray } from "drizzle-orm";
+import { eq, sql, desc, inArray, and } from "drizzle-orm";
+import { confirmedCostOnly } from "../lib/cost-stage";
 import { db, projectsTable, costItemsTable, budgetItemsTable, paymentsTable, invoicesTable } from "@workspace/db";
 import { logger } from "../lib/logger";
 
@@ -37,7 +38,7 @@ router.get("/overview", async (_req, res) => {
         ? db.select({
             projectId: costItemsTable.projectId,
             total: sql<string>`SUM(${costItemsTable.amount})`,
-          }).from(costItemsTable).where(inArray(costItemsTable.projectId, projectIds)).groupBy(costItemsTable.projectId)
+          }).from(costItemsTable).where(and(inArray(costItemsTable.projectId, projectIds), confirmedCostOnly)).groupBy(costItemsTable.projectId)
         : [],
     ]);
 
@@ -141,7 +142,9 @@ router.get("/cost-by-category", async (req, res) => {
   try {
     const { projectId } = req.query as Record<string, string>;
 
-    const conditions = projectId ? eq(costItemsTable.projectId, parseInt(projectId)) : undefined;
+    const conditions = projectId
+      ? and(eq(costItemsTable.projectId, parseInt(projectId)), confirmedCostOnly)
+      : confirmedCostOnly;
     const costItems = await db.select().from(costItemsTable).where(conditions);
 
     const totals: Record<string, number> = { material: 0, labor: 0, subcontract: 0, expense: 0 };
@@ -172,6 +175,7 @@ router.get("/monthly-costs", async (req, res) => {
     if (!year) {
       const recentCostItems = await db.select({ incurredDate: costItemsTable.incurredDate })
         .from(costItemsTable)
+        .where(confirmedCostOnly)
         .orderBy(desc(costItemsTable.incurredDate))
         .limit(1);
       if (recentCostItems.length > 0) {
@@ -179,7 +183,9 @@ router.get("/monthly-costs", async (req, res) => {
       }
     }
 
-    const conditions = projectId ? eq(costItemsTable.projectId, parseInt(projectId)) : undefined;
+    const conditions = projectId
+      ? and(eq(costItemsTable.projectId, parseInt(projectId)), confirmedCostOnly)
+      : confirmedCostOnly;
     const costItems = await db.select().from(costItemsTable).where(conditions);
 
     const monthlyMap = new Map<string, { material: number; labor: number; subcontract: number; expense: number }>();
@@ -227,7 +233,7 @@ router.get("/budget-vs-actual", async (req, res) => {
         .where(pid ? eq(budgetItemsTable.projectId, pid) : undefined),
       db.select({ total: sql<string>`coalesce(sum(${costItemsTable.amount}), 0)` })
         .from(costItemsTable)
-        .where(pid ? eq(costItemsTable.projectId, pid) : undefined),
+        .where(pid ? and(eq(costItemsTable.projectId, pid), confirmedCostOnly) : confirmedCostOnly),
     ]);
 
     const budget = parseNumeric(budgetAgg[0]?.total);

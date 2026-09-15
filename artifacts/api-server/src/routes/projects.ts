@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, sql, and, or, ilike, inArray, desc } from "drizzle-orm";
+import { confirmedCostOnly, isConfirmedCost } from "../lib/cost-stage";
 import { db, projectsTable, costItemsTable, budgetsTable, budgetItemsTable, invoicesTable, invoicePaymentsTable, companySettingsTable, constructionHistoriesTable, estimatesTable, purchaseOrdersTable, purchaseInvoicesTable, paymentsTable } from "@workspace/db";
 import { isUniqueViolation } from "../lib/db-errors";
 
@@ -118,7 +119,7 @@ router.get("/", async (req, res) => {
         ? db.select({
             projectId: costItemsTable.projectId,
             total: sql<string>`SUM(${costItemsTable.amount})`,
-          }).from(costItemsTable).where(inArray(costItemsTable.projectId, projectIds))
+          }).from(costItemsTable).where(and(inArray(costItemsTable.projectId, projectIds), confirmedCostOnly))
           .groupBy(costItemsTable.projectId)
         : [],
     ]);
@@ -285,13 +286,15 @@ router.get("/:id", async (req, res) => {
 
     // 実行予算（budget_items）の合計を予算とする（旧budgetsは下の区分別表示でのみ使用）
     const totalBudget = parseNumeric(budgetItemRows[0]?.total ?? "0");
-    const totalActualCost = costItems.reduce((sum, c) => sum + parseNumeric(c.amount), 0);
+    // 明細は全段階を返すが、合計に入れるのは確定原価だけ
+    const confirmedItems = costItems.filter(isConfirmedCost);
+    const totalActualCost = confirmedItems.reduce((sum, c) => sum + parseNumeric(c.amount), 0);
     const contractAmount = parseNumeric(project.contractAmount);
     const grossProfit = contractAmount - totalActualCost;
     const grossProfitRate = contractAmount > 0 ? (grossProfit / contractAmount) * 100 : 0;
 
     const budgetActualMap = new Map<string, number>();
-    for (const ci of costItems) {
+    for (const ci of confirmedItems) {
       budgetActualMap.set(ci.category, (budgetActualMap.get(ci.category) ?? 0) + parseNumeric(ci.amount));
     }
 
@@ -479,7 +482,7 @@ router.get("/:id/summary", async (req, res) => {
     ]);
 
     const costByCategory = { material: 0, labor: 0, subcontract: 0, expense: 0 };
-    for (const ci of costItems) {
+    for (const ci of costItems.filter(isConfirmedCost)) {
       costByCategory[ci.category as keyof typeof costByCategory] += parseNumeric(ci.amount);
     }
 
@@ -532,10 +535,11 @@ router.get("/:id/ledger", async (req, res) => {
     ]);
 
     const totalBudget = budgets.reduce((s, b) => s + parseNumeric(b.budgetAmount), 0);
-    const totalActualCost = costItems.reduce((s, c) => s + parseNumeric(c.amount), 0);
+    const confirmedItems = costItems.filter(isConfirmedCost);
+    const totalActualCost = confirmedItems.reduce((s, c) => s + parseNumeric(c.amount), 0);
     // 完成工事原価の内訳（材料費・労務費・外注費・経費）
     const costByCategory = { material: 0, labor: 0, subcontract: 0, expense: 0 };
-    for (const c of costItems) {
+    for (const c of confirmedItems) {
       const cat = c.category as keyof typeof costByCategory;
       if (cat in costByCategory) costByCategory[cat] += parseNumeric(c.amount);
     }

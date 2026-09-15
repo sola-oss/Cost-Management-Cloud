@@ -74,6 +74,20 @@ const CATEGORY_COLORS: Record<Category, string> = {
   expense: "bg-slate-100 text-slate-700",
 };
 
+// 原価計上の段階（おおつか様の依頼）。工事の原価に数えるのは「確定原価」だけ。
+// 実行予算・仮原価は金額の推移を残すための記録で、合計には入らない。
+const STAGE_LABELS: Record<string, string> = {
+  planned: "実行予算",
+  provisional: "仮原価",
+  confirmed: "確定原価",
+};
+
+const STAGE_COLORS: Record<string, string> = {
+  planned: "bg-slate-100 text-slate-600 border-slate-200",
+  provisional: "bg-amber-100 text-amber-700 border-amber-200",
+  confirmed: "bg-emerald-100 text-emerald-700 border-emerald-200",
+};
+
 // ─── Schemas ────────────────────────────────────────────────────────────────
 
 const TAX_RATES = [0, 8, 10] as const;
@@ -389,10 +403,12 @@ function CostItemsTab({ projectId }: { projectId: number }) {
       <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <Table>
+            {/* 段階の列が増えたぶん、狭い画面では潰さずに横スクロールさせる */}
+            <Table className="min-w-[980px]">
               <TableHeader className="bg-slate-50">
                 <TableRow>
                   <TableHead className="w-[110px]">発生日</TableHead>
+                  <TableHead className="w-[90px]">段階</TableHead>
                   <TableHead className="w-[90px]">区分</TableHead>
                   <TableHead>摘要</TableHead>
                   <TableHead>取引先</TableHead>
@@ -407,14 +423,14 @@ function CostItemsTab({ projectId }: { projectId: number }) {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      <TableCell colSpan={9}>
+                      <TableCell colSpan={10}>
                         <Skeleton className="h-4 w-full" />
                       </TableCell>
                     </TableRow>
                   ))
                 ) : filteredItems.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="h-32 text-center text-slate-500">
+                    <TableCell colSpan={10} className="h-32 text-center text-slate-500">
                       {items.length === 0
                         ? "原価明細がありません。「仕入入力で登録」から計上してください。"
                         : "条件に一致する明細がありません。"}
@@ -436,6 +452,11 @@ function CostItemsTab({ projectId }: { projectId: number }) {
                     >
                       <TableCell className="text-slate-600 text-sm">
                         {new Date(item.incurredDate).toLocaleDateString("ja-JP")}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={`${STAGE_COLORS[(item as { stage?: string }).stage ?? "confirmed"] ?? ""} text-xs`}>
+                          {STAGE_LABELS[(item as { stage?: string }).stage ?? "confirmed"] ?? "確定原価"}
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1.5">

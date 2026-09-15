@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, inArray, sql, desc, and, ne } from "drizzle-orm";
+import { confirmedCostOnly } from "../lib/cost-stage";
 import {
   db,
   projectsTable,
@@ -57,7 +58,8 @@ router.get("/", async (req, res) => {
         .from(budgetItemsTable).where(inArray(budgetItemsTable.projectId, ids)).groupBy(budgetItemsTable.projectId),
 
       db.select({ projectId: costItemsTable.projectId, total: sql<string>`SUM(${costItemsTable.amount})` })
-        .from(costItemsTable).where(inArray(costItemsTable.projectId, ids)).groupBy(costItemsTable.projectId),
+        .from(costItemsTable).where(and(inArray(costItemsTable.projectId, ids), confirmedCostOnly))
+        .groupBy(costItemsTable.projectId),
 
       // 未請求の発注残：発注済み（下書き・キャンセル除く）の未納品分
       db.select({
@@ -76,7 +78,7 @@ router.get("/", async (req, res) => {
         .where(inArray(projectProgressRecordsTable.projectId, ids))
         .orderBy(desc(projectProgressRecordsTable.yearMonth)),
 
-      db.select({ last: sql<string>`MAX(${costItemsTable.incurredDate})` }).from(costItemsTable),
+      db.select({ last: sql<string>`MAX(${costItemsTable.incurredDate})` }).from(costItemsTable).where(confirmedCostOnly),
 
       db.select({ c: sql<number>`COUNT(*)` }).from(receivedInvoicesTable)
         .where(inArray(receivedInvoicesTable.status, ["sent", "answered"])),

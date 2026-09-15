@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { db, budgetsTable, costItemsTable } from "@workspace/db";
+import { confirmedCostOnly } from "../lib/cost-stage";
 
 const router: IRouter = Router();
 
@@ -17,7 +18,7 @@ router.get("/", async (req, res) => {
     const projectIdNum = parseInt(projectId);
     const [budgets, costItems] = await Promise.all([
       db.select().from(budgetsTable).where(eq(budgetsTable.projectId, projectIdNum)),
-      db.select().from(costItemsTable).where(eq(costItemsTable.projectId, projectIdNum)),
+      db.select().from(costItemsTable).where(and(eq(costItemsTable.projectId, projectIdNum), confirmedCostOnly)),
     ]);
 
     const costByCategory = new Map<string, number>();
@@ -89,7 +90,7 @@ router.put("/:id", async (req, res) => {
     if (!updated) return res.status(404).json({ message: "予算項目が見つかりません" });
 
     const costItems = await db.select().from(costItemsTable)
-      .where(and(eq(costItemsTable.projectId, updated.projectId), eq(costItemsTable.category, updated.category)));
+      .where(and(eq(costItemsTable.projectId, updated.projectId), eq(costItemsTable.category, updated.category), confirmedCostOnly));
     const actualAmount = costItems.reduce((sum, ci) => sum + parseNumeric(ci.amount), 0);
     const budgetAmountNum = parseNumeric(updated.budgetAmount);
     const variance = budgetAmountNum - actualAmount;
