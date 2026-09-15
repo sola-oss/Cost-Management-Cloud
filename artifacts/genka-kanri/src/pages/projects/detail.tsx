@@ -12,6 +12,7 @@ import {
 } from "@workspace/api-client-react";
 import type { ProjectDetail } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { ProvisionalLinks } from "@/components/provisional-links";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -355,6 +356,9 @@ function CostItemsTab({ projectId }: { projectId: number }) {
 
   return (
     <div className="space-y-4">
+      {/* 納品書（仮原価）と請求書（確定原価）の紐づけ。対象が無ければ何も出ない */}
+      <ProvisionalLinks projectId={projectId} />
+
       {/* カテゴリ合計バッジ + 検索 + 追加ボタン */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -372,7 +376,7 @@ function CostItemsTab({ projectId }: { projectId: number }) {
               <div className="flex items-center gap-1.5">
                 <Badge variant="outline" className={`${STAGE_COLORS.provisional} text-xs`}>仮原価</Badge>
                 <span className="text-sm font-medium text-amber-700">{formatCurrency(provisionalTotal)}</span>
-                <span className="text-xs text-slate-400">（未計上）</span>
+                <span className="text-xs text-slate-400">（記録のみ・原価に入れていません）</span>
               </div>
             )}
           </div>

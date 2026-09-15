@@ -32,6 +32,9 @@ export const purchaseInvoicesTable = pgTable("purchase_invoices", {
   // 原価計上の段階。ここで選んだ段階が、生成される原価（cost_items）に引き継がれる。
   // 納品書だけ先に届いたときは provisional（仮原価）、請求書が届いたら confirmed（確定原価）。
   stage: text("stage").$type<CostStage>().notNull().default("confirmed"),
+  // 納品書（仮原価）を、あとから届いた請求書（確定原価）に紐づけたときの相手の伝票。
+  // 金額は消さず両方残し、集計に入るのは確定原価だけ。ここが入ると「請求書待ち」から外れる。
+  settledByInvoiceId: integer("settled_by_invoice_id"),
   invoiceRegistrationNumber: text("invoice_registration_number"),
   isTaxableInvoice: boolean("is_taxable_invoice").notNull().default(true),
   subtotal: numeric("subtotal", { precision: 15, scale: 2 }).notNull().default("0"),

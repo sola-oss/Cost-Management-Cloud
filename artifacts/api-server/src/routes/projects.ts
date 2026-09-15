@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, sql, and, or, ilike, inArray, desc } from "drizzle-orm";
 import { confirmedCostOnly, isConfirmedCost } from "../lib/cost-stage";
+import { pendingProvisionalTotal } from "./cost-stage-links";
 import { db, projectsTable, costItemsTable, budgetsTable, budgetItemsTable, invoicesTable, invoicePaymentsTable, companySettingsTable, constructionHistoriesTable, estimatesTable, purchaseOrdersTable, purchaseInvoicesTable, paymentsTable } from "@workspace/db";
 import { isUniqueViolation } from "../lib/db-errors";
 
@@ -499,10 +500,9 @@ router.get("/:id/summary", async (req, res) => {
       ? Math.round((plannedGrossProfit / contractAmount) * 1000) / 10
       : null;
     const budgetUsageRate = totalBudget > 0 ? (totalActualCost / totalBudget) * 100 : 0;
-    // 仮原価（納品書だけ届いている分）。原価には入れないが、見えないと不安なので別に返す
-    const provisionalCost = costItems
-      .filter((c) => c.stage === "provisional")
-      .reduce((s, c) => s + parseNumeric(c.amount), 0);
+    // 仮原価（納品書だけ届いている分）。原価には入れないが、見えないと不安なので別に返す。
+    // 請求書と紐づけ済みのものは「待ち」から外す（もう請求書が来ているため）。
+    const provisionalCost = await pendingProvisionalTotal(id);
 
     return res.json({
       projectId: id,
