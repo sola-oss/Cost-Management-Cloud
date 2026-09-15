@@ -5,7 +5,7 @@ import { projectsTable } from "./projects";
 import { vendorsTable } from "./vendors";
 import { staffMembersTable } from "./staff-members";
 import { workTypesTable } from "./work-types";
-import { CostCategory } from "./cost-items";
+import { CostCategory, type CostStage } from "./cost-items";
 
 // ─── 受領請求書（仮デジタル請求書）───────────────────────────────────────────
 //
@@ -33,6 +33,9 @@ export const receivedInvoicesTable = pgTable("received_invoices", {
   invoiceDate: date("invoice_date"),
   paymentDueDate: date("payment_due_date"),
   status: text("status").$type<ReceivedInvoiceStatus>().notNull().default("draft"),
+  // 書類の段階。納品書なら provisional（仮原価）、請求書なら confirmed（確定原価）。
+  // 確定したときに作られる仕入伝票と原価に、そのまま引き継ぐ。
+  stage: text("stage").$type<CostStage>().notNull().default("confirmed"),
   // AIで読み取ったか、手入力か。手入力の逃げ道を使った場合は false。
   aiExtracted: boolean("ai_extracted").notNull().default(false),
   // 明細合計と請求総額が一致しないと true（コード側の検算結果）。確定前の安全網。

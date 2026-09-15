@@ -84,6 +84,7 @@ export function InvoiceEditor({
   invoiceDate: initialInvoiceDate,
   paymentDueDate: initialPaymentDueDate,
   totalAmount: initialTotalAmount,
+  stage: initialStage,
   aiExtracted,
   lines,
   onSaved,
@@ -93,6 +94,7 @@ export function InvoiceEditor({
   invoiceDate: string | null;
   paymentDueDate: string | null;
   totalAmount: number;
+  stage?: string;
   aiExtracted: boolean;
   lines: EditorLine[];
   onSaved: () => void;
@@ -104,6 +106,10 @@ export function InvoiceEditor({
   const [invoiceDate, setInvoiceDate] = useState(initialInvoiceDate ?? "");
   const [paymentDueDate, setPaymentDueDate] = useState(initialPaymentDueDate ?? "");
   const [totalAmount, setTotalAmount] = useState(String(initialTotalAmount ?? 0));
+  // 書類の段階。納品書なら仮原価（原価に計上しない）、請求書なら確定原価。
+  const [stage, setStage] = useState<"provisional" | "confirmed">(
+    initialStage === "provisional" ? "provisional" : "confirmed",
+  );
   const [rows, setRows] = useState<Row[]>(lines.map(toRow));
   const [saving, setSaving] = useState(false);
 
@@ -160,6 +166,7 @@ export function InvoiceEditor({
           invoiceDate: invoiceDate || null,
           paymentDueDate: paymentDueDate || null,
           totalAmount: n(totalAmount),
+          stage,
           items,
         }),
       });
@@ -177,6 +184,25 @@ export function InvoiceEditor({
     <Card className="border-slate-300">
       <CardContent className="p-4 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* 書類の段階。納品書だけ先に届いた場合は仮原価にしておき、
+              請求書が届いたら確定原価にする。原価に計上されるのは確定原価だけ。 */}
+          <div className="space-y-1 sm:col-span-3">
+            <Label className="text-xs">書類の段階</Label>
+            <Select value={stage} onValueChange={(v) => setStage(v as "provisional" | "confirmed")}>
+              <SelectTrigger className="text-sm sm:max-w-[280px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="confirmed">請求書 → 確定原価</SelectItem>
+                <SelectItem value="provisional">納品書 → 仮原価</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-slate-500">
+              {stage === "confirmed"
+                ? "確定すると工事の原価に計上されます。"
+                : "確定しても原価には計上しません。請求書が届いたら確定原価に変えてください。"}
+            </p>
+          </div>
           <div className="space-y-1">
             <Label className="text-xs">請求日</Label>
             <DateInput value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />

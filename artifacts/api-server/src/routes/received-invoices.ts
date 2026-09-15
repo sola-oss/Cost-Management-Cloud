@@ -320,6 +320,7 @@ router.get("/", async (req, res) => {
         invoiceDate: inv.invoiceDate,
         paymentDueDate: inv.paymentDueDate,
         status: inv.status,
+        stage: inv.stage,
         amountMismatch: inv.amountMismatch,
         totalAmount: parseN(inv.totalAmount),
         unassignedAmount: unassignedAmount(its),
@@ -398,6 +399,7 @@ router.get("/:id", async (req, res) => {
       invoiceDate: inv.invoiceDate,
       paymentDueDate: inv.paymentDueDate,
       status: inv.status,
+      stage: inv.stage,
       aiExtracted: inv.aiExtracted,
       amountMismatch: inv.amountMismatch,
       subtotal: parseN(inv.subtotal),
@@ -595,6 +597,7 @@ router.patch("/:id", async (req, res) => {
       invoiceDate?: string | null;
       paymentDueDate?: string | null;
       totalAmount?: number;
+      stage?: "provisional" | "confirmed";
       items?: Array<Record<string, unknown>>;
     };
 
@@ -660,6 +663,7 @@ router.patch("/:id", async (req, res) => {
         .set({
           ...(b.invoiceDate !== undefined ? { invoiceDate: b.invoiceDate || null } : {}),
           ...(b.paymentDueDate !== undefined ? { paymentDueDate: b.paymentDueDate || null } : {}),
+          ...(b.stage !== undefined ? { stage: b.stage } : {}),
           subtotal: String(subtotal),
           taxAmount: String(taxAmount),
           totalAmount: String(totalAmount),
@@ -877,6 +881,7 @@ router.post("/:id/confirm", async (req, res) => {
               paymentDueDate: inv.paymentDueDate ?? null,
               status: "confirmed",
               isProvisional: false,
+              stage: inv.stage,
               subtotal: String(totals.subtotal),
               taxAmount: String(totals.taxAmount),
               totalAmount: String(totals.totalAmount),
@@ -912,8 +917,8 @@ router.post("/:id/confirm", async (req, res) => {
             projectId,
             purchaseDate,
             voucherNumber,
-            // 振り分けから確定するのは請求書なので確定原価
-            "confirmed",
+            // 書類の段階（納品書なら仮原価／請求書なら確定原価）をそのまま引き継ぐ
+            inv.stage,
             vendorName,
             inv.vendorId as number,
             insertedItems,

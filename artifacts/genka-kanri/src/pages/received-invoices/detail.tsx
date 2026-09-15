@@ -389,6 +389,12 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
               {data.status === "answered" && <Badge variant="outline" className="bg-blue-100 text-blue-700 border-blue-200 mb-1">確認待ち</Badge>}
               {data.status === "confirmed" && <Badge variant="outline" className="bg-emerald-100 text-emerald-700 border-emerald-200 mb-1">確定済</Badge>}
               {data.status === "draft" && <Badge variant="outline" className="mb-1">下書き</Badge>}
+              {/* 納品書は確定しても原価に計上されないので、ここで分かるようにする */}
+              {(data as { stage?: string }).stage === "provisional" && (
+                <Badge variant="outline" className="mb-1 ml-1 bg-amber-100 text-amber-700 border-amber-200">
+                  納品書（仮原価）
+                </Badge>
+              )}
               {!data.vendorId && data.status !== "cancelled" && (
                 <Badge variant="outline" className="mb-1 ml-1 bg-amber-100 text-amber-700 border-amber-200">仕入先 未確定</Badge>
               )}
@@ -586,6 +592,7 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
           invoiceDate={data.invoiceDate}
           paymentDueDate={data.paymentDueDate}
           totalAmount={data.totalAmount}
+          stage={(data as { stage?: string }).stage}
           aiExtracted={data.aiExtracted}
           lines={data.blocks.flatMap((b) => b.lines)}
           onCancel={() => setEditing(false)}

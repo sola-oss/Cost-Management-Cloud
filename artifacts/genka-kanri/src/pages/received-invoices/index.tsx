@@ -499,6 +499,10 @@ export default function ReceivedInvoiceList() {
                           ) : (
                             <Badge variant="outline" className={`text-xs ${st.cls}`}>{st.label}</Badge>
                           )}
+                          {/* 納品書は確定しても原価に計上されないので、一覧でも分かるようにする */}
+                          {(inv as { stage?: string }).stage === "provisional" && (
+                            <Badge variant="outline" className="ml-1 text-xs bg-amber-50 text-amber-700 border-amber-200">仮原価</Badge>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums">
                           {elapsed == null ? <span className="text-slate-300">—</span> : <span className={elapsed >= 5 ? "font-semibold text-amber-600" : "text-slate-600"}>{elapsed}日</span>}
