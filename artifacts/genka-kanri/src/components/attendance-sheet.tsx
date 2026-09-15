@@ -143,6 +143,27 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
   const dirty = Object.keys(edits).length > 0;
   const kinds: Kind[] = showExtra ? ["manDays", "earlyCount", "overtimeCount"] : ["manDays"];
 
+  // 矢印キーでマスを移動する（Excelと同じ感覚で打てるように）。
+  // 上下＝行、左右＝日。左右はカーソルが端にあるときだけ動かす（値の編集を邪魔しない）。
+  const rowCount = staff.length * kinds.length;
+  const cellId = (rowIdx: number, day: number) => `att-${rowIdx}-${day}`;
+  const moveTo = (rowIdx: number, day: number) => {
+    if (rowIdx < 0 || rowIdx >= rowCount || day < 1 || day > days) return;
+    const el = document.getElementById(cellId(rowIdx, day)) as HTMLInputElement | null;
+    if (!el) return;
+    el.focus();
+    el.select();
+  };
+  const onCellKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, rowIdx: number, day: number) => {
+    const el = e.currentTarget;
+    const atStart = el.selectionStart === 0 && el.selectionEnd === 0;
+    const atEnd = el.selectionStart === el.value.length && el.selectionEnd === el.value.length;
+    if (e.key === "ArrowUp") { e.preventDefault(); moveTo(rowIdx - 1, day); }
+    else if (e.key === "ArrowDown" || e.key === "Enter") { e.preventDefault(); moveTo(rowIdx + 1, day); }
+    else if (e.key === "ArrowLeft" && atStart) { e.preventDefault(); moveTo(rowIdx, day - 1); }
+    else if (e.key === "ArrowRight" && atEnd) { e.preventDefault(); moveTo(rowIdx, day + 1); }
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -215,7 +236,7 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
                     </td>
                   </tr>
                 )}
-                {staff.map((st) =>
+                {staff.map((st, si) =>
                   kinds.map((kind, ki) => (
                     <tr key={`${st.id}-${kind}`} className="hover:bg-slate-50/40">
                       {ki === 0 && (
@@ -240,7 +261,10 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
                             className={`border-b border-r p-0 ${w === 0 ? "bg-red-50/40" : w === 6 ? "bg-blue-50/40" : ""}`}
                           >
                             <input
+                              id={cellId(si * kinds.length + ki, d)}
                               inputMode="decimal"
+                              onKeyDown={(e) => onCellKeyDown(e, si * kinds.length + ki, d)}
+                              onFocus={(e) => e.currentTarget.select()}
                               value={cellValue(st.id, d, kind)}
                               onChange={(e) => {
                                 const v = e.target.value;
@@ -304,7 +328,7 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
       )}
 
       <p className="text-xs text-slate-500">
-        1日を「1」、半日を「0.5」で入れます。空欄は0です。
+        1日を「1」、半日を「0.5」で入れます。空欄は0です。矢印キーとEnterでマスを移動できます。
         金額（人工 × 単価）は、職人単価の扱いが決まってから足します。
       </p>
     </div>
