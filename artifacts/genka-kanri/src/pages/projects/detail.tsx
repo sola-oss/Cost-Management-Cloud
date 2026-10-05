@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useParams, Link, useLocation } from "wouter";
+import { useParams, Link, useLocation, useSearch } from "wouter";
 import {
   useGetProject, useUpdateProject,
   useGetProjectSummary,
@@ -14,6 +14,7 @@ import type { ProjectDetail } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ProvisionalLinks } from "@/components/provisional-links";
 import { AttendanceSheet } from "@/components/attendance-sheet";
+import { ProjectTabBar, PROJECT_TABS, parseProjectTab, type ProjectTabKey } from "@/components/project-tab-bar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -22,7 +23,6 @@ import { NumberInput } from "@/components/ui/number-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,8 +31,7 @@ import {
 } from "recharts";
 import {
   ArrowLeft, Plus, Save, X, AlertTriangle, CheckCircle, TrendingUp,
-  FileText, Calculator, BarChart2, ClipboardList, Loader2, Trash2, Search, ExternalLink, Edit, ShoppingCart,
-  HardHat,
+  FileText, ClipboardList, Loader2, Trash2, Search, ExternalLink, Edit, ShoppingCart,
 } from "lucide-react";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { useForm } from "react-hook-form";
@@ -241,7 +240,7 @@ const COST_FILTER_OPTIONS: Array<Category | "all"> = ["all", "material", "labor"
 // 1工事の明細が数百件でも全件取得できる値にする（サーバ側の上限と揃える）。
 const COST_ITEMS_LIMIT = 2000;
 
-function CostItemsTab({ projectId }: { projectId: number }) {
+function CostItemsTab({ projectId, newInvoiceIds = [] }: { projectId: number; newInvoiceIds?: number[] }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
@@ -337,6 +336,20 @@ function CostItemsTab({ projectId }: { projectId: number }) {
 
   const items = costItems?.items ?? [];
 
+  // 仕入入力で登録して戻ってきたときの印（?new=伝票ID,…）。
+  // 1件なら光らせて消す。「続けて登録」でまとめて入れた分は色を残す（どれを入れたか見返せるように）
+  const isBatch = newInvoiceIds.length > 1;
+  const newRowClass = (invoiceId: number | undefined) =>
+    invoiceId != null && newInvoiceIds.includes(invoiceId) ? (isBatch ? "batch-registered" : "highlight-new") : "";
+  const scrolledToNew = useRef(false);
+  useEffect(() => {
+    if (scrolledToNew.current || newInvoiceIds.length === 0 || items.length === 0) return;
+    scrolledToNew.current = true;
+    requestAnimationFrame(() => {
+      document.querySelector(".batch-registered, .highlight-new")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [items.length, newInvoiceIds.length]);
+
   // カテゴリ別合計
   const totalByCategory: Record<Category, number> = {
     material: 0, labor: 0, subcontract: 0, expense: 0,
@@ -373,6 +386,12 @@ function CostItemsTab({ projectId }: { projectId: number }) {
       {/* 納品書（仮原価）と請求書（確定原価）の紐づけ。対象が無ければ何も出ない */}
       <ProvisionalLinks projectId={projectId} />
 
+      {isBatch && (
+        <div className="rounded-md border border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-800">
+          今回登録した伝票（{newInvoiceIds.length}件）の明細を色付きで表示しています
+        </div>
+      )}
+
       {/* カテゴリ合計バッジ + 検索 + 追加ボタン */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -380,15 +399,13 @@ function CostItemsTab({ projectId }: { projectId: number }) {
           <div className="flex gap-3 flex-wrap">
             {CATEGORIES.map((cat) => (
               <div key={cat} className="flex items-center gap-1.5">
-                <Badge variant="outline" className={`${CATEGORY_COLORS[cat]} text-xs`}>
-                  {CATEGORY_LABELS[cat]}
-                </Badge>
+                <span className="text-xs text-slate-500">{CATEGORY_LABELS[cat]}</span>
                 <span className="text-sm font-medium">{formatCurrency(totalByCategory[cat])}</span>
               </div>
             ))}
             {(attendance?.total.manDays ?? 0) > 0 && (
               <div className="flex items-center gap-1.5">
-                <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 text-xs">出面</Badge>
+                <span className="text-xs text-slate-500">出面</span>
                 <span className="text-sm font-medium">{attendance?.total.manDays} 人工</span>
                 <span className="text-xs text-slate-400">（「出面」タブ）</span>
               </div>
@@ -403,7 +420,8 @@ function CostItemsTab({ projectId }: { projectId: number }) {
           </div>
           {/* 原価の登録は仕入入力に一本化（このタブは閲覧専用） */}
           <Button size="sm" variant="outline" asChild className="text-teal-700 border-teal-300 hover:bg-teal-50">
-            <Link href="/purchases">
+            {/* 工事から入ったことを渡す。仕入入力に「工事詳細へ戻る」を出し、登録後もここへ戻す */}
+            <Link href={`/purchases?projectId=${projectId}&from=project`}>
               <ShoppingCart className="w-4 h-4 mr-1" />
               仕入入力で登録
             </Link>
@@ -501,14 +519,16 @@ function CostItemsTab({ projectId }: { projectId: number }) {
                 ) : (
                   filteredItems.map((item) => {
                     const isFromInvoice = item.sourceType === "purchase_invoice";
+                    // 仮原価の行は薄い黄色で塗る（段階のバッジと同じ色。一目で確定と見分けられるように）
+                    const isProvisional = (item as { stage?: string }).stage === "provisional";
                     return (
                     <TableRow
                       key={item.id}
-                      className={`hover:bg-slate-50/50 ${isFromInvoice ? "cursor-pointer" : ""}`}
+                      className={`${isProvisional ? "bg-amber-50/70 hover:bg-amber-50" : "hover:bg-slate-50/50"} ${isFromInvoice ? "cursor-pointer" : ""} ${newRowClass((item as { purchaseInvoiceId?: number }).purchaseInvoiceId)}`}
                       onClick={isFromInvoice ? () => {
                         const invoiceId = (item as any).purchaseInvoiceId;
                         if (invoiceId) {
-                          window.location.href = `/purchases?id=${invoiceId}`;
+                          window.location.href = `/purchases?id=${invoiceId}&from=project`;
                         }
                       } : undefined}
                     >
@@ -521,21 +541,19 @@ function CostItemsTab({ projectId }: { projectId: number }) {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1.5">
-                          <Badge variant="outline" className={`${CATEGORY_COLORS[item.category as Category] ?? ""} text-xs`}>
-                            {CATEGORY_LABELS[item.category as Category] ?? item.category}
-                          </Badge>
-                          {isFromInvoice && (
-                            <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-blue-50 text-blue-700 border-blue-200">
-                              仕入伝票
-                            </Badge>
-                          )}
-                        </div>
+                        {/* 区分は色を付けない（色は段階＝確定/仮の見分けだけに使う。2026-09-30 おおつか様） */}
+                        <span className="text-sm text-slate-600">
+                          {CATEGORY_LABELS[item.category as Category] ?? item.category}
+                        </span>
                       </TableCell>
                       <TableCell className="font-medium text-sm">
                         <div className="flex items-center gap-1">
                           {item.description}
-                          {isFromInvoice && <ExternalLink className="w-3 h-3 text-blue-400 flex-shrink-0" />}
+                          {isFromInvoice && (
+                            <span title="仕入伝票を開く" className="inline-flex">
+                              <ExternalLink className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                            </span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="text-slate-600 text-sm">{item.vendor || "-"}</TableCell>
@@ -1644,13 +1662,25 @@ export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
   const projectId = parseInt(id || "0", 10);
   const [, setLocation] = useLocation();
+  // 開いているタブは URL に持たせる（実行予算や仕入入力から戻ったとき、同じタブが開くように）
+  const search = useSearch();
+  const tab = parseProjectTab(search);
+  // 仕入入力から戻ってきたとき、登録した伝票を原価明細で目立たせる
+  const newInvoiceIds = (new URLSearchParams(search).get("new") ?? "")
+    .split(",").map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  const selectTab = (key: ProjectTabKey) => {
+    if (key === "budget") {
+      setLocation(`/projects/${projectId}/budgets`);
+      return;
+    }
+    setLocation(`/projects/${projectId}?tab=${key}`, { replace: true });
+  };
 
   const { data: project, isLoading: projectLoading } = useGetProject(projectId, {
     query: { enabled: !!projectId, queryKey: getGetProjectQueryKey(projectId) },
   });
-  const { data: summary, isLoading: summaryLoading } = useGetProjectSummary(projectId, {
-    query: { enabled: !!projectId, queryKey: getGetProjectSummaryQueryKey(projectId) },
-  });
+  // 請負・予算・原価・粗利の数字は「収支状況」タブにだけ出す（上に常時出すと収支状況で二重になり、
+  // 出面などには不要。2026-10-05 アイさん判断）
   const { data: budgetItemsCheck } = useListBudgetItems(projectId, {
     query: { enabled: !!projectId, queryKey: getListBudgetItemsQueryKey(projectId) },
   });
@@ -1711,152 +1741,22 @@ export default function ProjectDetail() {
         </Button>
       </div>
 
-      {/* ── KPI サマリー（常時表示） ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card className="bg-slate-50 border-none shadow-sm">
-          <CardHeader className="py-3 pb-1">
-            <CardTitle className="text-xs text-slate-500 font-medium">請負金額</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-3">
-            <div className="text-lg font-bold">{formatCurrency(project.contractAmount)}</div>
-          </CardContent>
-        </Card>
+      {/* ── タブ（画面の上に置く。実行予算は別ページへ移るが、そちらにも同じタブ帯を出す） ── */}
+      <ProjectTabBar
+        current={tab}
+        onSelect={selectTab}
+        badges={!hasBudgetItems && !isSmall ? { budget: "未登録" } : undefined}
+      />
 
-        {summaryLoading ? (
-          <>
-            <Card><CardContent className="p-4"><Skeleton className="h-8" /></CardContent></Card>
-            <Card><CardContent className="p-4"><Skeleton className="h-8" /></CardContent></Card>
-            <Card><CardContent className="p-4"><Skeleton className="h-8" /></CardContent></Card>
-          </>
-        ) : summary ? (
-          <>
-            <Card className="border-none shadow-sm">
-              <CardHeader className="py-3 pb-1">
-                <CardTitle className="text-xs text-slate-500 font-medium">実行予算</CardTitle>
-              </CardHeader>
-              <CardContent className="pb-3">
-                {isSmall ? (
-                  <div className="text-sm text-slate-400 pt-1">小口工事のため作りません</div>
-                ) : (
-                  <div className="text-lg font-bold text-blue-600">{formatCurrency(summary.totalBudget)}</div>
-                )}
-              </CardContent>
-            </Card>
-            <Card className="border-none shadow-sm">
-              <CardHeader className="py-3 pb-1">
-                <CardTitle className="text-xs text-slate-500 font-medium flex items-center gap-1">
-                  実績原価
-                  {summary.budgetUsageRate > 100 && <AlertTriangle className="w-3 h-3 text-destructive" />}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pb-3">
-                <div className="text-lg font-bold text-orange-600">{formatCurrency(summary.totalActualCost)}</div>
-                {!isSmall && (
-                  <div className="mt-1.5">
-                    <Progress
-                      value={Math.min(summary.budgetUsageRate, 100)}
-                      className="h-1"
-                      indicatorClassName={summary.budgetUsageRate > 100 ? "bg-destructive" : "bg-orange-500"}
-                    />
-                    <div className={`text-xs mt-0.5 ${summary.budgetUsageRate > 100 ? "text-destructive" : "text-slate-500"}`}>
-                      {summary.budgetUsageRate.toFixed(1)}%消化
-                    </div>
-                  </div>
-                )}
-                {/* 仮原価：納品書だけ届いている分。原価には入れていないことが分かるように出す */}
-                {(summary.provisionalCost ?? 0) > 0 && (
-                  <div className="mt-1.5 text-xs text-amber-700">
-                    仮原価 {formatCurrency(summary.provisionalCost ?? 0)}（請求書待ち・未計上）
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-            <Card className="border-none shadow-sm">
-              <CardHeader className="py-3 pb-1">
-                <CardTitle className="text-xs text-slate-500 font-medium">
-                  {isSmall ? "粗利（請負−実績原価）" : "粗利（予定／実績）"}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pb-3 space-y-1.5">
-                {!isSmall && (
-                  <div>
-                    <span className="text-[11px] text-slate-500 mr-1.5">予定</span>
-                    {((summary as any).plannedGrossProfitRate ?? null) === null ? (
-                      <span className="text-sm text-slate-300">—（実行予算 未設定）</span>
-                    ) : (
-                      <span className="text-sm font-bold text-emerald-700">
-                        {formatCurrency((summary as any).plannedGrossProfit ?? 0)}
-                        <span className="text-xs font-medium ml-1">（{formatPercent((summary as any).plannedGrossProfitRate ?? 0)}）</span>
-                      </span>
-                    )}
-                  </div>
-                )}
-                <div>
-                  {!isSmall && <span className="text-[11px] text-slate-500 mr-1.5">実績</span>}
-                  <span className={`${isSmall ? "text-lg" : "text-sm"} font-bold ${summary.grossProfit < 0 ? "text-destructive" : isSmall ? "text-emerald-700" : "text-slate-700"}`}>
-                    {formatCurrency(summary.grossProfit)}
-                    <span className="text-xs font-medium ml-1">（{formatPercent(summary.grossProfitRate)}）</span>
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          </>
-        ) : null}
-      </div>
-
-      {/* ── タブ ── */}
-      {/* 「実行予算」タブはクリックで編集画面へ直接遷移（タブ表示は持たない） */}
-      <Tabs defaultValue="financial" className="w-full">
-        <TabsList className="grid w-full grid-cols-5 mb-2">
-          <TabsTrigger value="basic" className="text-xs sm:text-sm gap-1">
-            <FileText className="w-3.5 h-3.5 hidden sm:block" />
-            基本情報
-          </TabsTrigger>
-          {/* 出面（誰が何日この現場に入ったか）。基本情報の隣に置く */}
-          <TabsTrigger value="attendance" className="text-xs sm:text-sm gap-1">
-            <HardHat className="w-3.5 h-3.5 hidden sm:block" />
-            出面
-          </TabsTrigger>
-          <TabsTrigger
-            value="budget"
-            className="text-xs sm:text-sm gap-1"
-            onClick={(e) => {
-              e.preventDefault();
-              setLocation(`/projects/${projectId}/budgets`);
-            }}
-          >
-            <Calculator className="w-3.5 h-3.5 hidden sm:block" />
-            実行予算
-            {!hasBudgetItems && !isSmall && (
-              <Badge className="ml-1 text-[10px] px-1 py-0 h-4 bg-orange-500 text-white border-none">未登録</Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="costs" className="text-xs sm:text-sm gap-1">
-            <ClipboardList className="w-3.5 h-3.5 hidden sm:block" />
-            原価明細
-          </TabsTrigger>
-          <TabsTrigger value="financial" className="text-xs sm:text-sm gap-1">
-            <BarChart2 className="w-3.5 h-3.5 hidden sm:block" />
-            収支状況
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="basic">
-          <BasicInfoTab project={project} projectId={projectId} />
-        </TabsContent>
-
-        <TabsContent value="attendance">
-          <AttendanceSheet projectId={projectId} />
-        </TabsContent>
-
-        <TabsContent value="costs">
-          <CostItemsTab projectId={projectId} />
-        </TabsContent>
-
-        <TabsContent value="financial">
+      {/* ── タブの中身。上の色と同じ色の線で、どのタブを見ているか分かるようにする ── */}
+      <div className={`rounded-lg border-t-4 pt-3 ${PROJECT_TABS.find((t) => t.key === tab)?.panel ?? ""}`}>
+        {tab === "basic" && <BasicInfoTab project={project} projectId={projectId} />}
+        {tab === "attendance" && <AttendanceSheet projectId={projectId} />}
+        {tab === "costs" && <CostItemsTab projectId={projectId} newInvoiceIds={newInvoiceIds} />}
+        {tab === "financial" && (
           <FinancialTab projectId={projectId} contractAmount={project.contractAmount} isSmall={isSmall} />
-        </TabsContent>
-      </Tabs>
+        )}
+      </div>
     </div>
   );
 }

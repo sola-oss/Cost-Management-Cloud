@@ -427,10 +427,15 @@ export default function ReceivedInvoiceList() {
                     const elapsed = daysSince(inv.sentAt);
                     const urgent = inv.status === "sent" && left != null && left <= 7;
                     return (
-                      <tr key={inv.id} className={`border-b hover:bg-slate-50/60 transition-colors ${urgent ? "bg-amber-50/60" : ""}`}>
+                      // 行のどこを押しても中身の確認画面へ（右端の「＞」だけだと不便・削除と押し間違える。2026-09-17 おおつか様）
+                      <tr
+                        key={inv.id}
+                        onClick={() => navigate(`/received-invoices/${inv.id}`)}
+                        className={`group border-b cursor-pointer hover:bg-slate-50/60 transition-colors ${urgent ? "bg-amber-50/60" : ""}`}
+                      >
                         <td className="px-4 py-3">
                           <div className="font-medium text-slate-800 flex items-center gap-2">
-                            {inv.vendorName || "（仕入先不明）"}
+                            <span className="text-primary group-hover:underline">{inv.vendorName || "（仕入先不明）"}</span>
                             {/* まとめて取り込んだ直後の印。上から順に確認していくときの目印 */}
                             {justImported.includes(inv.id) && (
                               <span className="text-[10px] font-semibold text-sky-700 bg-sky-50 border border-sky-200 rounded px-1.5 py-0.5 shrink-0">
@@ -502,8 +507,9 @@ export default function ReceivedInvoiceList() {
                             <span className="text-xs text-slate-500 tabular-nums">{inv.assignedBlockCount}/{inv.blockCount}</span>
                           </div>
                         </td>
-                        <td className="px-2">
-                          <div className="flex items-center gap-0.5">
+                        <td className="px-2" onClick={(e) => e.stopPropagation()}>
+                          {/* 削除と「＞」の間を空けて押し間違えを防ぐ */}
+                          <div className="flex items-center gap-4">
                             {inv.status !== "confirmed" && (
                               <Button
                                 variant="ghost"

@@ -18,7 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useHighlightNew } from "@/hooks/use-highlight-new";
 import { cn } from "@/lib/utils";
-import { Plus, Trash2, Save, FileText, ExternalLink, ClipboardList, Pencil, ChevronDown, ChevronRight, Copy, Loader2 } from "lucide-react";
+import { Plus, Trash2, Save, FileText, ArrowLeft, ExternalLink, ClipboardList, Pencil, ChevronDown, ChevronRight, Copy, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { UnitPricePicker, type UnitPriceSelection } from "@/components/unit-price-picker";
 import { ItemNameInput } from "@/components/item-name-input";
@@ -234,6 +234,11 @@ export default function Purchases() {
   const searchStr = useSearch();
   const editInvoiceId = new URLSearchParams(searchStr).get("id");
   const editInvoiceIdNum = editInvoiceId ? parseInt(editInvoiceId) : null;
+  // 工事詳細（原価明細）から入ってきたとき。?from=project&projectId=…
+  // おおつか様の依頼（2026-09-17 3-3・3-4）：工事ごとに登録しているときは、戻るボタンを出し、
+  // 登録したら工事詳細へ戻す。左メニューから入ったとき（複数工事をまとめて登録）は今までどおり。
+  const fromProject = new URLSearchParams(searchStr).get("from") === "project";
+  const fromProjectIdParam = new URLSearchParams(searchStr).get("projectId");
 
   const { data: projectsData } = useListProjects(undefined, {
     query: { queryKey: getListProjectsQueryKey() },
@@ -295,6 +300,52 @@ export default function Purchases() {
   // 工事の原価に数えるのは確定原価だけ（仮原価は金額の推移を残すための記録）。
   const [stage,           setStage]           = useState<"provisional" | "confirmed">("confirmed");
   const [memo,            setMemo]            = useState("");
+
+  // 工事詳細から「仕入入力で登録」で来たら、その工事を最初から選んでおく
+  useEffect(() => {
+    if (!editInvoiceIdNum && fromProjectIdParam) setSelectedProject(fromProjectIdParam);
+  }, [editInvoiceIdNum, fromProjectIdParam]);
+
+  // 戻り先の工事。選び直していればそちら（原価が付いた先へ戻すため）
+  const backProjectId = editInvoiceIdNum
+    ? (editInvoiceData ? String(editInvoiceData.projectId) : null)
+    : (selectedProject || fromProjectIdParam);
+  const backProjectName = projects.find((p) => String(p.id) === backProjectId)?.name;
+  const backToProject = (highlightIds: number[] = []) => {
+    if (!backProjectId) return;
+    const q = highlightIds.length > 0 ? `&new=${highlightIds.join(",")}` : "";
+    navigate(`/projects/${backProjectId}?tab=costs${q}`);
+  };
+
+  // ── 続けて登録 ──────────────────────────────────────────────────────────
+  // おおつか様の依頼（2026-09-17 3-4）とアイさんの決め（2026-10-05）：
+  //   「登録」        … 1件登録したら、工事詳細から来たときは原価明細へ、左メニューから来たときは
+  //                     下の仕入伝票一覧へ移り、登録した行を光らせる
+  //   「続けて登録」  … 画面はそのまま次の伝票へ（工事は選んだまま）。登録した件数を上に出す
+  //   「終了」        … 同じ移り先へ移り、今回まとめて登録した分を色違いで残す
+  const [batchIds, setBatchIds] = useState<number[]>([]);
+  // 左メニューから来て、まとめて登録したあとに一覧で色を残す伝票
+  const [listHighlightIds, setListHighlightIds] = useState<number[]>([]);
+  const invoiceListRef = useRef<HTMLDivElement | null>(null);
+
+  const finishRegistering = (ids: number[]) => {
+    setBatchIds([]);
+    if (fromProject) {
+      backToProject(ids);
+      return;
+    }
+    newSlip();
+    // 登録した伝票が絞り込みで隠れないように、一覧の絞り込みを外す
+    setFilterInvoiceProject("__all__");
+    setFilterInvoiceStatus("__all__");
+    if (ids.length === 1) {
+      setListHighlightIds([]);
+      mark(ids[0]);
+    } else if (ids.length > 1) {
+      setListHighlightIds(ids);
+      requestAnimationFrame(() => invoiceListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    }
+  };
 
   // ── 支払予定生成フラグ ────────────────────────────────────────────────────
 
@@ -474,8 +525,19 @@ export default function Purchases() {
     setRows([createRow()]);
   };
 
+  // 続けて登録：工事・仕入日・段階はそのまま、伝票の中身だけ空にする
+  const nextSlipSameProject = () => {
+    setVendorId("");
+    setPaymentDueDate("");
+    setOrderNumber("");
+    setMemo("");
+    setRows([createRow()]);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    document.querySelector("main")?.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   // ── 登録 / 更新 ──────────────────────────────────────────────────────────
-  const handleRegister = async () => {
+  const handleRegister = async (mode: "single" | "continue" = "single") => {
     if (!selectedProject) {
       toast({ title: "入力エラー", description: "工事を選択してください。", variant: "destructive" });
       return;
@@ -536,6 +598,7 @@ export default function Purchases() {
           description: `仕入伝票 ${invoice.voucherNumber} を更新しました。`,
         });
         mark(invoice.id ?? editInvoiceIdNum);
+        if (fromProject) backToProject([invoice.id ?? editInvoiceIdNum]);
       } else {
         // ── 新規作成：POST ──────────────────────────────────────────────
         res = await fetch("/api/purchase-invoices", {
@@ -559,8 +622,12 @@ export default function Purchases() {
           title: "登録完了",
           description: `仕入伝票 ${invoice.voucherNumber} を登録しました。`,
         });
-        newSlip();
-        mark(invoice.id);
+        if (mode === "continue") {
+          setBatchIds((prev) => [...prev, invoice.id]);
+          nextSlipSameProject();
+        } else {
+          finishRegistering([...batchIds, invoice.id]);
+        }
       }
 
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-invoices"] });
@@ -636,6 +703,18 @@ export default function Purchases() {
   return (
     <div className="p-4 max-w-7xl mx-auto space-y-4">
 
+      {/* ── 工事詳細へ戻る（工事詳細から入ってきたときだけ） ── */}
+      {fromProject && backProjectId && (
+        <button
+          type="button"
+          onClick={() => backToProject(batchIds)}
+          className="inline-flex max-w-full items-center gap-1.5 text-sm text-slate-600 hover:text-slate-900 hover:underline"
+        >
+          <ArrowLeft className="w-4 h-4 shrink-0" />
+          <span className="truncate">{backProjectName ?? "工事詳細"} に戻る</span>
+        </button>
+      )}
+
       {/* ── ページヘッダー ── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -666,14 +745,25 @@ export default function Purchases() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => editInvoiceIdNum ? navigate("/purchases") : newSlip()}
+            onClick={() => fromProject ? backToProject(batchIds) : editInvoiceIdNum ? navigate("/purchases") : newSlip()}
           >
-            {editInvoiceIdNum ? "一覧に戻る" : "新規"}
+            {fromProject ? "キャンセル" : editInvoiceIdNum ? "一覧に戻る" : "新規"}
           </Button>
+          {!editInvoiceIdNum && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-teal-700 border-teal-300 hover:bg-teal-50"
+              onClick={() => handleRegister("continue")}
+              disabled={saving}
+            >
+              続けて登録
+            </Button>
+          )}
           <Button
             size="sm"
             className="bg-teal-600 hover:bg-teal-700 text-white"
-            onClick={handleRegister}
+            onClick={() => handleRegister()}
             disabled={saving}
           >
             {saving ? (
@@ -684,6 +774,18 @@ export default function Purchases() {
           </Button>
         </div>
       </div>
+
+      {/* ── 続けて登録している途中。何件入れたかと「終了」 ── */}
+      {batchIds.length > 0 && (
+        <div className="flex items-center justify-between gap-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-800">
+          <span>
+            続けて登録中：{fromProject && backProjectName ? `この工事に` : ""}<span className="font-bold">{batchIds.length}件</span>登録しました
+          </span>
+          <Button size="sm" className="bg-sky-600 hover:bg-sky-700 text-white" onClick={() => finishRegistering(batchIds)}>
+            終了
+          </Button>
+        </div>
+      )}
 
       {/* ── 基本情報カード ── */}
       <Card>
@@ -1100,15 +1202,26 @@ export default function Purchases() {
         <Button
           variant="outline"
           size="default"
-          onClick={() => editInvoiceIdNum ? navigate("/purchases") : newSlip()}
+          onClick={() => fromProject ? backToProject(batchIds) : editInvoiceIdNum ? navigate("/purchases") : newSlip()}
           className="px-6"
         >
-          {editInvoiceIdNum ? "一覧に戻る" : "キャンセル"}
+          {fromProject ? "キャンセルして工事詳細へ戻る" : editInvoiceIdNum ? "一覧に戻る" : "キャンセル"}
         </Button>
+        {!editInvoiceIdNum && (
+          <Button
+            variant="outline"
+            size="default"
+            className="px-6 text-teal-700 border-teal-300 hover:bg-teal-50"
+            onClick={() => handleRegister("continue")}
+            disabled={saving}
+          >
+            続けて登録
+          </Button>
+        )}
         <Button
           size="default"
           className="bg-orange-500 hover:bg-orange-600 text-white px-8"
-          onClick={handleRegister}
+          onClick={() => handleRegister()}
           disabled={saving}
         >
           {saving ? (
@@ -1124,13 +1237,18 @@ export default function Purchases() {
       </div>
 
       {/* ── 仕入伝票一覧 ── */}
-      <div className="mt-8 space-y-3">
+      <div ref={invoiceListRef} className="mt-8 space-y-3 scroll-mt-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-teal-700" />
             <h2 className="text-base font-bold text-slate-800">仕入伝票一覧</h2>
             {invoiceListData && (
               <span className="text-xs text-slate-500">{invoiceListData.total}件</span>
+            )}
+            {listHighlightIds.length > 0 && (
+              <span className="rounded bg-sky-100 px-2 py-0.5 text-xs text-sky-800">
+                今回登録した{listHighlightIds.length}件を色付きで表示しています
+              </span>
             )}
           </div>
         </div>
@@ -1196,7 +1314,7 @@ export default function Purchases() {
                   </TableCell>
                 </TableRow>
               ) : invoiceList.map((inv) => (
-                <TableRow key={inv.id} data-row-id={inv.id} className={cn("hover:bg-slate-50/60", isNew(inv.id) && "highlight-new")}>
+                <TableRow key={inv.id} data-row-id={inv.id} className={cn("hover:bg-slate-50/60", isNew(inv.id) && "highlight-new", listHighlightIds.includes(inv.id) && "batch-registered")}>
                   <TableCell className="font-mono text-sm font-medium">
                     <Link
                       href={`/purchases?id=${inv.id}`}

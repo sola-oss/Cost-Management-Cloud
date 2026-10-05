@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, forwardRef } from "react";
-import { useParams, Link } from "wouter";
+import { useParams, Link, useLocation } from "wouter";
+import { ProjectTabBar, type ProjectTabKey } from "@/components/project-tab-bar";
 import {
   useGetProject, useGetProjectSummary, useListBudgetItems,
   useCreateBudgetItem, useUpdateBudgetItem, useDeleteBudgetItem,
@@ -609,6 +610,14 @@ export default function BudgetManagement() {
 
   const hasDirty = rows.some(r => r.isDirty || r.isNew);
 
+  // 工事詳細と同じタブ帯から、ほかのタブへ移る。保存していない変更があれば先に聞く
+  const [, setLocation] = useLocation();
+  const goTab = (key: ProjectTabKey) => {
+    if (key === "budget") return;
+    if (hasDirty && !window.confirm("保存していない変更があります。保存せずに移動しますか？")) return;
+    setLocation(`/projects/${projectId}?tab=${key}`);
+  };
+
   return (
     <div className="flex flex-col h-screen bg-slate-100">
 
@@ -634,6 +643,11 @@ export default function BudgetManagement() {
           {saving ? "保存中..." : "保存する"}
         </Button>
         {hasDirty && <Badge className="bg-orange-500 text-white text-xs">未保存の変更あり</Badge>}
+      </div>
+
+      {/* ── 工事詳細と同じタブ帯（いま「実行予算」を開いていることが分かるように） ── */}
+      <div className="shrink-0 bg-white border-b border-slate-200 px-3 py-2">
+        <ProjectTabBar current="budget" onSelect={goTab} />
       </div>
 
       <div className="flex-1 overflow-auto">
