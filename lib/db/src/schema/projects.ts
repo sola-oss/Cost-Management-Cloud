@@ -2,7 +2,9 @@ import { pgTable, serial, text, numeric, date, integer, timestamp, boolean, json
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const projectStatusEnum = ["planning", "active", "completed", "suspended"] as const;
+// provisional = 仮登録。工事名だけで作った受け皿で、会社全体の合計・粗利には入れない。
+// 本登録（POST /api/projects/:id/promote）で planning（小口は active）になる。
+export const projectStatusEnum = ["provisional", "planning", "active", "completed", "suspended"] as const;
 export type ProjectStatus = typeof projectStatusEnum[number];
 
 // 管理区分。small =「その他（小口工事）」。

@@ -25,8 +25,9 @@ export default function Reports() {
       case "active": return s === "active";
       case "completed": return s === "completed";
       case "planning": return s === "planning";
-      case "all": return true;
-      default: return true;
+      // 仮登録は請負金額が無く粗利率が出せないので、「すべて」にも入れない
+      case "all": return s !== "provisional";
+      default: return s !== "provisional";
     }
   };
 
@@ -56,7 +57,8 @@ export default function Reports() {
 
   // 工事ごとの収支サマリを CSV（Excelでそのまま開けるよう UTF-8 BOM 付き）で出力
   const handleExportCsv = () => {
-    const rows = data?.items ?? [];
+    // 仮登録の工事は収支の数字が無いので出さない
+    const rows = (data?.items ?? []).filter((p) => p.status !== "provisional");
     if (rows.length === 0) return;
     const header = ["工事番号", "工事名", "区分", "得意先", "状態", "請負金額", "実行予算", "実績原価", "予算消化率(%)", "粗利率(%)", "予定粗利額", "実績粗利額"];
     const cell = (v: string | number | null | undefined) => {

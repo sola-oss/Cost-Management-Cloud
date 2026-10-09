@@ -33,11 +33,12 @@ function round1(n: number): number {
 
 router.get("/", async (req, res) => {
   try {
-    // 施工中の工事を対象にする（完成工事は振り返り用で別軸）
+    // 施工中の工事を対象にする（完成工事は振り返り用で別軸）。
+    // 仮登録の工事は請負金額も部門も無いので入れない（混ぜると合計・粗利が狂う）
     const projects = await db
       .select()
       .from(projectsTable)
-      .where(ne(projectsTable.status, "completed"))
+      .where(and(ne(projectsTable.status, "completed"), ne(projectsTable.status, "provisional")))
       .orderBy(desc(projectsTable.createdAt));
 
     const ids = projects.map((p) => p.id);

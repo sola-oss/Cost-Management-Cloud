@@ -23,6 +23,38 @@ function toDateString(val: unknown): string | null {
   return s === "" ? null : s;
 }
 
+/**
+ * 工事番号を自動で振って、run(番号) を実行する。
+ * 事務が手で採番した番号とぶつかることがあるため、一意制約に当たったら次の番号で数回やり直す。
+ * 番号は「prefix + 連番(pad桁) + suffix」。連番は prefix で始まる既存番号の最大+1。
+ * 振れなかったら null。
+ */
+async function withAutoProjectCode<T>(
+  prefix: string, pad: number, suffix: string, run: (projectCode: string) => Promise<T>,
+): Promise<T | null> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const [maxRow] = await db
+      .select({ max: sql<string | null>`MAX(${projectsTable.projectCode})` })
+      .from(projectsTable)
+      .where(ilike(projectsTable.projectCode, `${prefix}%`));
+    const currentSeq = maxRow?.max ? parseInt(maxRow.max.slice(prefix.length, prefix.length + pad)) || 0 : 0;
+    const projectCode = `${prefix}${String(currentSeq + 1 + attempt).padStart(pad, "0")}${suffix}`;
+    try {
+      return await run(projectCode);
+    } catch (err) {
+      if (isUniqueViolation(err)) continue;
+      throw err;
+    }
+  }
+  return null;
+}
+
+/** 正式な工事番号（YYYYMM####-00）。小口工事の登録と、仮登録からの本登録で使う */
+function withRegularProjectCode<T>(run: (projectCode: string) => Promise<T>) {
+  const today = new Date().toISOString().slice(0, 10);
+  return withAutoProjectCode(today.slice(0, 4) + today.slice(5, 7), 4, "-00", run);
+}
+
 function buildProjectListItem(project: typeof projectsTable.$inferSelect, totalBudget: number, totalActualCost: number) {
   const contractAmount = parseNumeric(project.contractAmount);
   const isSmall = project.managementType === "small";
@@ -241,42 +273,124 @@ router.post("/small", async (req, res) => {
     }
 
     const today = new Date().toISOString().slice(0, 10);
-    const yearMonth = today.slice(0, 4) + today.slice(5, 7);
-
-    // 既存と同じ体系（YYYYMM####-00）で採番する。事務が手で採番した番号と
-    // ぶつかることがあるため、一意制約に当たったら次の番号で数回やり直す。
-    for (let attempt = 0; attempt < 20; attempt++) {
-      const [maxRow] = await db
-        .select({ max: sql<string | null>`MAX(${projectsTable.projectCode})` })
-        .from(projectsTable)
-        .where(ilike(projectsTable.projectCode, `${yearMonth}%`));
-      const currentSeq = maxRow?.max ? parseInt(maxRow.max.slice(6, 10)) || 0 : 0;
-      const projectCode = `${yearMonth}${String(currentSeq + 1 + attempt).padStart(4, "0")}-00`;
-
-      try {
-        const [project] = await db.insert(projectsTable).values({
-          projectCode,
-          name: String(name).trim(),
-          clientName: "",
-          location: "",
-          contractAmount: String(amount),
-          status: "active",
-          managementType: "small",
-          department,
-          startDate: today,
-          endDate: today,
-          siteManager: siteManager ? String(siteManager).trim() : null,
-        }).returning();
-
-        return res.status(201).json({ ...project, contractAmount: parseNumeric(project.contractAmount) });
-      } catch (err) {
-        if (isUniqueViolation(err)) continue;
-        throw err;
-      }
-    }
+    const project = await withRegularProjectCode(async (projectCode) => {
+      const [row] = await db.insert(projectsTable).values({
+        projectCode,
+        name: String(name).trim(),
+        clientName: "",
+        location: "",
+        contractAmount: String(amount),
+        status: "active",
+        managementType: "small",
+        department,
+        startDate: today,
+        endDate: today,
+        siteManager: siteManager ? String(siteManager).trim() : null,
+      }).returning();
+      return row;
+    });
+    if (project) return res.status(201).json({ ...project, contractAmount: parseNumeric(project.contractAmount) });
     return res.status(409).json({ message: "工事番号の自動採番に失敗しました。時間をおいて再度お試しください。" });
   } catch (err) {
     req.log.error({ err }, "Failed to create small project");
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+/**
+ * POST /api/projects/provisional — 工事の仮登録
+ *
+ * 正式に工事を登録する前に書類が届くことがある（例：工事が決まる前に下請へ見積を頼み、
+ * ③下請見積書をスキャンする）。その場で工事名だけで受け皿を作り、書類を紐づけられるようにする。
+ * おおつか様の追加依頼2（2026-09-16）。
+ *
+ * 仮登録の工事は請負金額も部門も無いので、会社全体の合計・粗利には入れない
+ * （status = "provisional" で集計から外す）。工事番号も正式な番号を消費しないよう「仮####」を振り、
+ * 本登録のときに正式な番号へ付け替える。
+ */
+router.post("/provisional", async (req, res) => {
+  try {
+    const { name, siteManager } = req.body;
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ message: "工事名は必須です" });
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const project = await withAutoProjectCode("仮", 4, "", async (projectCode) => {
+      const [row] = await db.insert(projectsTable).values({
+        projectCode,
+        name: String(name).trim(),
+        clientName: "",
+        location: "",
+        contractAmount: "0",
+        status: "provisional",
+        managementType: "normal",
+        startDate: today,
+        endDate: today,
+        siteManager: siteManager ? String(siteManager).trim() : null,
+      }).returning();
+      return row;
+    });
+    if (project) return res.status(201).json({ ...project, contractAmount: parseNumeric(project.contractAmount) });
+    return res.status(409).json({ message: "工事番号の自動採番に失敗しました。時間をおいて再度お試しください。" });
+  } catch (err) {
+    req.log.error({ err }, "Failed to create provisional project");
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+/**
+ * POST /api/projects/:id/promote — 仮登録の工事を本登録にする
+ *
+ * 部門を決めることが本登録の条件（部門は現場担当者が決める。追加依頼4）。
+ * 同じ工事を作り直さずに格上げするので、仮登録中に紐づけた書類・原価はそのまま残る。
+ * 工事番号は正式な番号（YYYYMM####-00）に付け替える。
+ */
+router.post("/:id/promote", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { department, managementType = "normal", contractAmount, startDate, endDate } = req.body;
+
+    const [current] = await db.select().from(projectsTable).where(eq(projectsTable.id, id));
+    if (!current) return res.status(404).json({ message: "工事が見つかりません" });
+    if (current.status !== "provisional") {
+      return res.status(400).json({ message: "この工事はすでに本登録されています" });
+    }
+    if (!isProjectDepartment(department)) {
+      return res.status(400).json({ message: "部門（おおつか／冨士岡工務店）を選んでください" });
+    }
+    if (managementType !== "normal" && managementType !== "small") {
+      return res.status(400).json({ message: "区分が正しくありません" });
+    }
+    const amount = typeof contractAmount === "string" ? parseFloat(contractAmount) : Number(contractAmount);
+    if (!Number.isFinite(amount) || amount < 0) {
+      return res.status(400).json({ message: "請負金額を正しく入力してください" });
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const start = toDateString(startDate) ?? today;
+    const end = toDateString(endDate) ?? start;
+
+    // 二度押しなどで先に本登録されていたら、更新0件で null を返す（番号の振り直しはしない）
+    let alreadyPromoted = false;
+    const project = await withRegularProjectCode(async (projectCode) => {
+      const [row] = await db.update(projectsTable).set({
+        projectCode,
+        department,
+        managementType,
+        contractAmount: String(amount),
+        // 小口は登録した時点で「施工中」（小口の新規登録と同じ）
+        status: managementType === "small" ? "active" : "planning",
+        startDate: start,
+        endDate: end,
+        updatedAt: new Date(),
+      }).where(and(eq(projectsTable.id, id), eq(projectsTable.status, "provisional"))).returning();
+      if (!row) alreadyPromoted = true;
+      return row ?? null;
+    });
+    if (alreadyPromoted) return res.status(409).json({ message: "この工事はすでに本登録されています" });
+    if (project) return res.json({ ...project, contractAmount: parseNumeric(project.contractAmount) });
+    return res.status(409).json({ message: "工事番号の自動採番に失敗しました。時間をおいて再度お試しください。" });
+  } catch (err) {
+    req.log.error({ err }, "Failed to promote project");
     return res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -367,7 +481,15 @@ router.put("/:id", async (req, res) => {
     if (clientName !== undefined) updateData.clientName = clientName;
     if (location !== undefined) updateData.location = location;
     if (contractAmount !== undefined) updateData.contractAmount = String(contractAmount);
-    if (status !== undefined) updateData.status = status;
+    if (status !== undefined) {
+      // 仮登録との行き来は本登録（/promote）だけ。編集で外すと部門なしの工事が集計に入ってしまう
+      const [cur] = await db.select({ status: projectsTable.status }).from(projectsTable).where(eq(projectsTable.id, id));
+      if (!cur) return res.status(404).json({ message: "工事が見つかりません" });
+      if ((cur.status === "provisional") !== (status === "provisional")) {
+        return res.status(400).json({ message: "仮登録の工事は「本登録する」から登録してください" });
+      }
+      updateData.status = status;
+    }
     if (startDate !== undefined) updateData.startDate = startDate;
     if (endDate !== undefined) updateData.endDate = endDate;
     if (completedDate !== undefined) updateData.completedDate = completedDate;
@@ -383,10 +505,13 @@ router.put("/:id", async (req, res) => {
     if (overview !== undefined) updateData.overview = overview || null;
     // 部門は一度決めたら変えさせない（MFの仕訳と食い違うため）。未設定の工事だけ、ここで決められる
     if (department !== undefined) {
-      const [current] = await db.select({ department: projectsTable.department }).from(projectsTable).where(eq(projectsTable.id, id));
+      const [current] = await db.select({ department: projectsTable.department, status: projectsTable.status }).from(projectsTable).where(eq(projectsTable.id, id));
       if (!current) return res.status(404).json({ message: "工事が見つかりません" });
       const next = department || null;
-      if (current.department) {
+      if (current.status === "provisional") {
+        // 仮登録の部門は本登録（/promote）で決める。ここで入れると本登録の条件が崩れる
+        if (next !== null) return res.status(400).json({ message: "仮登録の工事は「本登録する」から部門を選んでください" });
+      } else if (current.department) {
         if (next !== current.department) {
           return res.status(400).json({ message: "部門は登録後に変更できません" });
         }

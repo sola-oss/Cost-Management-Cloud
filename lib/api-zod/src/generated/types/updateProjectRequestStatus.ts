@@ -10,6 +10,7 @@ export type UpdateProjectRequestStatus =
   (typeof UpdateProjectRequestStatus)[keyof typeof UpdateProjectRequestStatus];
 
 export const UpdateProjectRequestStatus = {
+  provisional: "provisional",
   planning: "planning",
   active: "active",
   completed: "completed",

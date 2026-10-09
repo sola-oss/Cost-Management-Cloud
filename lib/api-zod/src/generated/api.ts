@@ -21,7 +21,9 @@ export const listProjectsQueryPageDefault = 1;
 export const listProjectsQueryLimitDefault = 20;
 
 export const ListProjectsQueryParams = zod.object({
-  status: zod.enum(["planning", "active", "completed", "suspended"]).optional(),
+  status: zod
+    .enum(["provisional", "planning", "active", "completed", "suspended"])
+    .optional(),
   managementType: zod
     .enum(["normal", "small"])
     .optional()
@@ -38,7 +40,13 @@ export const ListProjectsResponse = zod.object({
       name: zod.string(),
       clientName: zod.string(),
       contractAmount: zod.number(),
-      status: zod.enum(["planning", "active", "completed", "suspended"]),
+      status: zod.enum([
+        "provisional",
+        "planning",
+        "active",
+        "completed",
+        "suspended",
+      ]),
       managementType: zod
         .enum(["normal", "small"])
         .optional()
@@ -146,7 +154,7 @@ export const GetProjectResponse = zod
     location: zod.string().describe("工事場所"),
     contractAmount: zod.number().describe("請負金額（円）"),
     status: zod
-      .enum(["planning", "active", "completed", "suspended"])
+      .enum(["provisional", "planning", "active", "completed", "suspended"])
       .describe("工事状態"),
     managementType: zod
       .enum(["normal", "small"])
@@ -274,7 +282,9 @@ export const UpdateProjectBody = zod.object({
   clientName: zod.string().optional(),
   location: zod.string().optional(),
   contractAmount: zod.number().optional(),
-  status: zod.enum(["planning", "active", "completed", "suspended"]).optional(),
+  status: zod
+    .enum(["provisional", "planning", "active", "completed", "suspended"])
+    .optional(),
   startDate: zod.coerce.date().optional(),
   endDate: zod.coerce.date().optional(),
   completedDate: zod.coerce.date().nullish(),
@@ -327,7 +337,7 @@ export const UpdateProjectResponse = zod.object({
   location: zod.string().describe("工事場所"),
   contractAmount: zod.number().describe("請負金額（円）"),
   status: zod
-    .enum(["planning", "active", "completed", "suspended"])
+    .enum(["provisional", "planning", "active", "completed", "suspended"])
     .describe("工事状態"),
   managementType: zod
     .enum(["normal", "small"])
@@ -784,7 +794,13 @@ export const GetDashboardOverviewResponse = zod.object({
         name: zod.string(),
         clientName: zod.string(),
         contractAmount: zod.number(),
-        status: zod.enum(["planning", "active", "completed", "suspended"]),
+        status: zod.enum([
+          "provisional",
+          "planning",
+          "active",
+          "completed",
+          "suspended",
+        ]),
         managementType: zod
           .enum(["normal", "small"])
           .optional()
@@ -814,7 +830,13 @@ export const GetDashboardOverviewResponse = zod.object({
         name: zod.string(),
         clientName: zod.string(),
         contractAmount: zod.number(),
-        status: zod.enum(["planning", "active", "completed", "suspended"]),
+        status: zod.enum([
+          "provisional",
+          "planning",
+          "active",
+          "completed",
+          "suspended",
+        ]),
         managementType: zod
           .enum(["normal", "small"])
           .optional()

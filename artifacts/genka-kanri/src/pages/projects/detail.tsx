@@ -16,6 +16,7 @@ import { ProvisionalLinks } from "@/components/provisional-links";
 import { AttendanceSheet } from "@/components/attendance-sheet";
 import { ProjectTabBar, PROJECT_TABS, parseProjectTab, type ProjectTabKey } from "@/components/project-tab-bar";
 import { DepartmentPicker } from "@/components/department-picker";
+import { PromoteProjectDialog } from "@/components/promote-project-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -47,6 +48,7 @@ import { useStaffMembers } from "@/hooks/use-staff-members";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 const STATUS_LABELS: Record<string, string> = {
+  provisional: "仮登録",
   planning: "計画中",
   active: "施工中",
   completed: "完工",
@@ -54,6 +56,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
+  provisional: "bg-amber-50 text-amber-700 border-amber-300 border-dashed",
   planning: "bg-slate-100 text-slate-700 border-slate-200",
   active: "bg-orange-100 text-orange-700 border-orange-200",
   completed: "bg-emerald-100 text-emerald-700 border-emerald-200",
@@ -101,7 +104,7 @@ const projectEditSchema = z.object({
   clientName: z.string().min(1, "発注者名は必須です"),
   location: z.string().min(1, "工事場所は必須です"),
   contractAmount: z.coerce.number().min(0, "0以上の値を入力してください"),
-  status: z.enum(["planning", "active", "completed", "suspended"]),
+  status: z.enum(["provisional", "planning", "active", "completed", "suspended"]),
   startDate: z.string().min(1, "着工日は必須です"),
   endDate: z.string().min(1, "竣工予定日は必須です"),
   description: z.string().optional(),
@@ -877,7 +880,7 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
       clientName: project.clientName,
       location: project.location ?? "",
       contractAmount: project.contractAmount,
-      status: project.status as "planning" | "active" | "completed" | "suspended",
+      status: project.status as "provisional" | "planning" | "active" | "completed" | "suspended",
       startDate: project.startDate,
       endDate: project.endDate,
       description: project.description ?? "",
@@ -957,7 +960,7 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
       taxAmount: normalizeNum(values.taxAmount),
       taxIncludedAmount: normalizeNum(values.taxIncludedAmount),
       // 決まっている部門は送らない（サーバ側でも変更は拒否する）
-      department: project.department ? undefined : normalizeStr(values.department),
+      department: project.department || project.status === "provisional" ? undefined : normalizeStr(values.department),
       salesStaff: normalizeStr(values.salesStaff),
       siteManager: normalizeStr(values.siteManager),
       category1: normalizeStr(values.category1),
@@ -1221,6 +1224,14 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
                 <CardTitle className="text-sm font-semibold text-slate-700">担当・分類・工期</CardTitle>
               </CardHeader>
               <CardContent className="pt-5 space-y-4">
+                {project.status === "provisional" ? (
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">ステータス</div>
+                    <div className="text-sm rounded-md border border-dashed border-amber-300 bg-amber-50 px-3 py-2 text-amber-800">
+                      仮登録（画面上の「本登録する」から正式な工事にします）
+                    </div>
+                  </div>
+                ) : (
                 <FormField
                   control={form.control}
                   name="status"
@@ -1242,8 +1253,14 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
                     </FormItem>
                   )}
                 />
+                )}
                 {/* 部門は一度決めたら変えられない。登録前からある未設定の工事だけ、ここで一度だけ選べる */}
-                {project.department ? (
+                {project.status === "provisional" ? (
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">部門</div>
+                    <p className="text-sm text-slate-500">本登録のときに選びます。</p>
+                  </div>
+                ) : project.department ? (
                   <div className="space-y-1">
                     <div className="text-sm font-medium">部門</div>
                     <div className="text-sm text-slate-900 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
@@ -1596,7 +1613,11 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
               <div>
                 <dt className="text-slate-500 mb-0.5">部門</dt>
                 <dd className="font-medium text-slate-900">
-                  {project.department ?? <span className="text-amber-600">未設定（編集から選んでください）</span>}
+                  {project.department ?? (
+                    <span className="text-amber-600">
+                      {project.status === "provisional" ? "本登録のときに選びます" : "未設定（編集から選んでください）"}
+                    </span>
+                  )}
                 </dd>
               </div>
               {project.salesStaff && (
@@ -1703,6 +1724,7 @@ export default function ProjectDetail() {
   // 小口工事は実行予算を「まだ作っていない」のではなく「作らない」。
   // 未登録バッジや予算前提の表示を出すと、入力の催促に見えてしまう。
   const isSmall = project?.managementType === "small";
+  const [promoteOpen, setPromoteOpen] = useState(false);
 
   if (projectLoading) {
     return (
@@ -1755,6 +1777,21 @@ export default function ProjectDetail() {
           </Link>
         </Button>
       </div>
+
+      {project.status === "provisional" && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-amber-300 bg-amber-50 px-4 py-3">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+          <p className="flex-1 min-w-[16rem] text-sm text-amber-800">
+            仮登録の工事です。請負金額・部門が入っていないため、会社全体の合計・粗利には入っていません。
+            工事が決まったら本登録してください。
+          </p>
+          <Button size="sm" onClick={() => setPromoteOpen(true)} className="gap-1.5">
+            <CheckCircle className="w-4 h-4" />
+            本登録する
+          </Button>
+          <PromoteProjectDialog open={promoteOpen} onClose={() => setPromoteOpen(false)} project={project} />
+        </div>
+      )}
 
       {/* ── タブ（画面の上に置く。実行予算は別ページへ移るが、そちらにも同じタブ帯を出す） ── */}
       <ProjectTabBar

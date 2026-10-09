@@ -50,7 +50,7 @@ paths:
           name: status
           schema:
             type: string
-            enum: [planning, active, completed, suspended]
+            enum: [provisional, planning, active, completed, suspended]
         - in: query
           name: managementType
           description: 管理区分での絞り込み（normal=通常工事 / small=小口工事）
@@ -755,7 +755,7 @@ components:
           description: 請負金額（円）
         status:
           type: string
-          enum: [planning, active, completed, suspended]
+          enum: [provisional, planning, active, completed, suspended]
           description: 工事状態
         managementType:
           type: string
@@ -1006,7 +1006,7 @@ components:
           type: number
         status:
           type: string
-          enum: [planning, active, completed, suspended]
+          enum: [provisional, planning, active, completed, suspended]
         managementType:
           type: string
           enum: [normal, small]
@@ -1246,7 +1246,7 @@ components:
           type: number
         status:
           type: string
-          enum: [planning, active, completed, suspended]
+          enum: [provisional, planning, active, completed, suspended]
         startDate:
           type: string
           format: date

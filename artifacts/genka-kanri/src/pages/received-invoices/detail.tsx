@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, ArrowLeft, FileText, AlertTriangle, CheckCircle2, Send, ChevronDown, ChevronUp, Trash2, PencilLine, Plus, Undo2 } from "lucide-react";
 import { InvoiceEditor } from "./editor";
+import { ProvisionalProjectDialog } from "@/components/provisional-project-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useVendors } from "@/hooks/use-vendors";
 import { useStaffMembers } from "@/hooks/use-staff-members";
@@ -68,9 +69,10 @@ interface Detail {
   /** 同じ仕入先・請求日・請求額の書類（二重取り込みの疑い） */
   duplicates: { id: number; status: string; createdAt: string }[];
 }
-interface Project { id: number; name: string; projectCode: string; siteManager?: string | null }
+interface Project { id: number; name: string; projectCode: string; siteManager?: string | null; status?: string }
 
 const NONE = "__none__";
+const NEW_PROVISIONAL = "__new_provisional__";
 
 export default function ReceivedInvoiceDetail({ id }: { id: number }) {
   const { toast } = useToast();
@@ -93,10 +95,14 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
   // 画面を離れた時点で送る手段が無くなり下書きが取り残される（実際に起きた）。
   const [selectedStaff, setSelectedStaff] = useState<number[]>([]);
 
+  // 仮登録ダイアログを開いたブロック。登録できたら、そのままこのブロックに紐づける
+  const [provisionalFor, setProvisionalFor] = useState<number[] | null>(null);
+
   const { data: projectsData } = useQuery({
-    queryKey: ["/api/projects"],
+    // 既定の20件だと工事が増えたとき選べない工事が出るので全件取る（キーも分ける）
+    queryKey: ["/api/projects", "all"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/projects`);
+      const r = await fetch(`${BASE}/api/projects?limit=2000`);
       if (!r.ok) throw new Error("failed");
       return r.json() as Promise<{ items: Project[] }>;
     },
@@ -650,13 +656,17 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
                     <Select
                       value={b.projectId ? String(b.projectId) : NONE}
                       disabled={assignLocked || b.locked || assignMut.isPending}
-                      onValueChange={(v) => assignMut.mutate({ itemIds: b.itemIds, projectId: v === NONE ? null : Number(v) })}
+                      onValueChange={(v) => {
+                        if (v === NEW_PROVISIONAL) { setProvisionalFor(b.itemIds); return; }
+                        assignMut.mutate({ itemIds: b.itemIds, projectId: v === NONE ? null : Number(v) });
+                      }}
                     >
                       <SelectTrigger className={`h-11 ${!assigned ? "border-amber-400 text-amber-700" : ""}`}>
                         <SelectValue placeholder="選択してください" />
                       </SelectTrigger>
                       <SelectContent searchable className="max-h-[300px]" searchPlaceholder="工事名で検索">
                         <SelectItem value={NONE} className="text-slate-400">（未選択）</SelectItem>
+                        <SelectItem value={NEW_PROVISIONAL} className="text-primary font-medium">＋ 新しい工事を仮登録</SelectItem>
                         {myProjects.length > 0 && (
                           <div className="px-2 py-1 text-[11px] font-semibold text-slate-400">自分の担当</div>
                         )}
@@ -664,6 +674,7 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
                           <SelectItem key={p.id} value={String(p.id)}>
                             <span className="font-mono text-xs text-slate-400 mr-1.5">{p.projectCode}</span>
                             {p.name}
+                            {p.status === "provisional" && <span className="ml-1.5 text-[11px] text-amber-700">（仮登録）</span>}
                           </SelectItem>
                         ))}
                         {myProjects.length > 0 && otherProjects.length > 0 && (
@@ -673,6 +684,7 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
                           <SelectItem key={p.id} value={String(p.id)}>
                             <span className="font-mono text-xs text-slate-400 mr-1.5">{p.projectCode}</span>
                             {p.name}
+                            {p.status === "provisional" && <span className="ml-1.5 text-[11px] text-amber-700">（仮登録）</span>}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -907,6 +919,15 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
           </CardContent>
         </Card>
       )}
+
+      <ProvisionalProjectDialog
+        open={provisionalFor !== null}
+        onClose={() => setProvisionalFor(null)}
+        defaultSiteManager={myStaffName ?? undefined}
+        onCreated={(p) => {
+          if (provisionalFor) assignMut.mutate({ itemIds: provisionalFor, projectId: p.id });
+        }}
+      />
     </div>
   );
 }

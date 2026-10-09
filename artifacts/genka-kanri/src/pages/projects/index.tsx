@@ -24,6 +24,7 @@ import { formatCurrency, formatPercent } from "@/lib/utils";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 const STATUS_LABELS: Record<string, string> = {
+  provisional: "仮登録",
   planning: "計画中",
   active: "施工中",
   completed: "完工",
@@ -31,6 +32,7 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
+  provisional: "bg-amber-50 text-amber-700 border-amber-300 border-dashed",
   planning: "bg-slate-100 text-slate-700",
   active: "bg-orange-100 text-orange-700 border-orange-200",
   completed: "bg-emerald-100 text-emerald-700 border-emerald-200",
@@ -243,7 +245,7 @@ export default function Projects() {
   // limit を明示しないとサーバ既定の20件で打ち切られ、21件目以降の工事が一覧から消える。
   const params = {
     limit: 2000,
-    ...(statusFilter !== "all" ? { status: statusFilter as "planning" | "active" | "completed" | "suspended" } : {}),
+    ...(statusFilter !== "all" ? { status: statusFilter as "provisional" | "planning" | "active" | "completed" | "suspended" } : {}),
     ...(typeFilter !== "all" ? { managementType: typeFilter as "normal" | "small" } : {}),
     ...(debouncedSearch ? { search: debouncedSearch } : {}),
   };
@@ -342,6 +344,7 @@ export default function Projects() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">すべて</SelectItem>
+                <SelectItem value="provisional">仮登録</SelectItem>
                 <SelectItem value="planning">計画中</SelectItem>
                 <SelectItem value="active">施工中</SelectItem>
                 <SelectItem value="completed">完工</SelectItem>

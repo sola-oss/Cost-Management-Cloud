@@ -5,6 +5,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { PromoteProjectDialog } from "@/components/promote-project-dialog";
 import { HardHat, ChevronDown, ChevronUp, AlertTriangle, Loader2, Inbox, ChevronRight } from "lucide-react";
 import { useStaffMembers } from "@/hooks/use-staff-members";
 import { ProgressInput } from "@/components/progress-input";
@@ -221,6 +223,7 @@ export default function MyProjects() {
   const { data: staff = [] } = useStaffMembers();
   const [name, setName] = useState<string>("");
   const [open, setOpen] = useState<Record<number, boolean>>({});
+  const [promoting, setPromoting] = useState<ProjectRow | null>(null);
 
   // 毎回選ばせないよう、選んだ担当者を端末に覚えておく
   useEffect(() => {
@@ -252,10 +255,13 @@ export default function MyProjects() {
   });
 
   const projects = (data?.items ?? []).filter((p) => p.status !== "completed");
+  // 仮登録の工事は一覧には出す（担当者が本登録するため）が、合計には入れない
+  const provisionalProjects = projects.filter((p) => p.status === "provisional");
+  const countedProjects = projects.filter((p) => p.status !== "provisional");
   // 小口工事は実行予算を作らない。予算の合計に混ぜると原価だけが引かれ、
   // 他の工事の「残り」が実際より少なく見えてしまうので分けて数える。
-  const budgetProjects = projects.filter((p) => p.managementType !== "small");
-  const smallProjects = projects.filter((p) => p.managementType === "small");
+  const budgetProjects = countedProjects.filter((p) => p.managementType !== "small");
+  const smallProjects = countedProjects.filter((p) => p.managementType === "small");
   const totalBudget = budgetProjects.reduce((s, p) => s + p.totalBudget, 0);
   const totalActual = budgetProjects.reduce((s, p) => s + p.totalActualCost, 0);
   const totalRemaining = totalBudget - totalActual;
@@ -335,9 +341,34 @@ export default function MyProjects() {
             </CardContent>
           </Card>
 
+          {/* 仮登録の工事。本登録（部門を決める）は現場担当者の仕事なので、ここから進められるようにする */}
+          {provisionalProjects.length > 0 && (
+            <div className="space-y-2">
+              {provisionalProjects.map((p) => (
+                <Card key={p.id} className="border-dashed border-amber-300 bg-amber-50/60">
+                  <CardContent className="p-4 flex flex-wrap items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-slate-800 leading-snug">{p.name}</span>
+                        <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-300 border-dashed">仮登録</Badge>
+                      </div>
+                      <div className="text-xs text-amber-800 mt-0.5">
+                        工事が決まったら本登録してください（部門・請負金額を入れます）
+                      </div>
+                    </div>
+                    <Button size="sm" onClick={() => setPromoting(p)}>本登録する</Button>
+                  </CardContent>
+                </Card>
+              ))}
+              {promoting && (
+                <PromoteProjectDialog open onClose={() => setPromoting(null)} project={promoting} />
+              )}
+            </div>
+          )}
+
           {/* 工事ごと */}
           <div className="space-y-3">
-            {projects.map((p) => {
+            {countedProjects.map((p) => {
               const rate = p.totalBudget > 0 ? (p.totalActualCost / p.totalBudget) * 100 : 0;
               const remaining = p.totalBudget - p.totalActualCost;
               const tone = rateTone(rate);

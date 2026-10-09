@@ -20,6 +20,7 @@ export interface ErrorResponse {
 export type ProjectStatus = (typeof ProjectStatus)[keyof typeof ProjectStatus];
 
 export const ProjectStatus = {
+  provisional: "provisional",
   planning: "planning",
   active: "active",
   completed: "completed",
@@ -250,6 +251,7 @@ export type ProjectListItemStatus =
   (typeof ProjectListItemStatus)[keyof typeof ProjectListItemStatus];
 
 export const ProjectListItemStatus = {
+  provisional: "provisional",
   planning: "planning",
   active: "active",
   completed: "completed",
@@ -378,6 +380,7 @@ export type UpdateProjectRequestStatus =
   (typeof UpdateProjectRequestStatus)[keyof typeof UpdateProjectRequestStatus];
 
 export const UpdateProjectRequestStatus = {
+  provisional: "provisional",
   planning: "planning",
   active: "active",
   completed: "completed",
@@ -877,6 +880,7 @@ export type ListProjectsStatus =
   (typeof ListProjectsStatus)[keyof typeof ListProjectsStatus];
 
 export const ListProjectsStatus = {
+  provisional: "provisional",
   planning: "planning",
   active: "active",
   completed: "completed",

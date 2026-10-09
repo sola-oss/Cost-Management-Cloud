@@ -10,6 +10,7 @@ export type ProjectListItemStatus =
   (typeof ProjectListItemStatus)[keyof typeof ProjectListItemStatus];
 
 export const ProjectListItemStatus = {
+  provisional: "provisional",
   planning: "planning",
   active: "active",
   completed: "completed",

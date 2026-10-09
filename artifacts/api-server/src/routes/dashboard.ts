@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, sql, desc, inArray, and } from "drizzle-orm";
+import { eq, sql, desc, inArray, and, ne } from "drizzle-orm";
 import { confirmedCostOnly } from "../lib/cost-stage";
 import { db, projectsTable, costItemsTable, budgetItemsTable, paymentsTable, invoicesTable } from "@workspace/db";
 import { logger } from "../lib/logger";
@@ -19,7 +19,10 @@ const categoryLabels: Record<string, string> = {
 
 router.get("/overview", async (_req, res) => {
   try {
-    const projects = await db.select().from(projectsTable).orderBy(desc(projectsTable.createdAt));
+    // 仮登録の工事は合計に入れない（請負金額が無く、混ぜると粗利が狂う）
+    const projects = await db.select().from(projectsTable)
+      .where(ne(projectsTable.status, "provisional"))
+      .orderBy(desc(projectsTable.createdAt));
 
     const totalProjects = projects.length;
     const activeProjects = projects.filter(p => p.status === "active").length;

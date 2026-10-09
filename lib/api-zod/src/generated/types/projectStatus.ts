@@ -12,6 +12,7 @@
 export type ProjectStatus = (typeof ProjectStatus)[keyof typeof ProjectStatus];
 
 export const ProjectStatus = {
+  provisional: "provisional",
   planning: "planning",
   active: "active",
   completed: "completed",
