@@ -26,7 +26,8 @@ export function PromoteProjectDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  project: { id: number; name: string };
+  // ①元請注文書から入った値（請負金額・工期）があれば最初から入れておく。打ち直させない
+  project: { id: number; name: string; contractAmount?: number | null; startDate?: string | null; endDate?: string | null };
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -39,13 +40,17 @@ export function PromoteProjectDialog({
   const [endDate, setEndDate] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const fromOrder = (project.contractAmount ?? 0) > 0;
+
   useEffect(() => {
     if (open) {
-      setManagementType("normal");
+      const amount = project.contractAmount ?? 0;
+      // 区分の線引きは税込100万（新規工事登録と同じ）。決め切らず、選び直せる初期値にする
+      setManagementType(fromOrder && amount <= 1_000_000 ? "small" : "normal");
       setDepartment("");
-      setContractAmount("");
-      setStartDate(today);
-      setEndDate("");
+      setContractAmount(fromOrder ? String(amount) : "");
+      setStartDate(fromOrder && project.startDate ? project.startDate : today);
+      setEndDate(fromOrder && project.endDate ? project.endDate : "");
     }
   }, [open]);
 
@@ -99,6 +104,11 @@ export function PromoteProjectDialog({
             「{project.name}」を正式な工事にします。仮登録中に紐づけた書類・原価はそのまま残ります。
             工事番号は正式な番号に変わり、会社全体の合計・粗利に入るようになります。
           </p>
+          {fromOrder && (
+            <p className="text-xs text-teal-700">
+              請負金額と工期は注文書から入れてあります。違っていれば直してください。
+            </p>
+          )}
           <div>
             <Label>区分</Label>
             <div className="grid grid-cols-2 gap-2 mt-1">

@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, ArrowLeft, FileText, AlertTriangle, CheckCircle2, Send, ChevronDown, ChevronUp, Trash2, PencilLine, Plus, Undo2 } from "lucide-react";
 import { InvoiceEditor } from "./editor";
-import { ProvisionalProjectDialog } from "@/components/provisional-project-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useVendors } from "@/hooks/use-vendors";
 import { useStaffMembers } from "@/hooks/use-staff-members";
@@ -72,7 +71,6 @@ interface Detail {
 interface Project { id: number; name: string; projectCode: string; siteManager?: string | null; status?: string }
 
 const NONE = "__none__";
-const NEW_PROVISIONAL = "__new_provisional__";
 
 export default function ReceivedInvoiceDetail({ id }: { id: number }) {
   const { toast } = useToast();
@@ -94,9 +92,6 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
   // 下書きから現場へ送るための送り先選択。作成直後の一時状態に頼ると、
   // 画面を離れた時点で送る手段が無くなり下書きが取り残される（実際に起きた）。
   const [selectedStaff, setSelectedStaff] = useState<number[]>([]);
-
-  // 仮登録ダイアログを開いたブロック。登録できたら、そのままこのブロックに紐づける
-  const [provisionalFor, setProvisionalFor] = useState<number[] | null>(null);
 
   const { data: projectsData } = useQuery({
     // 既定の20件だと工事が増えたとき選べない工事が出るので全件取る（キーも分ける）
@@ -656,17 +651,13 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
                     <Select
                       value={b.projectId ? String(b.projectId) : NONE}
                       disabled={assignLocked || b.locked || assignMut.isPending}
-                      onValueChange={(v) => {
-                        if (v === NEW_PROVISIONAL) { setProvisionalFor(b.itemIds); return; }
-                        assignMut.mutate({ itemIds: b.itemIds, projectId: v === NONE ? null : Number(v) });
-                      }}
+                      onValueChange={(v) => assignMut.mutate({ itemIds: b.itemIds, projectId: v === NONE ? null : Number(v) })}
                     >
                       <SelectTrigger className={`h-11 ${!assigned ? "border-amber-400 text-amber-700" : ""}`}>
                         <SelectValue placeholder="選択してください" />
                       </SelectTrigger>
                       <SelectContent searchable className="max-h-[300px]" searchPlaceholder="工事名で検索">
                         <SelectItem value={NONE} className="text-slate-400">（未選択）</SelectItem>
-                        <SelectItem value={NEW_PROVISIONAL} className="text-primary font-medium">＋ 新しい工事を仮登録</SelectItem>
                         {myProjects.length > 0 && (
                           <div className="px-2 py-1 text-[11px] font-semibold text-slate-400">自分の担当</div>
                         )}
@@ -919,15 +910,6 @@ export default function ReceivedInvoiceDetail({ id }: { id: number }) {
           </CardContent>
         </Card>
       )}
-
-      <ProvisionalProjectDialog
-        open={provisionalFor !== null}
-        onClose={() => setProvisionalFor(null)}
-        defaultSiteManager={myStaffName ?? undefined}
-        onCreated={(p) => {
-          if (provisionalFor) assignMut.mutate({ itemIds: provisionalFor, projectId: p.id });
-        }}
-      />
     </div>
   );
 }

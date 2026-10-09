@@ -19,6 +19,7 @@ import Purchases from "@/pages/purchases";
 import Vendors from "@/pages/vendors";
 import PurchaseSummary from "@/pages/purchase-summary";
 import Scan from "@/pages/scan";
+import ScanPrimeOrder from "@/pages/scan-prime-order";
 import ReceivedInvoiceList from "@/pages/received-invoices";
 import ReceivedInvoiceDetail from "@/pages/received-invoices/detail";
 import MyProjects from "@/pages/my-projects";
@@ -96,6 +97,7 @@ function Router() {
         <Route path="/purchases" component={Purchases} />
         <Route path="/my-projects" component={MyProjects} />
         <Route path="/scan" component={Scan} />
+        <Route path="/scan/prime-order" component={ScanPrimeOrder} />
         <Route path="/received-invoices" component={ReceivedInvoiceList} />
         <Route path="/received-invoices/:id">
           {(params) => <ReceivedInvoiceDetail id={parseInt(params.id)} />}

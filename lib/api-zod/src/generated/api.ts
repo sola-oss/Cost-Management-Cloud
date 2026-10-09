@@ -210,6 +210,12 @@ export const GetProjectResponse = zod
       .string()
       .nullish()
       .describe("配置技術者名"),
+    orderFilePath: zod
+      .string()
+      .nullish()
+      .describe(
+        "①元請注文書の原本の保存キー（あれば GET \/projects\/{id}\/order-file で見られる）",
+      ),
   })
   .and(
     zod.object({
@@ -390,6 +396,12 @@ export const UpdateProjectResponse = zod.object({
   clientCode: zod.string().nullish().describe("得意先コード"),
   constructionHistoryType: zod.string().nullish().describe("工事経歴書種類"),
   constructionHistoryEngineer: zod.string().nullish().describe("配置技術者名"),
+  orderFilePath: zod
+    .string()
+    .nullish()
+    .describe(
+      "①元請注文書の原本の保存キー（あれば GET \/projects\/{id}\/order-file で見られる）",
+    ),
 });
 
 /**

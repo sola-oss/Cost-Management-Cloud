@@ -4,6 +4,7 @@ import { confirmedCostOnly, isConfirmedCost } from "../lib/cost-stage";
 import { pendingProvisionalTotal } from "./cost-stage-links";
 import { db, projectsTable, costItemsTable, budgetsTable, budgetItemsTable, invoicesTable, invoicePaymentsTable, companySettingsTable, constructionHistoriesTable, estimatesTable, purchaseOrdersTable, purchaseInvoicesTable, paymentsTable, isProjectDepartment } from "@workspace/db";
 import { isUniqueViolation } from "../lib/db-errors";
+import { uploadInvoiceFile, getSignedUrl, readLocalFile, storageMode, newStorageKey } from "../lib/invoice-storage";
 
 const router: IRouter = Router();
 
@@ -335,6 +336,125 @@ router.post("/provisional", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Failed to create provisional project");
     return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+/**
+ * POST /api/projects/from-order — ①元請注文書から工事を仮登録する
+ *
+ * 事務が注文書をスキャンし、読み取った工事名・請負金額・工期を確認して保存する。
+ * 部門は現場担当者が決めるので（追加依頼4）、ここでは仮登録のまま止める。担当者が
+ * 「自分の現場」または工事詳細の「本登録する」で部門を選ぶと正式な工事になる。
+ *
+ * targetProjectId を渡すと、先に作ってある仮登録の工事（③下請見積書などで作ったもの）に
+ * 注文書の内容を入れる。作り直さないので、紐づけ済みの書類はそのまま残る。
+ * 実行予算は作らない（温品様の回答 2026-10-02）。
+ */
+router.post("/from-order", async (req, res) => {
+  try {
+    const {
+      targetProjectId, name, clientName, clientCode, location, orderDate, startDate, endDate,
+      taxExcludedAmount, taxAmount, contractAmount, siteManager, orderNumber, fileBase64, mediaType,
+    } = req.body;
+
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ message: "工事名は必須です" });
+    }
+    const amount = typeof contractAmount === "string" ? parseFloat(contractAmount) : Number(contractAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ message: "請負金額（税込）を入力してください" });
+    }
+    if (!siteManager || !String(siteManager).trim()) {
+      // 部門を決めるのは担当者。担当者が決まっていないと、誰の「自分の現場」にも出ず本登録されない
+      return res.status(400).json({ message: "担当者を選んでください（担当者が部門を決めて本登録します）" });
+    }
+
+    let target: typeof projectsTable.$inferSelect | undefined;
+    if (targetProjectId != null) {
+      [target] = await db.select().from(projectsTable).where(eq(projectsTable.id, Number(targetProjectId)));
+      if (!target) return res.status(404).json({ message: "工事が見つかりません" });
+      if (target.status !== "provisional") {
+        return res.status(400).json({ message: "この工事はすでに本登録されています" });
+      }
+    }
+
+    // 原本を先に保存（DBに入れる前に。失敗したら中断）
+    let orderFilePath: string | null = null;
+    const media = mediaType ?? "application/pdf";
+    if (fileBase64) {
+      orderFilePath = newStorageKey(media, "prime-orders/");
+      await uploadInvoiceFile(orderFilePath, fileBase64, media);
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const start = toDateString(startDate) ?? today;
+    const fields = {
+      name: String(name).trim(),
+      clientName: clientName ? String(clientName).trim() : "",
+      clientCode: clientCode ? String(clientCode).trim() : null,
+      location: location ? String(location).trim() : "",
+      orderDate: toDateString(orderDate),
+      startDate: start,
+      endDate: toDateString(endDate) ?? start,
+      contractAmount: String(amount),
+      taxRate: "10",
+      taxExcludedAmount: toNumericString(taxExcludedAmount),
+      taxAmount: toNumericString(taxAmount),
+      taxIncludedAmount: String(amount),
+      siteManager: String(siteManager).trim(),
+      // 注文番号の専用欄は無いのでメモに残す（元請との照合に使う）
+      ...(orderNumber && String(orderNumber).trim()
+        ? { memo: [target?.memo, `注文番号: ${String(orderNumber).trim()}`].filter(Boolean).join("\n") }
+        : {}),
+      ...(orderFilePath ? { orderFilePath, orderMediaType: media } : {}),
+      updatedAt: new Date(),
+    };
+
+    if (target) {
+      const [updated] = await db.update(projectsTable).set(fields)
+        .where(and(eq(projectsTable.id, target.id), eq(projectsTable.status, "provisional"))).returning();
+      if (!updated) return res.status(409).json({ message: "この工事はすでに本登録されています" });
+      return res.json({ ...updated, contractAmount: parseNumeric(updated.contractAmount) });
+    }
+
+    const project = await withAutoProjectCode("仮", 4, "", async (projectCode) => {
+      const [row] = await db.insert(projectsTable).values({
+        ...fields,
+        projectCode,
+        status: "provisional",
+        managementType: "normal",
+      }).returning();
+      return row;
+    });
+    if (project) return res.status(201).json({ ...project, contractAmount: parseNumeric(project.contractAmount) });
+    return res.status(409).json({ message: "工事番号の自動採番に失敗しました。時間をおいて再度お試しください。" });
+  } catch (err) {
+    req.log.error({ err }, "Failed to create project from prime order");
+    return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// GET /api/projects/:id/order-file — ①元請注文書の原本（本番=署名URLへリダイレクト / ローカル=そのまま配信）
+router.get("/:id/order-file", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [p] = await db
+      .select({ filePath: projectsTable.orderFilePath, mediaType: projectsTable.orderMediaType })
+      .from(projectsTable)
+      .where(eq(projectsTable.id, id));
+    if (!p?.filePath) return res.status(404).json({ message: "注文書の原本がありません" });
+    if (storageMode === "supabase") {
+      const url = await getSignedUrl(p.filePath);
+      if (!url) return res.status(502).json({ message: "URLの発行に失敗しました" });
+      return res.redirect(url);
+    }
+    const buf = await readLocalFile(p.filePath);
+    if (!buf) return res.status(404).json({ message: "ファイルが見つかりません" });
+    res.setHeader("Content-Type", p.mediaType ?? "application/octet-stream");
+    return res.end(buf);
+  } catch (err) {
+    req.log.error({ err }, "Failed to serve order file");
+    return res.status(500).json({ message: "ファイルの取得に失敗しました。" });
   }
 });
 

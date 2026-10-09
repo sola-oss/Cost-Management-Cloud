@@ -915,6 +915,10 @@ components:
           type: string
           nullable: true
           description: 配置技術者名
+        orderFilePath:
+          type: string
+          nullable: true
+          description: ①元請注文書の原本の保存キー（あれば GET /projects/{id}/order-file で見られる）
       required:
         - id
         - projectCode

@@ -11,9 +11,9 @@ import { ScanLine, FileText, Truck, Loader2, Keyboard } from "lucide-react";
 // ─── スキャンする（読み込み）──────────────────────────────────────────────────
 //
 // おおつか様の依頼（2026-09-10）：書類のスキャンを起点に登録できるようにする。
-// 書類の種類は①〜⑤。うち④下請納品書・⑤下請請求書は原価の入口が既にあるので先に作った。
-// ①元請注文書・②客先見積書/契約書・③下請見積書は、登録先と金額の扱いが未確定のため、
-// ここでは「準備中」と出して押せないようにしてある（押せると期待させてしまうため）。
+// 書類の種類は①〜⑤。④下請納品書・⑤下請請求書は仕入の振り分けへ、①元請注文書は
+// 工事の仮登録の画面（/scan/prime-order）へ進む。②客先見積書/契約書・③下請見積書は
+// 登録先が未確定のため「準備中」と出して押せないようにしてある（押せると期待させてしまうため）。
 
 const MAX_FILES = 10;
 
@@ -23,6 +23,8 @@ type DocType = {
   title: string;
   hint: string;
   stage?: ImportStage;
+  // 仕入の振り分け以外の画面で読み込む書類は、その画面へ移る
+  page?: string;
   icon: typeof FileText;
   ready: boolean;
   pending?: string;
@@ -69,10 +71,10 @@ const DOC_TYPES: DocType[] = [
     key: "prime-order",
     no: "①",
     title: "元請からの注文書",
-    hint: "工事の登録に使う書類",
+    hint: "工事を仮登録します（部門は担当者が決めて本登録）",
+    page: "/scan/prime-order",
     icon: FileText,
-    ready: false,
-    pending: "仕様を相談中",
+    ready: true,
   },
   {
     key: "other",
@@ -109,6 +111,10 @@ export default function Scan() {
   }, [reading]);
 
   const start = (t: DocType) => {
+    if (t.page) {
+      navigate(t.page);
+      return;
+    }
     setPicked(t);
     // 種類を選んでからファイルを選ぶ。選んだ種類で段階が決まる
     setTimeout(() => fileRef.current?.click(), 0);

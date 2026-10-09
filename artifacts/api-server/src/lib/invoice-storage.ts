@@ -24,6 +24,23 @@ function localPath(key: string): string {
   return path.join(LOCAL_DIR, safe);
 }
 
+/**
+ * 保存先のキーを作る（例 "2026/07/uuid.pdf"）。prefix を付けると書類の種類ごとに分けられる
+ * （例 "prime-orders/" → "prime-orders/2026/10/uuid.pdf"）。crypto.randomUUID は Node 18+ で global。
+ */
+export function newStorageKey(mediaType: string, prefix = ""): string {
+  const ext =
+    mediaType === "application/pdf" ? "pdf"
+    : mediaType === "image/png" ? "png"
+    : mediaType === "image/jpeg" ? "jpg"
+    : mediaType === "image/webp" ? "webp"
+    : mediaType === "image/gif" ? "gif"
+    : "bin";
+  const now = new Date();
+  const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return `${prefix}${ym}/${crypto.randomUUID()}.${ext}`;
+}
+
 /** 原本ファイルを保存する。key は received-invoices 内の相対パス（例 "2026/07/uuid.pdf"）。 */
 export async function uploadInvoiceFile(key: string, base64: string, mediaType: string): Promise<void> {
   const buf = Buffer.from(base64, "base64");

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import Anthropic from "@anthropic-ai/sdk";
-import { db, vendorsTable } from "@workspace/db";
+import { db, vendorsTable, clientsTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -100,33 +100,48 @@ function num(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-router.post("/purchase-invoice", async (req, res) => {
+type Req = Parameters<Parameters<IRouter["post"]>[1]>[0];
+type Res = Parameters<Parameters<IRouter["post"]>[1]>[1];
+
+/**
+ * 書類1枚を Claude に読ませ、スキーマどおりのJSONを返す。
+ * 失敗したときは res にエラーを返して null を返す（呼び出し側はそのまま return する）。
+ * 請求書と元請注文書で同じ手順・同じエラーの言い分けを使うため、ここにまとめてある。
+ */
+async function extractDocument(
+  req: Req,
+  res: Res,
+  opts: { system: string; schema: unknown; instruction: string },
+): Promise<Record<string, unknown> | null> {
+  if (!process.env["ANTHROPIC_API_KEY"]) {
+    res.status(503).json({
+      message: "AI読み取りは今は使えません（APIキーが未設定です）。管理者に設定を依頼してください。",
+    });
+    return null;
+  }
+
+  const { fileBase64, mediaType } = req.body as {
+    fileBase64?: string;
+    mediaType?: string;
+  };
+  if (!fileBase64) {
+    res.status(400).json({ message: "fileBase64 が必要です" });
+    return null;
+  }
+  const media = mediaType ?? "application/pdf";
+  const allowed = ["application/pdf", "image/png", "image/jpeg", "image/webp", "image/gif"];
+  if (!allowed.includes(media)) {
+    res.status(400).json({ message: `対応していない形式です: ${media}` });
+    return null;
+  }
+
+  // PDF は document ブロック、画像は image ブロックで渡す。
+  const fileBlock =
+    media === "application/pdf"
+      ? ({ type: "document", source: { type: "base64", media_type: "application/pdf", data: fileBase64 } } as const)
+      : ({ type: "image", source: { type: "base64", media_type: media as "image/png" | "image/jpeg" | "image/webp" | "image/gif", data: fileBase64 } } as const);
+
   try {
-    if (!process.env["ANTHROPIC_API_KEY"]) {
-      return res.status(503).json({
-        message: "AI読み取りは今は使えません（APIキーが未設定です）。管理者に設定を依頼してください。",
-      });
-    }
-
-    const { fileBase64, mediaType } = req.body as {
-      fileBase64?: string;
-      mediaType?: string;
-    };
-    if (!fileBase64) {
-      return res.status(400).json({ message: "fileBase64 が必要です" });
-    }
-    const media = mediaType ?? "application/pdf";
-    const allowed = ["application/pdf", "image/png", "image/jpeg", "image/webp", "image/gif"];
-    if (!allowed.includes(media)) {
-      return res.status(400).json({ message: `対応していない形式です: ${media}` });
-    }
-
-    // PDF は document ブロック、画像は image ブロックで渡す。
-    const fileBlock =
-      media === "application/pdf"
-        ? ({ type: "document", source: { type: "base64", media_type: "application/pdf", data: fileBase64 } } as const)
-        : ({ type: "image", source: { type: "base64", media_type: media as "image/png" | "image/jpeg" | "image/webp" | "image/gif", data: fileBase64 } } as const);
-
     // キーがワークスペースに紐づいていないとき（コンソールでワークスペースを選ばずに
     // 作ったキー）は、どのワークスペースの請求で使うかをヘッダーで伝える必要がある。
     // キー作成時にワークスペースを選んであれば ANTHROPIC_WORKSPACE_ID は不要。
@@ -140,53 +155,101 @@ router.post("/purchase-invoice", async (req, res) => {
     const stream = client.messages.stream({
       model: MODEL,
       max_tokens: 32000,
-      system: SYSTEM_PROMPT,
-      output_config: { effort: EFFORT, format: { type: "json_schema", schema: DRAFT_SCHEMA } },
+      system: opts.system,
+      output_config: { effort: EFFORT, format: { type: "json_schema", schema: opts.schema as Record<string, unknown> } },
       messages: [
         {
           role: "user",
-          content: [
-            fileBlock,
-            { type: "text", text: "この請求書を読み取って、スキーマに従い受領請求書の下書きをJSONで返してください。" },
-          ],
+          content: [fileBlock, { type: "text", text: opts.instruction }],
         },
       ],
     });
     const response = await stream.finalMessage();
 
     if (response.stop_reason === "refusal") {
-      return res.status(422).json({ message: "AIがこの文書の読み取りを拒否しました。別のファイルでお試しください。" });
+      res.status(422).json({ message: "AIがこの文書の読み取りを拒否しました。別のファイルでお試しください。" });
+      return null;
     }
-    // ② 出力上限に達した場合。JSONが途中で切れているので解析しても意味がない。
-    //    原因が分かるメッセージを返す（以前は「解析に失敗」としか出なかった）。
+    // 出力上限に達した場合。JSONが途中で切れているので解析しても意味がない。
+    // 原因が分かるメッセージを返す（以前は「解析に失敗」としか出なかった）。
     if (response.stop_reason === "max_tokens") {
       req.log.warn({ usage: response.usage }, "AI extraction hit max_tokens");
-      return res.status(422).json({
+      res.status(422).json({
         message: "明細が多く、AIが最後まで読み切れませんでした。ページを分けてアップロードするか、手入力をお使いください。",
       });
+      return null;
     }
 
     const textBlock = response.content.find((b) => b.type === "text");
     if (!textBlock || textBlock.type !== "text") {
-      return res.status(502).json({ message: "AIから有効な応答が得られませんでした。" });
+      res.status(502).json({ message: "AIから有効な応答が得られませんでした。" });
+      return null;
     }
+    try {
+      return JSON.parse(textBlock.text);
+    } catch {
+      req.log.error(
+        { stopReason: response.stop_reason, usage: response.usage, head: textBlock.text.slice(0, 300) },
+        "Failed to parse AI response",
+      );
+      res.status(502).json({ message: "AI応答の解析に失敗しました。もう一度お試しください。" });
+      return null;
+    }
+  } catch (err) {
+    req.log.error({ err }, "Failed to AI-extract document");
+    sendAiError(err, res);
+    return null;
+  }
+}
 
-    let draft: {
+// Anthropic 側で断られた場合は原因ごとに言い分ける。以前はすべて
+// 「AI読み取り中にエラーが発生しました」で、キーが失効しているのか
+// 一時的に混んでいるのか、画面からは区別がつかなかった。
+function sendAiError(err: unknown, res: Res) {
+  if (err instanceof Anthropic.APIError) {
+    // キーが失効・無効。未設定と同じく「今は使えない」扱いにして手入力へ回す。
+    if (err.status === 401 || err.status === 403) {
+      return res.status(503).json({
+        message: "AI読み取りは今は使えません（APIキーが無効です）。管理者にキーの再設定を依頼してください。",
+      });
+    }
+    // ワークスペースに紐づいていないキー。ヘッダーが要る。
+    if (err.status === 400 && /anthropic-workspace-id/i.test(err.message)) {
+      return res.status(503).json({
+        message: "AI読み取りは今は使えません（APIキーにワークスペースの指定が必要です）。管理者にご連絡ください。",
+      });
+    }
+    // 残高切れ。400 で返ってくるので文面で見分ける。
+    if (err.status === 400 && /credit balance|insufficient/i.test(err.message)) {
+      return res.status(503).json({
+        message: "AI読み取りは今は使えません（利用残高が不足しています）。管理者にご連絡ください。",
+      });
+    }
+    if (err.status === 429) {
+      return res.status(429).json({ message: "AIが混み合っています。少し待ってからもう一度お試しください。" });
+    }
+    if (err.status && err.status >= 500) {
+      return res.status(503).json({ message: "AI側が一時的に応答していません。少し待ってからもう一度お試しください。" });
+    }
+  }
+  return res.status(500).json({ message: "AI読み取り中にエラーが発生しました。" });
+}
+
+router.post("/purchase-invoice", async (req, res) => {
+  try {
+    const parsed = await extractDocument(req, res, {
+      system: SYSTEM_PROMPT,
+      schema: DRAFT_SCHEMA,
+      instruction: "この請求書を読み取って、スキーマに従い受領請求書の下書きをJSONで返してください。",
+    });
+    if (!parsed) return;
+    const draft = parsed as {
       vendorName?: string;
       subtotal?: number;
       taxAmount?: number;
       totalAmount?: number;
       items?: Array<{ amount?: number; taxRate?: number; isNonPurchase?: boolean }>;
     };
-    try {
-      draft = JSON.parse(textBlock.text);
-    } catch {
-      req.log.error(
-        { stopReason: response.stop_reason, usage: response.usage, head: textBlock.text.slice(0, 300) },
-        "Failed to parse AI response",
-      );
-      return res.status(502).json({ message: "AI応答の解析に失敗しました。もう一度お試しください。" });
-    }
 
     // ── 金額の検算（コード側。AIの再呼び出しはしない）──────────────────────────
     // 仕入行（isNonPurchase=false）の金額合計を、AIが読んだ請求総額と突き合わせる。
@@ -242,35 +305,95 @@ router.post("/purchase-invoice", async (req, res) => {
     return res.json({ draft, vendorMatches, amountMismatch, amountDiff, expectedNet, purchaseSum });
   } catch (err) {
     req.log.error({ err }, "Failed to AI-extract purchase invoice");
-    // Anthropic 側で断られた場合は原因ごとに言い分ける。以前はすべて
-    // 「AI読み取り中にエラーが発生しました」で、キーが失効しているのか
-    // 一時的に混んでいるのか、画面からは区別がつかなかった。
-    if (err instanceof Anthropic.APIError) {
-      // キーが失効・無効。未設定と同じく「今は使えない」扱いにして手入力へ回す。
-      if (err.status === 401 || err.status === 403) {
-        return res.status(503).json({
-          message: "AI読み取りは今は使えません（APIキーが無効です）。管理者にキーの再設定を依頼してください。",
-        });
-      }
-      // ワークスペースに紐づいていないキー。ヘッダーが要る。
-      if (err.status === 400 && /anthropic-workspace-id/i.test(err.message)) {
-        return res.status(503).json({
-          message: "AI読み取りは今は使えません（APIキーにワークスペースの指定が必要です）。管理者にご連絡ください。",
-        });
-      }
-      // 残高切れ。400 で返ってくるので文面で見分ける。
-      if (err.status === 400 && /credit balance|insufficient/i.test(err.message)) {
-        return res.status(503).json({
-          message: "AI読み取りは今は使えません（利用残高が不足しています）。管理者にご連絡ください。",
-        });
-      }
-      if (err.status === 429) {
-        return res.status(429).json({ message: "AIが混み合っています。少し待ってからもう一度お試しください。" });
-      }
-      if (err.status && err.status >= 500) {
-        return res.status(503).json({ message: "AI側が一時的に応答していません。少し待ってからもう一度お試しください。" });
-      }
+    return res.status(500).json({ message: "AI読み取り中にエラーが発生しました。" });
+  }
+});
+
+// ─── ①元請注文書の読み取り（工事の仮登録の下書き）────────────────────────────
+//
+// 元請から届いた注文書を読み、工事名・請負金額・工期などを返す。登録はしない
+// （人が確認してから仮登録する）。部門は読ませない：現場担当者が本登録で決める（追加依頼4）。
+// 実行予算は作らない（温品様の回答 2026-10-02：「工事登録＋実行予算は空」）。
+
+const PRIME_ORDER_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    projectName: { type: "string", description: "工事名・件名。印字どおり" },
+    clientName: { type: "string", description: "注文者（発注者・元請）の会社名。宛先（受注者＝株式会社おおつか）ではない" },
+    location: { type: "string", description: "工事場所・施工場所。無ければ空文字" },
+    orderNumber: { type: "string", description: "注文番号・注文書No。無ければ空文字" },
+    orderDate: { type: "string", description: "注文日・発行日 YYYY-MM-DD。不明なら空文字" },
+    startDate: { type: "string", description: "工期の着工日 YYYY-MM-DD。不明なら空文字" },
+    endDate: { type: "string", description: "工期の完成・竣工日 YYYY-MM-DD。不明なら空文字" },
+    taxExcludedAmount: { type: "number", description: "注文金額の税抜額（カンマ無し）。不明なら0" },
+    taxAmount: { type: "number", description: "消費税額（カンマ無し）。不明なら0" },
+    taxIncludedAmount: { type: "number", description: "注文金額の税込額（カンマ無し）。不明なら0" },
+    handwritten: { type: "boolean", description: "金額や工期が手書きで、読み取りが不確実なら true" },
+  },
+  required: ["projectName", "clientName", "location", "orderNumber", "orderDate", "startDate", "endDate", "taxExcludedAmount", "taxAmount", "taxIncludedAmount", "handwritten"],
+} as const;
+
+const PRIME_ORDER_PROMPT = `あなたは日本の建設業の経理担当を補助するアシスタントです。
+渡された元請からの注文書（PDFまたは画像）から、工事の登録に使う項目を抽出してください。
+受注者（注文書の宛先）は「株式会社おおつか」です。注文者（発注者）と取り違えないこと。
+
+ルール：
+- 金額はカンマや「円」を除いた数値で返す（例: 1,234,000 → 1234000）。
+- 税抜・消費税・税込のうち、印字されているものだけ返す。書かれていない額は0にする（計算で埋めない）。
+- 日付は YYYY-MM-DD 形式。読み取れない日付は空文字 "" にする。
+- 和暦は必ず西暦に直す。**令和N年 = 西暦(2018+N)年**（例: 令和8年=2026年）。
+- 工期が「自 令和8年4月1日 至 令和8年9月30日」のように書かれていれば、自=着工日、至=竣工日。
+- 注文書の別紙（約款・内訳書）は読まなくてよい。1枚目の注文内容を優先する。
+- これは人が確認して修正する「下書き」です。確実でない箇所は推測で埋めず、空・0のままにしてください。`;
+
+router.post("/prime-order", async (req, res) => {
+  try {
+    const parsed = await extractDocument(req, res, {
+      system: PRIME_ORDER_PROMPT,
+      schema: PRIME_ORDER_SCHEMA,
+      instruction: "この元請注文書を読み取って、スキーマに従いJSONで返してください。",
+    });
+    if (!parsed) return;
+    const draft = parsed as {
+      clientName?: string;
+      taxExcludedAmount?: number;
+      taxAmount?: number;
+      taxIncludedAmount?: number;
+    };
+
+    // 税込が無く税抜・税額があれば足して埋める（請負金額は税込で持つため）。
+    // 逆に3つとも読めているのに合わないときは、読み違いを疑って画面で知らせる。
+    const ex = num(draft.taxExcludedAmount);
+    const tax = num(draft.taxAmount);
+    let inc = num(draft.taxIncludedAmount);
+    if (inc === 0 && ex > 0 && tax > 0) inc = ex + tax;
+    const amountMismatch = ex > 0 && tax > 0 && inc > 0 && Math.abs(ex + tax - inc) > 1;
+
+    // 注文者を得意先マスタに突合して候補を返す（自動では紐づけない）。
+    const clientName = (draft.clientName ?? "").trim();
+    let clientMatches: { id: number; name: string; clientCode: string; exact: boolean }[] = [];
+    if (clientName) {
+      const clients = await db
+        .select({ id: clientsTable.id, name: clientsTable.name, clientCode: clientsTable.clientCode })
+        .from(clientsTable);
+      const strip = (s: string) => s.replace(/\s|株式会社|（株）|\(株\)|有限会社|（有）|\(有\)/g, "");
+      const needle = strip(clientName);
+      clientMatches = clients
+        .map((c) => {
+          const hay = strip(c.name);
+          const exact = c.name === clientName;
+          const hit = exact || (needle.length > 0 && hay.length > 0 && (hay.includes(needle) || needle.includes(hay)));
+          return hit ? { ...c, exact } : null;
+        })
+        .filter((x): x is { id: number; name: string; clientCode: string; exact: boolean } => x !== null)
+        .sort((a, b) => Number(b.exact) - Number(a.exact))
+        .slice(0, 5);
     }
+
+    return res.json({ draft: { ...draft, taxIncludedAmount: inc }, clientMatches, amountMismatch });
+  } catch (err) {
+    req.log.error({ err }, "Failed to AI-extract prime order");
     return res.status(500).json({ message: "AI読み取り中にエラーが発生しました。" });
   }
 });

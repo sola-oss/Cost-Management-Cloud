@@ -131,6 +131,8 @@ export interface Project {
   constructionHistoryType?: string | null;
   /** 配置技術者名 */
   constructionHistoryEngineer?: string | null;
+  /** ①元請注文書の原本の保存キー（あれば GET /projects/{id}/order-file で見られる） */
+  orderFilePath?: string | null;
 }
 
 /**

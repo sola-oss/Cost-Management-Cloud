@@ -75,6 +75,10 @@ export const projectsTable = pgTable("projects", {
   clientCode: text("client_code"),
   constructionHistoryType: text("construction_history_type"),
   constructionHistoryEngineer: text("construction_history_engineer"),
+
+  // ①元請注文書をスキャンして登録したときの原本（受領請求書と同じ保存先 received-invoices）
+  orderFilePath: text("order_file_path"),
+  orderMediaType: text("order_media_type"),
 });
 
 export const insertProjectSchema = createInsertSchema(projectsTable).omit({ id: true, createdAt: true, updatedAt: true });

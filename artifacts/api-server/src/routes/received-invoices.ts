@@ -17,6 +17,7 @@ import {
   readLocalFile,
   deleteInvoiceFile,
   storageMode,
+  newStorageKey,
 } from "../lib/invoice-storage";
 import { withUniqueNumberTransaction } from "../lib/unique-number";
 import {
@@ -30,20 +31,6 @@ const router: IRouter = Router();
 
 function parseN(v: unknown): number {
   return typeof v === "string" ? parseFloat(v) || 0 : ((v as number) ?? 0);
-}
-
-// crypto.randomUUID は Node 18+ で global
-function newKey(mediaType: string): string {
-  const ext =
-    mediaType === "application/pdf" ? "pdf"
-    : mediaType === "image/png" ? "png"
-    : mediaType === "image/jpeg" ? "jpg"
-    : mediaType === "image/webp" ? "webp"
-    : mediaType === "image/gif" ? "gif"
-    : "bin";
-  const now = new Date();
-  const ym = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}`;
-  return `${ym}/${crypto.randomUUID()}.${ext}`;
 }
 
 // ── 明細をブロック化する（伝票番号でまとめる。無ければ1行=1ブロック）──────────
@@ -161,7 +148,7 @@ router.post("/", async (req, res) => {
     let filePath: string | null = null;
     if (b.fileBase64) {
       const media = b.mediaType ?? "application/pdf";
-      filePath = newKey(media);
+      filePath = newStorageKey(media);
       await uploadInvoiceFile(filePath, b.fileBase64, media);
     }
 

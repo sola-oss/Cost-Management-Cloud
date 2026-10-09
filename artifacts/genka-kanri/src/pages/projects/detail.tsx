@@ -1770,6 +1770,14 @@ export default function ProjectDetail() {
             {[project.projectCode, project.clientName].filter(Boolean).join(" ／ ")}
           </p>
         </div>
+        {project.orderFilePath && (
+          <Button variant="outline" size="sm" asChild className="shrink-0 gap-1.5">
+            <a href={`${BASE}/api/projects/${projectId}/order-file`} target="_blank" rel="noreferrer">
+              <ExternalLink className="w-3.5 h-3.5" />
+              注文書
+            </a>
+          </Button>
+        )}
         <Button variant="outline" size="sm" asChild className="shrink-0 gap-1.5 border-teal-600 text-teal-700 hover:bg-teal-50">
           <Link href={`/projects/${projectId}/ledger`}>
             <FileText className="w-3.5 h-3.5" />
@@ -1782,8 +1790,9 @@ export default function ProjectDetail() {
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-amber-300 bg-amber-50 px-4 py-3">
           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
           <p className="flex-1 min-w-[16rem] text-sm text-amber-800">
-            仮登録の工事です。請負金額・部門が入っていないため、会社全体の合計・粗利には入っていません。
-            工事が決まったら本登録してください。
+            {(project.contractAmount ?? 0) > 0
+              ? "仮登録の工事です。部門がまだ決まっていないため、会社全体の合計・粗利には入っていません。担当者が部門を選んで本登録してください。"
+              : "仮登録の工事です。請負金額・部門が入っていないため、会社全体の合計・粗利には入っていません。工事が決まったら本登録してください。"}
           </p>
           <Button size="sm" onClick={() => setPromoteOpen(true)} className="gap-1.5">
             <CheckCircle className="w-4 h-4" />
