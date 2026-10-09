@@ -17,7 +17,8 @@ import { takePendingScanFile } from "./scan-pending";
 
 // ─── ③下請の見積書をスキャンして、実行予算に入れる ─────────────────────────────
 //
-// AIが読んだ仕入先・表紙の行（名称・金額）を確かめ、行ごとに工種を選んで実行予算に入れる。
+// AIが読んだ仕入先・表紙の行（名称・金額）を確かめて実行予算に入れる。工種は任意
+// （読み込むのは事務のことが多く、工種までは分からない。現場担当者があとで実行予算の画面で選ぶ）。
 // 見積書は印字の合計と実際に決まった額が違うことが多い（手書きの「改メ」・Net価格）。
 // 行は最初は明細（印字）どおりに入る。決定額に合わせたいときだけ、ボタンで各行へ同じ割合で割り振る
 // （アイさん判断 2026-10-09：割り振りは最初からやらず、任意の操作にする）。割り振った額は直せる。
@@ -25,6 +26,7 @@ import { takePendingScanFile } from "./scan-pending";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const NEW_PROVISIONAL = "__new_provisional__";
+const NO_WORK_TYPE = "__none__";
 
 interface ProjectRow { id: number; projectCode: string; name: string; status: string; siteManager: string | null }
 interface VendorItem { id: number; name: string; kana?: string | null }
@@ -225,10 +227,6 @@ export default function ScanSubcontractEstimate() {
       toast({ title: "実行予算に入れる行がありません", variant: "destructive" });
       return;
     }
-    if (lines.some((l) => !l.workTypeId)) {
-      toast({ title: "すべての行で工種を選んでください", variant: "destructive" });
-      return;
-    }
     setSaving(true);
     try {
       const r = await fetch(`${BASE}/api/subcontract-estimates`, {
@@ -420,7 +418,10 @@ export default function ScanSubcontractEstimate() {
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label>実行予算に入れる行</Label>
+                  <div>
+                    <Label>実行予算に入れる行</Label>
+                    <p className="text-xs text-slate-500">工種は分からなければ空のままで大丈夫です。あとで実行予算の画面で選べます。</p>
+                  </div>
                   {lines.length > 1 && (
                     <button type="button" onClick={mergeLines} className="text-xs text-primary hover:underline flex items-center gap-1">
                       <Combine className="w-3.5 h-3.5" /> 1行にまとめる
@@ -447,11 +448,15 @@ export default function ScanSubcontractEstimate() {
                       </button>
                     </div>
                     <div className="grid grid-cols-2 gap-2">
-                      <Select value={l.workTypeId} onValueChange={(v) => updateLine(l.key, { workTypeId: v })}>
-                        <SelectTrigger className={cn("h-8 text-sm", !l.workTypeId && "border-amber-400 text-amber-700")}>
-                          <SelectValue placeholder="工種を選択" />
+                      <Select
+                        value={l.workTypeId || NO_WORK_TYPE}
+                        onValueChange={(v) => updateLine(l.key, { workTypeId: v === NO_WORK_TYPE ? "" : v })}
+                      >
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue placeholder="工種（分かれば）" />
                         </SelectTrigger>
                         <SelectContent searchPlaceholder="工種名で検索">
+                          <SelectItem value={NO_WORK_TYPE} className="text-slate-400">— 未選択（あとで選ぶ）—</SelectItem>
                           {workTypes.map((w) => (
                             <SelectItem key={w.id} value={String(w.id)}>
                               <span className="font-mono text-xs text-slate-400 mr-1.5">{w.code}</span>{w.name}

@@ -534,7 +534,11 @@ export default function BudgetManagement() {
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       if (!row.isDirty && !row.isNew) continue;
-      if (!row.workTypeCode && !row.workTypeName) continue;
+      // 「行追加」したまま何も入れていない行だけ飛ばす。工種が空でも、金額や仕入先が入った行・
+      // すでに保存済みの行は保存する（③下請見積書は工種を空のまま入れることがあり、
+      // 以前は工種が空だと金額を直しても黙って保存されなかった）
+      const hasWorkType = !!(row.workTypeCode || row.workTypeName);
+      if (!hasWorkType && row.isNew && !row.vendorId && !parseN(row.revisedBudget) && !parseN(row.initialBudget)) continue;
       const data: {
         workTypeCode: string;
         workTypeName: string;
@@ -546,8 +550,9 @@ export default function BudgetManagement() {
         revisedBudget: number;
         sortOrder: number;
       } = {
-        workTypeCode: row.workTypeCode || "—",
-        workTypeName: row.workTypeName || "—",
+        // 片方だけ入っているときは「—」で埋める。両方空（工種未選択）は空のまま
+        workTypeCode: hasWorkType ? (row.workTypeCode || "—") : "",
+        workTypeName: hasWorkType ? (row.workTypeName || "—") : "",
         supplierCode: "",
         supplierName: row.supplierName,
         vendorId: row.vendorId ? parseInt(row.vendorId) : null,
@@ -966,9 +971,11 @@ export default function BudgetManagement() {
                             </td>
                             {COLS.filter(col => !col.hidden).map(col => {
                               const vendorMissing = col.key === "vendorId" && !row.vendorId && !isOrdered;
+                              // 工種が空の行も仕入先と同じく目立たせる（③で事務が工種を空のまま入れた行を、現場担当者が埋める）
+                              const workTypeMissing = col.key === "workTypeCode" && !row.workTypeName && !row.isNew;
                               return (
                               <td key={col.key}
-                                className={`border p-0 ${col.align === "right" ? "text-right" : ""} ${vendorMissing ? "border-amber-300 bg-amber-50" : "border-slate-100"}`}>
+                                className={`border p-0 ${col.align === "right" ? "text-right" : ""} ${vendorMissing || workTypeMissing ? "border-amber-300 bg-amber-50" : "border-slate-100"}`}>
                                 {col.key === "workTypeCode" ? (
                                   <Select
                                     value={row.workTypeName || "__none__"}

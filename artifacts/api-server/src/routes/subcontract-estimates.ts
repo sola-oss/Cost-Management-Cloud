@@ -73,9 +73,8 @@ router.post("/", async (req, res) => {
 
     const rows = Array.isArray(lines) ? lines : [];
     if (rows.length === 0) return res.status(400).json({ message: "実行予算に入れる行がありません" });
-    if (rows.some((l) => !String(l.workTypeCode ?? "").trim() || !String(l.workTypeName ?? "").trim())) {
-      return res.status(400).json({ message: "すべての行で工種を選んでください" });
-    }
+    // 工種は空でもよい。読み込むのは事務のことが多く、工種までは分からないため、
+    // 現場担当者があとで実行予算の画面で選ぶ（空の行はそこで黄色く出る）
 
     let vendor: { id: number; name: string; code: string | null } | undefined;
     if (vendorId != null) {
@@ -133,8 +132,8 @@ router.post("/", async (req, res) => {
         const amount = String(parseNumeric(l.amount));
         return {
           projectId: project.id,
-          workTypeCode: String(l.workTypeCode).trim(),
-          workTypeName: String(l.workTypeName).trim(),
+          workTypeCode: String(l.workTypeCode ?? "").trim(),
+          workTypeName: String(l.workTypeName ?? "").trim(),
           supplierCode: vendor?.code ?? "",
           supplierName,
           vendorId: vendor?.id ?? null,
