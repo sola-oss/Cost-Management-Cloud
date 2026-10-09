@@ -12,6 +12,7 @@ import { MasterSelect } from "@/components/master-select";
 import { useStaffMembers } from "@/hooks/use-staff-members";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { takePendingScanFile } from "./scan-pending";
 
 // ─── ①元請からの注文書をスキャンして、工事を仮登録する ─────────────────────────
 //
@@ -160,6 +161,13 @@ export default function ScanPrimeOrder() {
     }
     setStep("form");
   };
+
+  // スキャンする画面でファイルを選んでから来たときは、すぐ読み取りを始める。
+  // 直接開いた・再読み込みしたときは、この画面でファイルを選んでもらう
+  useEffect(() => {
+    const f = takePendingScanFile();
+    if (f) handleFile(f);
+  }, []);
 
   // 仮登録の候補が見つかったら、最初の1回だけそちらを選んでおく（人が選び直せる）
   const suggestedOnce = useRef(false);

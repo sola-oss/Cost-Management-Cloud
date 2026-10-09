@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/utils";
 import { readOneFile, AiUnavailableError, type ImportStage } from "./received-invoices/import";
+import { setPendingScanFile } from "./scan-pending";
 import { ScanLine, FileText, Truck, Loader2, Keyboard } from "lucide-react";
 
 // ─── スキャンする（読み込み）──────────────────────────────────────────────────
@@ -111,16 +112,22 @@ export default function Scan() {
   }, [reading]);
 
   const start = (t: DocType) => {
-    if (t.page) {
-      navigate(t.page);
-      return;
-    }
     setPicked(t);
     // 種類を選んでからファイルを選ぶ。選んだ種類で段階が決まる
     setTimeout(() => fileRef.current?.click(), 0);
   };
 
   const handleFiles = async (selected: File[]) => {
+    // 確認画面が別ページにある書類（①）は、選んだファイルを持ってそのページへ移る
+    if (picked?.page && selected.length > 0) {
+      if (selected.length > 1) {
+        toast({ title: "注文書は1件ずつ読み込みます", description: `最初の「${selected[0].name}」を読み込みます。` });
+      }
+      setPendingScanFile(selected[0]);
+      if (fileRef.current) fileRef.current.value = "";
+      navigate(picked.page);
+      return;
+    }
     if (selected.length === 0 || !picked?.stage) return;
     const files = selected.slice(0, MAX_FILES);
     const dropped = selected.length - files.length;
