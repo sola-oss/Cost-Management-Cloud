@@ -453,10 +453,10 @@ export default function ScanSubcontractEstimate() {
                         onValueChange={(v) => updateLine(l.key, { workTypeId: v === NO_WORK_TYPE ? "" : v })}
                       >
                         <SelectTrigger className="h-8 text-sm">
-                          <SelectValue placeholder="工種（分かれば）" />
+                          <SelectValue placeholder="未選択" />
                         </SelectTrigger>
                         <SelectContent searchPlaceholder="工種名で検索">
-                          <SelectItem value={NO_WORK_TYPE} className="text-slate-400">— 未選択（あとで選ぶ）—</SelectItem>
+                          <SelectItem value={NO_WORK_TYPE} className="text-slate-400">— 未選択 —</SelectItem>
                           {workTypes.map((w) => (
                             <SelectItem key={w.id} value={String(w.id)}>
                               <span className="font-mono text-xs text-slate-400 mr-1.5">{w.code}</span>{w.name}
