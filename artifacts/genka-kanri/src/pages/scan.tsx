@@ -13,8 +13,8 @@ import { ScanLine, FileText, Truck, Loader2, Keyboard } from "lucide-react";
 //
 // おおつか様の依頼（2026-09-10）：書類のスキャンを起点に登録できるようにする。
 // 書類の種類は①〜⑤。④下請納品書・⑤下請請求書は仕入の振り分けへ、①元請注文書・
-// ②客先見積書/契約書は工事登録の画面（/scan/prime-order・/scan/client-estimate）へ進む。
-// ③下請見積書はまだ作っていないため「準備中」と出して押せないようにしてある（押せると期待させてしまうため）。
+// ②客先見積書/契約書は工事登録の画面（/scan/prime-order・/scan/client-estimate）へ、
+// ③下請見積書は実行予算に入れる画面（/scan/subcontract-estimate）へ進む。
 
 const MAX_FILES = 10;
 
@@ -54,10 +54,10 @@ const DOC_TYPES: DocType[] = [
     key: "subcontract-estimate",
     no: "③",
     title: "下請の見積書",
-    hint: "実行予算のもとになる書類",
+    hint: "実行予算に入れます（工事が無ければその場で仮登録）",
+    page: "/scan/subcontract-estimate",
     icon: FileText,
-    ready: false,
-    pending: "登録先を相談中",
+    ready: true,
   },
   {
     key: "client-estimate",

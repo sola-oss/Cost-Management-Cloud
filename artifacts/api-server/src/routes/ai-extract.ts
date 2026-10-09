@@ -235,6 +235,25 @@ function sendAiError(err: unknown, res: Res) {
   return res.status(500).json({ message: "AI読み取り中にエラーが発生しました。" });
 }
 
+/** 仕入先名を仕入先マスタに突合して候補を返す（自動では紐づけない）。⑤請求書と③見積書で共通 */
+async function matchVendors(name: unknown) {
+  const vendorName = String(name ?? "").trim();
+  if (!vendorName) return [];
+  const vendors = await db.select({ id: vendorsTable.id, name: vendorsTable.name }).from(vendorsTable);
+  const strip = (s: string) => s.replace(/\s|株式会社|（株）|\(株\)|有限会社|（有）|\(有\)/g, "");
+  const needle = strip(vendorName);
+  return vendors
+    .map((v) => {
+      const hay = strip(v.name);
+      const exact = v.name === vendorName;
+      const hit = exact || (needle.length > 0 && (hay.includes(needle) || needle.includes(hay)));
+      return hit ? { id: v.id, name: v.name, exact } : null;
+    })
+    .filter((x): x is { id: number; name: string; exact: boolean } => x !== null)
+    .sort((a, b) => Number(b.exact) - Number(a.exact))
+    .slice(0, 5);
+}
+
 router.post("/purchase-invoice", async (req, res) => {
   try {
     const parsed = await extractDocument(req, res, {
@@ -284,23 +303,7 @@ router.post("/purchase-invoice", async (req, res) => {
     }
 
     // 仕入先名を既存マスタに突合して候補を返す（自動では紐づけない）。
-    const vendorName = (draft.vendorName ?? "").trim();
-    let vendorMatches: { id: number; name: string; exact: boolean }[] = [];
-    if (vendorName) {
-      const vendors = await db.select({ id: vendorsTable.id, name: vendorsTable.name }).from(vendorsTable);
-      const strip = (s: string) => s.replace(/\s|株式会社|（株）|\(株\)|有限会社|（有）|\(有\)/g, "");
-      const needle = strip(vendorName);
-      vendorMatches = vendors
-        .map((v) => {
-          const hay = strip(v.name);
-          const exact = v.name === vendorName;
-          const hit = exact || (needle.length > 0 && (hay.includes(needle) || needle.includes(hay)));
-          return hit ? { id: v.id, name: v.name, exact } : null;
-        })
-        .filter((x): x is { id: number; name: string; exact: boolean } => x !== null)
-        .sort((a, b) => Number(b.exact) - Number(a.exact))
-        .slice(0, 5);
-    }
+    const vendorMatches = await matchVendors(draft.vendorName);
 
     return res.json({ draft, vendorMatches, amountMismatch, amountDiff, expectedNet, purchaseSum });
   } catch (err) {
@@ -451,6 +454,85 @@ router.post("/client-estimate", async (req, res) => {
     return res.json(await finishProjectDraft(parsed));
   } catch (err) {
     req.log.error({ err }, "Failed to AI-extract client estimate");
+    return res.status(500).json({ message: "AI読み取り中にエラーが発生しました。" });
+  }
+});
+
+// ─── ③下請見積書の読み取り（実行予算の下書き）────────────────────────────────
+//
+// 下請から受け取った見積書を読み、表紙の行（名称・金額）と合計を返す。登録はしない。
+// 実物（2026-10-02 受領の4枚）で分かったこと：
+//  - 印字の合計と実際に決まった額が違うことが多い。手書きの「改メ ¥12,800,000」、
+//    印字の「Net価格 ¥600,000」など。決定額は人が確かめて打つ前提で、読めたら候補として返す
+//  - 1枚に工種が複数並ぶ（屋根／内外装／金属）。表紙の行を返し、内訳の細かい明細は返さない
+//  - 変更見積はマイナス（外壁変更 −165,000）
+//  - 税抜の見積と税込の見積が混ざる。実行予算は税抜で入れる
+
+const SUBCONTRACT_ESTIMATE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    vendorName: { type: "string", description: "見積を出した下請（発行者）の会社名。宛先（株式会社おおつか）ではない" },
+    projectName: { type: "string", description: "工事名・件名。無ければ空文字" },
+    estimateNumber: { type: "string", description: "見積番号。無ければ空文字" },
+    estimateDate: { type: "string", description: "見積日 YYYY-MM-DD。不明なら空文字" },
+    lines: {
+      type: "array",
+      description: "表紙（1枚目）に並ぶ工事・項目の行。内訳明細書の細かい行ではなく、表紙の行。表紙に行が無ければ内訳の大項目（小計の単位）",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          name: { type: "string", description: "名称（例: 屋根及びとい工事）" },
+          amount: { type: "number", description: "税抜の金額（カンマ無し）。マイナスはそのまま" },
+        },
+        required: ["name", "amount"],
+      },
+    },
+    subtotal: { type: "number", description: "印字の合計（税抜・カンマ無し）。マイナスはそのまま" },
+    taxAmount: { type: "number", description: "消費税額（カンマ無し）。書かれていなければ0" },
+    total: { type: "number", description: "税込の総額（カンマ無し）。書かれていなければ0" },
+    decidedAmount: { type: "number", description: "印字の合計とは別に、実際に決まった額が書かれていればその額（税抜）。手書きの『改メ』『決定』『Net価格』『出精値引き後』など。無ければ0" },
+    decidedNote: { type: "string", description: "decidedAmount を何から読んだか（例『手書きの改メ』『Net価格の印字』）。無ければ空文字" },
+  },
+  required: ["vendorName", "projectName", "estimateNumber", "estimateDate", "lines", "subtotal", "taxAmount", "total", "decidedAmount", "decidedNote"],
+} as const;
+
+const SUBCONTRACT_ESTIMATE_PROMPT = `あなたは日本の建設業の経理担当を補助するアシスタントです。
+渡された書類は、下請業者が株式会社おおつか（元請の建設会社）に出した見積書です。
+実行予算に入れるための項目を抽出してください。
+
+ルール：
+- 発行者（下請）と宛先（株式会社おおつか）を取り違えないこと。vendorName は発行者。
+- lines は表紙（1枚目）の行を上から順に返す。内訳明細書の細かい行（材料1つずつ）は返さない。
+  表紙に行が無い書式なら、内訳の大項目（小計の単位）を返す。合計・消費税・総合計の行は lines に入れない。
+- 金額はすべて税抜で返す。税込の行しか無ければ、印字された消費税を引いた額にする。
+- 法定福利費・諸経費・安全管理費などが表紙に別の行で並んでいれば、それも1行として返す。
+- 変更見積・減額のマイナスはマイナスのまま返す。
+- decidedAmount：印字の合計とは別に、実際に決まった額が書かれていれば返す。
+  例：横に手書きで「改メ ¥12,800,000」、印字の「Net価格 ¥600,000」。手書きは読める範囲で読み、
+  読めなければ0にする（推測で埋めない）。決まった額の書き込みが無ければ0。
+- 金額はカンマや「円」を除いた数値で返す。日付は YYYY-MM-DD。和暦は **令和N年 = 西暦(2018+N)年**。
+- これは人が確認して修正する「下書き」です。確実でない箇所は推測で埋めず、空・0のままにしてください。`;
+
+router.post("/subcontract-estimate", async (req, res) => {
+  try {
+    const parsed = await extractDocument(req, res, {
+      system: SUBCONTRACT_ESTIMATE_PROMPT,
+      schema: SUBCONTRACT_ESTIMATE_SCHEMA,
+      instruction: "この下請見積書を読み取って、スキーマに従いJSONで返してください。",
+    });
+    if (!parsed) return;
+    const draft = parsed as { vendorName?: string; lines?: Array<{ amount?: number }>; subtotal?: number };
+
+    // 表紙の行の合計と印字の合計が合わなければ、行の読み落としを疑って画面で知らせる
+    const linesSum = (draft.lines ?? []).reduce((s, l) => s + num(l.amount), 0);
+    const subtotal = num(draft.subtotal);
+    const linesMismatch = subtotal !== 0 && Math.abs(linesSum - subtotal) > Math.max(Math.abs(subtotal) * 0.005, 100);
+
+    return res.json({ draft, vendorMatches: await matchVendors(draft.vendorName), linesMismatch, linesSum });
+  } catch (err) {
+    req.log.error({ err }, "Failed to AI-extract subcontract estimate");
     return res.status(500).json({ message: "AI読み取り中にエラーが発生しました。" });
   }
 });

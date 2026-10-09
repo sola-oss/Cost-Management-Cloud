@@ -30,11 +30,14 @@ export function ProvisionalProjectDialog({
   onClose,
   onCreated,
   defaultSiteManager,
+  defaultName,
 }: {
   open: boolean;
   onClose: () => void;
   onCreated: (project: ProvisionalProject) => void;
   defaultSiteManager?: string;
+  // 書類から読んだ工事名があれば最初から入れておく
+  defaultName?: string;
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -47,10 +50,10 @@ export function ProvisionalProjectDialog({
 
   useEffect(() => {
     if (open) {
-      setName("");
+      setName(defaultName ?? "");
       setSiteManager(defaultSiteManager ?? "");
     }
-  }, [open, defaultSiteManager]);
+  }, [open, defaultSiteManager, defaultName]);
 
   const handleSave = async () => {
     if (!name.trim()) {

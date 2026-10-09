@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, forwardRef } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { ProjectTabBar, type ProjectTabKey } from "@/components/project-tab-bar";
+import { ScannedEstimates } from "@/components/scanned-estimates";
 import {
   useGetProject, useGetProjectSummary, useListBudgetItems,
   useCreateBudgetItem, useUpdateBudgetItem, useDeleteBudgetItem,
@@ -696,6 +697,8 @@ export default function BudgetManagement() {
               <span className="text-teal-200 truncate max-w-xs">{project.memo}</span>
             )}
           </div>
+
+          <ScannedEstimates projectId={projectId} />
 
           {/* ── サマリーKPIバー ──
                「予定」（実行予算ベース）と「実績」（実績原価ベース）を明確に分離。

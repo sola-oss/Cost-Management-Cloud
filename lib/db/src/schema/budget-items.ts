@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 import { projectsTable } from "./projects";
 import { vendorsTable } from "./vendors";
 import { purchaseOrdersTable, purchaseOrderItemsTable } from "./purchase-orders";
+import { subcontractEstimatesTable } from "./subcontract-estimates";
 
 export const budgetItemsTable = pgTable("budget_items", {
   id: serial("id").primaryKey(),
@@ -21,6 +22,8 @@ export const budgetItemsTable = pgTable("budget_items", {
   originalBudgetAmount: numeric("original_budget_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   purchaseOrderId: integer("purchase_order_id").references(() => purchaseOrdersTable.id, { onDelete: "set null" }),
   purchaseOrderItemId: integer("purchase_order_item_id").references(() => purchaseOrderItemsTable.id, { onDelete: "set null" }),
+  // ③下請見積書のスキャンから入れた行なら、その見積書
+  subcontractEstimateId: integer("subcontract_estimate_id").references(() => subcontractEstimatesTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

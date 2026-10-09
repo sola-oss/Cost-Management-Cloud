@@ -33,6 +33,7 @@ function serializeItem(item: typeof budgetItemsTable.$inferSelect) {
     isOriginalLocked: item.isOriginalLocked ?? false,
     purchaseOrderId: item.purchaseOrderId ?? null,
     purchaseOrderItemId: item.purchaseOrderItemId ?? null,
+    subcontractEstimateId: item.subcontractEstimateId ?? null,
   };
 }
 
