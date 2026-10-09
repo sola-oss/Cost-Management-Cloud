@@ -698,7 +698,7 @@ export default function BudgetManagement() {
             )}
           </div>
 
-          <ScannedEstimates projectId={projectId} />
+          <ScannedEstimates projectId={projectId} rowsKey={(budgetData?.items ?? []).map((i) => i.id).join(",")} />
 
           {/* ── サマリーKPIバー ──
                「予定」（実行予算ベース）と「実績」（実績原価ベース）を明確に分離。

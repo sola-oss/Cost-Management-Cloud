@@ -179,6 +179,19 @@ export default function ScanSubcontractEstimate() {
     if (f) handleFile(f);
   }, []);
 
+  // 二重取り込みの警告：選んだ工事に、同じ仕入先・同じ印字の合計の見積書がもう入っていないか
+  const { data: existingData } = useQuery<{ items: { vendorId: number | null; printedTotal: number; createdAt: string }[] }>({
+    queryKey: ["/api/subcontract-estimates", Number(projectId)],
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/subcontract-estimates?projectId=${projectId}`);
+      if (!r.ok) return { items: [] };
+      return r.json();
+    },
+    enabled: !!projectId,
+  });
+  const duplicate = (existingData?.items ?? []).find((e) =>
+    vendorId !== "" && e.vendorId === Number(vendorId) && Math.round(e.printedTotal) === Math.round(printedTotal));
+
   const decidedNum = parseFloat(decided) || 0;
   const linesTotal = lines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
   const totalsDiffer = lines.length > 0 && Math.round(linesTotal) !== Math.round(decidedNum);
@@ -234,9 +247,16 @@ export default function ScanSubcontractEstimate() {
           }),
           fileBase64: file?.base64,
           mediaType: file?.mediaType,
+          // 警告を見たうえで押したときだけ、重複でも入れる
+          allowDuplicate: !!duplicate,
         }),
       });
       const body = await r.json().catch(() => ({}));
+      if (r.status === 409 && body.duplicate) {
+        // 画面を開いている間に、別の人が同じ見積書を入れていた
+        qc.invalidateQueries({ queryKey: ["/api/subcontract-estimates", Number(projectId)] });
+        throw new Error("この見積書はもう実行予算に入っています。内容を確かめてから、もう一度押してください。");
+      }
       if (!r.ok) throw new Error(body.message ?? "保存に失敗しました");
       qc.invalidateQueries({ predicate: (q) => /\/projects|\/subcontract-estimates/.test(String(q.queryKey[0] ?? "")) });
       toast({ title: "実行予算に入れました", description: `${body.budgetItemCount}行を追加しました。` });
@@ -480,11 +500,22 @@ export default function ScanSubcontractEstimate() {
                 )}
               </div>
 
+              {duplicate && (
+                <div className="flex gap-2 text-xs text-red-800 bg-red-50 border border-red-200 rounded px-2.5 py-2">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>
+                    この工事には、同じ仕入先・同じ金額の見積書がもう入っています
+                    （{new Date(duplicate.createdAt).toLocaleDateString("ja-JP")}）。
+                    同じ見積書をもう一度入れると、実行予算が2倍になります。別の見積書のときだけ入れてください。
+                  </span>
+                </div>
+              )}
+
               <div className="flex justify-end gap-2 pt-2 border-t">
                 <Button variant="outline" onClick={() => navigate("/scan")} disabled={saving}>やめる</Button>
-                <Button onClick={handleSave} disabled={saving}>
+                <Button onClick={handleSave} disabled={saving} variant={duplicate ? "destructive" : "default"}>
                   {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                  実行予算に入れる
+                  {duplicate ? "別の見積書なので入れる" : "実行予算に入れる"}
                 </Button>
               </div>
             </CardContent>
