@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useCompanySettings } from "@/hooks/use-company-settings";
+import { useListProjects, getListProjectsQueryKey } from "@workspace/api-client-react";
 import { Loader2, Plus, Trash2, ArrowLeft, Save, FileDown, Download, Printer } from "lucide-react";
 import { Link } from "wouter";
 import { generateInvoicePDF } from "./pdf";
@@ -17,7 +18,6 @@ import { generateInvoicePDF } from "./pdf";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 interface Client { id: number; name: string; kana: string | null; address: string | null; }
-interface Project { id: number; name: string; projectCode: string; contractAmount?: number; managementType?: string; }
 interface CompanySettings {
   companyName: string; postalCode: string; address: string; tel: string; fax: string;
   invoiceRegistrationNumber: string; representativeName: string; department: string;
@@ -153,9 +153,9 @@ export default function InvoiceEditor({ id }: Props) {
     queryFn: async () => { const r = await fetch(`${BASE}/api/clients`); return r.json(); },
   });
 
-  const { data: projects } = useQuery<{ items: Project[] }>({
-    queryKey: ["/api/projects"],
-    queryFn: async () => { const r = await fetch(`${BASE}/api/projects`); return r.json(); },
+  // limit を付けないとサーバ既定の20件で切れ、新しい工事（仮登録を含む）が選べなくなる
+  const { data: projects } = useListProjects({ limit: 2000 }, {
+    query: { queryKey: getListProjectsQueryKey({ limit: 2000 }) },
   });
 
   const { data: companySettings } = useCompanySettings<CompanySettings>();
@@ -545,9 +545,15 @@ export default function InvoiceEditor({ id }: Props) {
                   <SelectValue placeholder="工事を選択..." />
                 </SelectTrigger>
                 <SelectContent searchable searchPlaceholder="工事名・工事番号で検索">
-                  {projects?.items.map((p) => (
-                    <SelectItem key={p.id} value={String(p.id)}>{p.projectCode} - {p.name}</SelectItem>
-                  ))}
+                  {/* 仮登録の工事は請負金額が未確定なので請求先に出さない（既に紐付いているものだけは残す） */}
+                  {projects?.items
+                    .filter((p) => p.status !== "provisional" || p.id === projectId)
+                    .map((p) => (
+                      <SelectItem key={p.id} value={String(p.id)}>
+                        {p.projectCode} - {p.name}
+                        {p.status === "provisional" && <span className="ml-1.5 text-[11px] text-amber-700">（仮登録）</span>}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>

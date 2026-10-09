@@ -77,8 +77,9 @@ export default function PurchaseInvoices() {
   const [filterProject, setFilterProject] = useState("__all__");
   const [filterStatus, setFilterStatus] = useState("__all__");
 
-  const { data: projectsData } = useListProjects(undefined, {
-    query: { queryKey: getListProjectsQueryKey() },
+  // limit を付けないとサーバ既定の20件で切れ、新しい工事（仮登録を含む）が選べなくなる
+  const { data: projectsData } = useListProjects({ limit: 2000 }, {
+    query: { queryKey: getListProjectsQueryKey({ limit: 2000 }) },
   });
   const projects = projectsData?.items ?? [];
   const { data: invoicesData, isLoading } = usePurchaseInvoices(filterProject, filterStatus);
@@ -118,6 +119,7 @@ export default function PurchaseInvoices() {
                   {projects.map((p) => (
                     <SelectItem key={p.id} value={String(p.id)}>
                       {p.projectCode} {p.name}
+                      {p.status === "provisional" && <span className="ml-1.5 text-[11px] text-amber-700">（仮登録）</span>}
                     </SelectItem>
                   ))}
                 </SelectContent>
