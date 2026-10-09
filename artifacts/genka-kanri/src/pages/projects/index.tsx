@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { NumberInput } from "@/components/ui/number-input";
 import { MasterSelect } from "@/components/master-select";
+import { DepartmentPicker } from "@/components/department-picker";
 import { useStaffMembers } from "@/hooks/use-staff-members";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatPercent } from "@/lib/utils";
@@ -40,7 +41,7 @@ const STATUS_COLORS: Record<string, string> = {
  * 小口工事（その他）の簡易登録ダイアログ。
  *
  * 通常の新規登録は工事番号・場所・得意先・着工日・竣工予定日まで必須で、
- * 金額の小さい工事を件数だけ登録するには重すぎる。ここは3つだけ聞いて、
+ * 金額の小さい工事を件数だけ登録するには重すぎる。ここは4つだけ聞いて、
  * 残りはサーバ側で埋める（工事番号は自動採番・日付は登録日）。
  */
 function SmallProjectForm({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
@@ -52,6 +53,7 @@ function SmallProjectForm({ onClose, onSaved }: { onClose: () => void; onSaved: 
   const [name, setName] = useState("");
   const [contractAmount, setContractAmount] = useState("");
   const [siteManager, setSiteManager] = useState("");
+  const [department, setDepartment] = useState("");
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -64,12 +66,16 @@ function SmallProjectForm({ onClose, onSaved }: { onClose: () => void; onSaved: 
       toast({ title: "請負金額を入力してください", variant: "destructive" });
       return;
     }
+    if (!department) {
+      toast({ title: "部門を選んでください", variant: "destructive" });
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch(`${BASE}/api/projects/small`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), contractAmount: amount, siteManager: siteManager || null }),
+        body: JSON.stringify({ name: name.trim(), contractAmount: amount, siteManager: siteManager || null, department }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -95,7 +101,7 @@ function SmallProjectForm({ onClose, onSaved }: { onClose: () => void; onSaved: 
         </DialogHeader>
         <div className="space-y-4">
           <p className="text-xs text-slate-500 bg-slate-50 rounded px-2.5 py-2 leading-relaxed">
-            金額の小さい工事はこの3つだけで登録します。実行予算と出来高は作らず、
+            金額の小さい工事はこの4つだけで登録します。実行予算と出来高は作らず、
             粗利は「請負金額 − 実績原価」で見ます。工事番号は自動で振られます。
           </p>
           <div>
@@ -116,6 +122,10 @@ function SmallProjectForm({ onClose, onSaved }: { onClose: () => void; onSaved: 
               className="mt-1 text-right"
               placeholder="0"
             />
+          </div>
+          <div>
+            <Label>部門 <span className="text-destructive">*</span></Label>
+            <DepartmentPicker className="mt-1" value={department} onChange={setDepartment} />
           </div>
           <div>
             <Label>担当者</Label>
@@ -188,7 +198,7 @@ function NewProjectDialog({
               >
                 <div className="font-semibold text-slate-800">100万円以下</div>
                 <div className="text-xs text-slate-500 mt-1 leading-relaxed">
-                  小口工事として登録します。工事名・請負金額・担当者の3つだけ。
+                  小口工事として登録します。工事名・請負金額・部門・担当者の4つだけ。
                   実行予算と出来高は作らず、粗利は「請負金額 − 実績原価」で見ます。
                 </div>
               </button>

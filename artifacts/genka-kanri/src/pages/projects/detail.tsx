@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { ProvisionalLinks } from "@/components/provisional-links";
 import { AttendanceSheet } from "@/components/attendance-sheet";
 import { ProjectTabBar, PROJECT_TABS, parseProjectTab, type ProjectTabKey } from "@/components/project-tab-bar";
+import { DepartmentPicker } from "@/components/department-picker";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -955,7 +956,8 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
       taxRate: normalizeNum(values.taxRate),
       taxAmount: normalizeNum(values.taxAmount),
       taxIncludedAmount: normalizeNum(values.taxIncludedAmount),
-      department: normalizeStr(values.department),
+      // 決まっている部門は送らない（サーバ側でも変更は拒否する）
+      department: project.department ? undefined : normalizeStr(values.department),
       salesStaff: normalizeStr(values.salesStaff),
       siteManager: normalizeStr(values.siteManager),
       category1: normalizeStr(values.category1),
@@ -1240,17 +1242,30 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
                     </FormItem>
                   )}
                 />
-                <FormField
-                  control={form.control}
-                  name="department"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>工事部門</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {/* 部門は一度決めたら変えられない。登録前からある未設定の工事だけ、ここで一度だけ選べる */}
+                {project.department ? (
+                  <div className="space-y-1">
+                    <div className="text-sm font-medium">部門</div>
+                    <div className="text-sm text-slate-900 rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                      {project.department}
+                    </div>
+                    <p className="text-xs text-slate-500">登録後は変更できません（会計ソフトの仕訳に使うため）。</p>
+                  </div>
+                ) : (
+                  <FormField
+                    control={form.control}
+                    name="department"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>部門</FormLabel>
+                        <FormControl>
+                          <DepartmentPicker value={field.value ?? ""} onChange={field.onChange} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
                 <FormField
                   control={form.control}
                   name="salesStaff"
@@ -1578,12 +1593,12 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
                   </Badge>
                 </dd>
               </div>
-              {project.department && (
-                <div>
-                  <dt className="text-slate-500 mb-0.5">工事部門</dt>
-                  <dd className="font-medium text-slate-900">{project.department}</dd>
-                </div>
-              )}
+              <div>
+                <dt className="text-slate-500 mb-0.5">部門</dt>
+                <dd className="font-medium text-slate-900">
+                  {project.department ?? <span className="text-amber-600">未設定（編集から選んでください）</span>}
+                </dd>
+              </div>
               {project.salesStaff && (
                 <div>
                   <dt className="text-slate-500 mb-0.5">営業担当</dt>

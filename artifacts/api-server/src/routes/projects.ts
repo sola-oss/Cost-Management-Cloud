@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, sql, and, or, ilike, inArray, desc } from "drizzle-orm";
 import { confirmedCostOnly, isConfirmedCost } from "../lib/cost-stage";
 import { pendingProvisionalTotal } from "./cost-stage-links";
-import { db, projectsTable, costItemsTable, budgetsTable, budgetItemsTable, invoicesTable, invoicePaymentsTable, companySettingsTable, constructionHistoriesTable, estimatesTable, purchaseOrdersTable, purchaseInvoicesTable, paymentsTable } from "@workspace/db";
+import { db, projectsTable, costItemsTable, budgetsTable, budgetItemsTable, invoicesTable, invoicePaymentsTable, companySettingsTable, constructionHistoriesTable, estimatesTable, purchaseOrdersTable, purchaseInvoicesTable, paymentsTable, isProjectDepartment } from "@workspace/db";
 import { isUniqueViolation } from "../lib/db-errors";
 
 const router: IRouter = Router();
@@ -155,6 +155,11 @@ router.post("/", async (req, res) => {
       publicPrivateType, clientCode, constructionHistoryType, constructionHistoryEngineer,
     } = req.body;
 
+    if (!isProjectDepartment(department)) {
+      res.status(400).json({ message: "部門（おおつか／冨士岡工務店）を選んでください" });
+      return;
+    }
+
     const [project] = await db.insert(projectsTable).values({
       projectCode, name, clientName, location,
       contractAmount: String(contractAmount),
@@ -170,7 +175,7 @@ router.post("/", async (req, res) => {
       taxAmount: toNumericString(taxAmount),
       taxIncludedAmount: toNumericString(taxIncludedAmount),
       overview: overview ?? null,
-      department: department ?? null,
+      department,
       salesStaff: salesStaff ?? null,
       siteManager: siteManager ?? null,
       category1: category1 ?? null,
@@ -223,9 +228,12 @@ router.post("/", async (req, res) => {
  */
 router.post("/small", async (req, res) => {
   try {
-    const { name, contractAmount, siteManager } = req.body;
+    const { name, contractAmount, siteManager, department } = req.body;
     if (!name || !String(name).trim()) {
       return res.status(400).json({ message: "工事名は必須です" });
+    }
+    if (!isProjectDepartment(department)) {
+      return res.status(400).json({ message: "部門（おおつか／冨士岡工務店）を選んでください" });
     }
     const amount = typeof contractAmount === "string" ? parseFloat(contractAmount) : Number(contractAmount);
     if (!Number.isFinite(amount) || amount < 0) {
@@ -254,6 +262,7 @@ router.post("/small", async (req, res) => {
           contractAmount: String(amount),
           status: "active",
           managementType: "small",
+          department,
           startDate: today,
           endDate: today,
           siteManager: siteManager ? String(siteManager).trim() : null,
@@ -372,7 +381,22 @@ router.put("/:id", async (req, res) => {
     if (taxAmount !== undefined) updateData.taxAmount = toNumericString(taxAmount);
     if (taxIncludedAmount !== undefined) updateData.taxIncludedAmount = toNumericString(taxIncludedAmount);
     if (overview !== undefined) updateData.overview = overview || null;
-    if (department !== undefined) updateData.department = department || null;
+    // 部門は一度決めたら変えさせない（MFの仕訳と食い違うため）。未設定の工事だけ、ここで決められる
+    if (department !== undefined) {
+      const [current] = await db.select({ department: projectsTable.department }).from(projectsTable).where(eq(projectsTable.id, id));
+      if (!current) return res.status(404).json({ message: "工事が見つかりません" });
+      const next = department || null;
+      if (current.department) {
+        if (next !== current.department) {
+          return res.status(400).json({ message: "部門は登録後に変更できません" });
+        }
+      } else if (next !== null) {
+        if (!isProjectDepartment(next)) {
+          return res.status(400).json({ message: "部門（おおつか／冨士岡工務店）を選んでください" });
+        }
+        updateData.department = next;
+      }
+    }
     if (salesStaff !== undefined) updateData.salesStaff = salesStaff || null;
     if (siteManager !== undefined) updateData.siteManager = siteManager || null;
     if (category1 !== undefined) updateData.category1 = category1 || null;

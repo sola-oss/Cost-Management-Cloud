@@ -12,6 +12,14 @@ export type ProjectStatus = typeof projectStatusEnum[number];
 export const projectManagementTypeEnum = ["normal", "small"] as const;
 export type ProjectManagementType = typeof projectManagementTypeEnum[number];
 
+// 部門。MF会計の仕訳に使うため、工事の登録時に必須で選び、一度決めたら変えさせない
+// （後から変わると、すでに入れた仕訳と食い違う）。おおつか様の依頼 2026-09-30。
+// 画面側（genka-kanri/src/lib/departments.ts）にも同じ一覧がある。増やすときは両方。
+export const projectDepartmentEnum = ["おおつか", "冨士岡工務店"] as const;
+export type ProjectDepartment = typeof projectDepartmentEnum[number];
+export const isProjectDepartment = (v: unknown): v is ProjectDepartment =>
+  typeof v === "string" && (projectDepartmentEnum as readonly string[]).includes(v);
+
 export type ContractLine = {
   contractDate: string | null;
   taxExcludedAmount: number | null;

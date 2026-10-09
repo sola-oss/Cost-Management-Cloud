@@ -6,6 +6,7 @@ import { useLocation, Link } from "wouter";
 import { useCreateProject } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { DepartmentPicker } from "@/components/department-picker";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Button } from "@/components/ui/button";
@@ -114,7 +115,7 @@ const formSchema = z.object({
   overview: z.string().optional(),
   description: z.string().optional(),
   memo: z.string().optional(),
-  department: z.string().optional(),
+  department: z.string().min(1, "部門を選んでください"),
   salesStaff: z.string().optional(),
   siteManager: z.string().optional(),
   category1: z.string().optional(),
@@ -739,10 +740,11 @@ export default function NewProject() {
                     name="department"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className="text-xs text-slate-600">工事部門</FormLabel>
+                        <FormLabel className="text-xs text-slate-600">部門 <span className="text-destructive">*</span></FormLabel>
                         <FormControl>
-                          <Input className="text-sm" placeholder="例: 本社建築一課" {...field} />
+                          <DepartmentPicker value={field.value} onChange={field.onChange} />
                         </FormControl>
+                        <FormMessage />
                       </FormItem>
                     )}
                   />
