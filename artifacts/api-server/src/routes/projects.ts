@@ -340,7 +340,9 @@ router.post("/provisional", async (req, res) => {
 });
 
 /**
- * POST /api/projects/from-order — ①元請注文書から工事を仮登録する
+ * POST /api/projects/from-order — ①元請注文書・②客先見積書/契約書から工事を登録する
+ *
+ * documentKind: "prime-order"（①・既定）/ "client-estimate"（②）。保存先とメモの書き方だけが違う。
  *
  * 注文書をスキャンし、読み取った工事名・請負金額・工期を確認して保存する。
  * 注文書が来た＝ほぼ確定なので、画面の既定は本登録（部門を渡す）。まだ確定でないときだけ
@@ -350,13 +352,21 @@ router.post("/provisional", async (req, res) => {
  * 注文書の内容を入れる。作り直さないので、紐づけ済みの書類はそのまま残る。
  * 実行予算は作らない（温品様の回答 2026-10-02）。
  */
+// 工事登録に使う書類の種類ごとの違い
+const DOCUMENT_KINDS = {
+  "prime-order": { storagePrefix: "prime-orders/", numberLabel: "注文番号" },
+  "client-estimate": { storagePrefix: "client-estimates/", numberLabel: "見積・契約番号" },
+} as const;
+
 router.post("/from-order", async (req, res) => {
   try {
     const {
       targetProjectId, name, clientName, clientCode, location, orderDate, startDate, endDate,
       taxExcludedAmount, taxAmount, contractAmount, siteManager, orderNumber, fileBase64, mediaType,
-      department, managementType,
+      department, managementType, documentKind = "prime-order",
     } = req.body;
+    const kind = DOCUMENT_KINDS[documentKind as keyof typeof DOCUMENT_KINDS];
+    if (!kind) return res.status(400).json({ message: "書類の種類が正しくありません" });
     // 部門があれば本登録まで進める（画面で「本登録する」を選んだとき）。無ければ仮登録で止める
     const promoteNow = department != null && department !== "";
 
@@ -390,7 +400,7 @@ router.post("/from-order", async (req, res) => {
     let orderFilePath: string | null = null;
     const media = mediaType ?? "application/pdf";
     if (fileBase64) {
-      orderFilePath = newStorageKey(media, "prime-orders/");
+      orderFilePath = newStorageKey(media, kind.storagePrefix);
       await uploadInvoiceFile(orderFilePath, fileBase64, media);
     }
 
@@ -410,9 +420,10 @@ router.post("/from-order", async (req, res) => {
       taxAmount: toNumericString(taxAmount),
       taxIncludedAmount: String(amount),
       siteManager: String(siteManager).trim(),
-      // 注文番号の専用欄は無いのでメモに残す（元請との照合に使う）
+      // 注文番号・見積番号の専用欄は無いのでメモに残す（相手との照合に使う）。
+      // projects.estimateNumber はCMCで作った見積書との紐づけ用なので使わない
       ...(orderNumber && String(orderNumber).trim()
-        ? { memo: [target?.memo, `注文番号: ${String(orderNumber).trim()}`].filter(Boolean).join("\n") }
+        ? { memo: [target?.memo, `${kind.numberLabel}: ${String(orderNumber).trim()}`].filter(Boolean).join("\n") }
         : {}),
       ...(orderFilePath ? { orderFilePath, orderMediaType: media } : {}),
       updatedAt: new Date(),

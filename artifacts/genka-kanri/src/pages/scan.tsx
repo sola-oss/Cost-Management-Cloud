@@ -12,9 +12,9 @@ import { ScanLine, FileText, Truck, Loader2, Keyboard } from "lucide-react";
 // ─── スキャンする（読み込み）──────────────────────────────────────────────────
 //
 // おおつか様の依頼（2026-09-10）：書類のスキャンを起点に登録できるようにする。
-// 書類の種類は①〜⑤。④下請納品書・⑤下請請求書は仕入の振り分けへ、①元請注文書は
-// 工事の仮登録の画面（/scan/prime-order）へ進む。②客先見積書/契約書・③下請見積書は
-// 登録先が未確定のため「準備中」と出して押せないようにしてある（押せると期待させてしまうため）。
+// 書類の種類は①〜⑤。④下請納品書・⑤下請請求書は仕入の振り分けへ、①元請注文書・
+// ②客先見積書/契約書は工事登録の画面（/scan/prime-order・/scan/client-estimate）へ進む。
+// ③下請見積書はまだ作っていないため「準備中」と出して押せないようにしてある（押せると期待させてしまうため）。
 
 const MAX_FILES = 10;
 
@@ -63,10 +63,10 @@ const DOC_TYPES: DocType[] = [
     key: "client-estimate",
     no: "②",
     title: "客先へ出した見積書・契約書",
-    hint: "工事の登録に使う書類",
+    hint: "工事を登録します（まだ確定でなければ仮登録）",
+    page: "/scan/client-estimate",
     icon: FileText,
-    ready: false,
-    pending: "仕様を相談中",
+    ready: true,
   },
   {
     key: "prime-order",
@@ -121,7 +121,7 @@ export default function Scan() {
     // 確認画面が別ページにある書類（①）は、選んだファイルを持ってそのページへ移る
     if (picked?.page && selected.length > 0) {
       if (selected.length > 1) {
-        toast({ title: "注文書は1件ずつ読み込みます", description: `最初の「${selected[0].name}」を読み込みます。` });
+        toast({ title: "この書類は1件ずつ読み込みます", description: `最初の「${selected[0].name}」を読み込みます。` });
       }
       setPendingScanFile(selected[0]);
       if (fileRef.current) fileRef.current.value = "";

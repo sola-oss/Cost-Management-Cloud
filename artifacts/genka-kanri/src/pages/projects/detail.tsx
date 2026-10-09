@@ -1774,7 +1774,7 @@ export default function ProjectDetail() {
           <Button variant="outline" size="sm" asChild className="shrink-0 gap-1.5">
             <a href={`${BASE}/api/projects/${projectId}/order-file`} target="_blank" rel="noreferrer">
               <ExternalLink className="w-3.5 h-3.5" />
-              注文書
+              原本
             </a>
           </Button>
         )}

@@ -355,45 +355,102 @@ router.post("/prime-order", async (req, res) => {
       instruction: "この元請注文書を読み取って、スキーマに従いJSONで返してください。",
     });
     if (!parsed) return;
-    const draft = parsed as {
-      clientName?: string;
-      taxExcludedAmount?: number;
-      taxAmount?: number;
-      taxIncludedAmount?: number;
-    };
-
-    // 税込が無く税抜・税額があれば足して埋める（請負金額は税込で持つため）。
-    // 逆に3つとも読めているのに合わないときは、読み違いを疑って画面で知らせる。
-    const ex = num(draft.taxExcludedAmount);
-    const tax = num(draft.taxAmount);
-    let inc = num(draft.taxIncludedAmount);
-    if (inc === 0 && ex > 0 && tax > 0) inc = ex + tax;
-    const amountMismatch = ex > 0 && tax > 0 && inc > 0 && Math.abs(ex + tax - inc) > 1;
-
-    // 注文者を得意先マスタに突合して候補を返す（自動では紐づけない）。
-    const clientName = (draft.clientName ?? "").trim();
-    let clientMatches: { id: number; name: string; clientCode: string; exact: boolean }[] = [];
-    if (clientName) {
-      const clients = await db
-        .select({ id: clientsTable.id, name: clientsTable.name, clientCode: clientsTable.clientCode })
-        .from(clientsTable);
-      const strip = (s: string) => s.replace(/\s|株式会社|（株）|\(株\)|有限会社|（有）|\(有\)/g, "");
-      const needle = strip(clientName);
-      clientMatches = clients
-        .map((c) => {
-          const hay = strip(c.name);
-          const exact = c.name === clientName;
-          const hit = exact || (needle.length > 0 && hay.length > 0 && (hay.includes(needle) || needle.includes(hay)));
-          return hit ? { ...c, exact } : null;
-        })
-        .filter((x): x is { id: number; name: string; clientCode: string; exact: boolean } => x !== null)
-        .sort((a, b) => Number(b.exact) - Number(a.exact))
-        .slice(0, 5);
-    }
-
-    return res.json({ draft: { ...draft, taxIncludedAmount: inc }, clientMatches, amountMismatch });
+    return res.json(await finishProjectDraft(parsed));
   } catch (err) {
     req.log.error({ err }, "Failed to AI-extract prime order");
+    return res.status(500).json({ message: "AI読み取り中にエラーが発生しました。" });
+  }
+});
+
+// ─── ②客先へ出した見積書・契約書の読み取り（工事登録の下書き）─────────────────────
+//
+// おおつか様がお客様（主に個人）に出した確定の見積書、または結んだ契約書を読む。
+// ①とは向きが逆：発行者が株式会社おおつか、宛先がお客様。書式は不定（依頼書より）なので
+// 様式を決め打ちせずに読ませる。登録はしない（人が確認してから登録する）。
+
+const CLIENT_ESTIMATE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    documentType: { type: "string", enum: ["estimate", "contract"], description: "見積書なら estimate、契約書（工事請負契約書など）なら contract" },
+    projectName: { type: "string", description: "工事名・件名。印字どおり" },
+    clientName: { type: "string", description: "お客様（宛先・注文者・発注者）の名前。個人なら氏名、会社なら社名。敬称（様・御中・殿）は付けない。発行者（株式会社おおつか）ではない" },
+    location: { type: "string", description: "工事場所・施工場所。無ければ空文字" },
+    documentNumber: { type: "string", description: "見積番号・契約番号。無ければ空文字" },
+    documentDate: { type: "string", description: "見積日・契約日（発行日） YYYY-MM-DD。不明なら空文字" },
+    startDate: { type: "string", description: "工期の着工日 YYYY-MM-DD。書かれていなければ空文字" },
+    endDate: { type: "string", description: "工期の完成・竣工日・引渡日 YYYY-MM-DD。書かれていなければ空文字" },
+    taxExcludedAmount: { type: "number", description: "合計の税抜額（カンマ無し）。不明なら0" },
+    taxAmount: { type: "number", description: "消費税額（カンマ無し）。不明なら0" },
+    taxIncludedAmount: { type: "number", description: "合計の税込額・請負代金（カンマ無し）。不明なら0" },
+    handwritten: { type: "boolean", description: "金額や工期が手書きで、読み取りが不確実なら true" },
+  },
+  required: ["documentType", "projectName", "clientName", "location", "documentNumber", "documentDate", "startDate", "endDate", "taxExcludedAmount", "taxAmount", "taxIncludedAmount", "handwritten"],
+} as const;
+
+const CLIENT_ESTIMATE_PROMPT = `あなたは日本の建設業の経理担当を補助するアシスタントです。
+渡された書類は、株式会社おおつか（建設会社）がお客様に出した見積書、またはお客様と結んだ工事請負契約書です。
+工事の登録に使う項目を抽出してください。
+
+ルール：
+- 発行者・請負者は「株式会社おおつか」です。お客様（宛先・注文者）と取り違えないこと。
+- お客様の名前から敬称（様・御中・殿）を外す。「山田太郎 様」→「山田太郎」。
+- 書式は決まっていません。表紙・内訳・約款が混ざっていても、表紙（1枚目）の合計を優先する。
+  内訳の小計を合計と取り違えないこと。
+- 見積書の「有効期限」は工期ではない。工期が書かれていなければ着工日・竣工日は空文字にする。
+- 値引きがある場合は、値引き後の合計を返す。
+- 金額はカンマや「円」を除いた数値で返す（例: 1,234,000 → 1234000）。
+- 税抜・消費税・税込のうち、印字されているものだけ返す。書かれていない額は0にする（計算で埋めない）。
+- 日付は YYYY-MM-DD 形式。読み取れない日付は空文字 "" にする。
+- 和暦は必ず西暦に直す。**令和N年 = 西暦(2018+N)年**（例: 令和8年=2026年）。
+- これは人が確認して修正する「下書き」です。確実でない箇所は推測で埋めず、空・0のままにしてください。`;
+
+/**
+ * 読み取った金額をそろえ、得意先マスタの候補を付けて返す（①②で共通）。
+ * 税込が無く税抜・税額があれば足して埋める（請負金額は税込で持つため）。
+ * 3つとも読めているのに合わないときは、読み違いを疑って画面で知らせる。
+ */
+async function finishProjectDraft(draft: Record<string, unknown>) {
+  const ex = num(draft["taxExcludedAmount"]);
+  const tax = num(draft["taxAmount"]);
+  let inc = num(draft["taxIncludedAmount"]);
+  if (inc === 0 && ex > 0 && tax > 0) inc = ex + tax;
+  const amountMismatch = ex > 0 && tax > 0 && inc > 0 && Math.abs(ex + tax - inc) > 1;
+
+  // お客様（注文者）を得意先マスタに突合して候補を返す（自動では紐づけない）。
+  const clientName = String(draft["clientName"] ?? "").trim();
+  let clientMatches: { id: number; name: string; clientCode: string; exact: boolean }[] = [];
+  if (clientName) {
+    const clients = await db
+      .select({ id: clientsTable.id, name: clientsTable.name, clientCode: clientsTable.clientCode })
+      .from(clientsTable);
+    const strip = (s: string) => s.replace(/\s|株式会社|（株）|\(株\)|有限会社|（有）|\(有\)|様|御中|殿/g, "");
+    const needle = strip(clientName);
+    clientMatches = clients
+      .map((c) => {
+        const hay = strip(c.name);
+        const exact = c.name === clientName;
+        const hit = exact || (needle.length > 0 && hay.length > 0 && (hay.includes(needle) || needle.includes(hay)));
+        return hit ? { ...c, exact } : null;
+      })
+      .filter((x): x is { id: number; name: string; clientCode: string; exact: boolean } => x !== null)
+      .sort((a, b) => Number(b.exact) - Number(a.exact))
+      .slice(0, 5);
+  }
+  return { draft: { ...draft, taxIncludedAmount: inc }, clientMatches, amountMismatch };
+}
+
+router.post("/client-estimate", async (req, res) => {
+  try {
+    const parsed = await extractDocument(req, res, {
+      system: CLIENT_ESTIMATE_PROMPT,
+      schema: CLIENT_ESTIMATE_SCHEMA,
+      instruction: "この見積書・契約書を読み取って、スキーマに従いJSONで返してください。",
+    });
+    if (!parsed) return;
+    return res.json(await finishProjectDraft(parsed));
+  } catch (err) {
+    req.log.error({ err }, "Failed to AI-extract client estimate");
     return res.status(500).json({ message: "AI読み取り中にエラーが発生しました。" });
   }
 });

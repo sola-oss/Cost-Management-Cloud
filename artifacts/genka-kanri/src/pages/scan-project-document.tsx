@@ -15,12 +15,13 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { takePendingScanFile } from "./scan-pending";
 
-// ─── ①元請からの注文書をスキャンして、工事を仮登録する ─────────────────────────
+// ─── 書類をスキャンして工事を登録する（①元請注文書・②客先見積書/契約書）──────────────
 //
-// 注文書を読み込み、AIが読んだ工事名・請負金額・工期を確かめて保存する。
-// 注文書が来た＝ほぼ確定なので、既定は「本登録」（部門と区分を選ぶ）。まだ確定でないときだけ
-// 「仮登録」を選ぶ（仮登録は任意）。仮登録では部門を聞かず、本登録のときに選ぶ。
+// 書類を読み込み、AIが読んだ工事名・請負金額・工期を確かめて保存する。
+// ①②はどちらも「確定した」書類（依頼書 2026-09-10）なので、既定は「本登録」（部門と区分を選ぶ）。
+// まだ確定でないときだけ「仮登録」を選ぶ（仮登録は任意）。仮登録では部門を聞かず、本登録のときに選ぶ。
 // 先に③下請見積書などで仮登録してある工事があれば、作り直さずにそこへ入れる。
+// ①と②の違いは読み取り方（発行者と宛先の向きが逆）と画面の言葉だけなので、1つの画面を設定で切り替える。
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const NEW_PROJECT = "__new__";
@@ -29,12 +30,53 @@ const MANUAL_CLIENT = "__manual__";
 interface ClientRow { id: number; clientCode: string; name: string; kana?: string | null }
 interface ProvisionalRow { id: number; projectCode: string; name: string; siteManager: string | null }
 
+type DocumentKind = "prime-order" | "client-estimate";
+
+const KINDS: Record<DocumentKind, {
+  no: string;
+  title: string;
+  intro: string;
+  pickLabel: string;
+  extractPath: string;
+  clientLabel: string;
+  numberLabel: string;
+  dateLabel: string;
+  missingClient: (name: string) => string;
+}> = {
+  "prime-order": {
+    no: "①",
+    title: "元請からの注文書",
+    intro: "注文書から工事を登録します。まだ確定でなければ仮登録にできます。実行予算は空のまま作られます。",
+    pickLabel: "注文書のPDF・写真を選ぶ",
+    extractPath: "/api/ai-extract/prime-order",
+    clientLabel: "注文者（得意先）",
+    numberLabel: "注文番号",
+    dateLabel: "注文日",
+    missingClient: (n) => `注文者「${n}」が得意先マスタに見つかりません。`,
+  },
+  "client-estimate": {
+    no: "②",
+    title: "客先へ出した見積書・契約書",
+    intro: "お客様に出した確定の見積書、または結んだ契約書から工事を登録します。まだ確定でなければ仮登録にできます。",
+    pickLabel: "見積書・契約書のPDF・写真を選ぶ",
+    extractPath: "/api/ai-extract/client-estimate",
+    clientLabel: "お客様（得意先）",
+    numberLabel: "見積・契約番号",
+    dateLabel: "見積日・契約日",
+    // 個人のお客様はマスタに無いのが普通なので、警告ではなく案内にとどめる
+    missingClient: (n) => `「${n}」は得意先マスタにありません。個人のお客様ならこのままで登録できます。`,
+  },
+};
+
 type Draft = {
   projectName?: string;
   clientName?: string;
   location?: string;
+  // ①は orderNumber/orderDate、②は documentNumber/documentDate で返ってくる
   orderNumber?: string;
   orderDate?: string;
+  documentNumber?: string;
+  documentDate?: string;
   startDate?: string;
   endDate?: string;
   taxExcludedAmount?: number;
@@ -47,7 +89,16 @@ const amountStr = (n: number | undefined) => (n && n > 0 ? String(n) : "");
 // 名前の比較用（空白・株式会社などを外す）。仮登録の工事の候補を出すのに使う
 const strip = (s: string) => s.replace(/[\s　]|株式会社|（株）|\(株\)|様邸|邸/g, "");
 
-export default function ScanPrimeOrder() {
+export function ScanPrimeOrder() {
+  return <ScanProjectDocument kind="prime-order" />;
+}
+
+export function ScanClientEstimate() {
+  return <ScanProjectDocument kind="client-estimate" />;
+}
+
+function ScanProjectDocument({ kind }: { kind: DocumentKind }) {
+  const k = KINDS[kind];
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const qc = useQueryClient();
@@ -128,8 +179,8 @@ export default function ScanPrimeOrder() {
       setClientCode("");
     }
     setLocation(d.location ?? "");
-    setOrderNumber(d.orderNumber ?? "");
-    setOrderDate(d.orderDate ?? "");
+    setOrderNumber(d.orderNumber ?? d.documentNumber ?? "");
+    setOrderDate(d.orderDate ?? d.documentDate ?? "");
     setStartDate(d.startDate ?? "");
     setEndDate(d.endDate ?? "");
     setTaxExcluded(amountStr(d.taxExcludedAmount));
@@ -149,7 +200,7 @@ export default function ScanPrimeOrder() {
     setFile({ base64, mediaType, url: URL.createObjectURL(f), name: f.name });
     setStep("reading");
     try {
-      const r = await fetch(`${BASE}/api/ai-extract/prime-order`, {
+      const r = await fetch(`${BASE}${k.extractPath}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fileBase64: base64, mediaType }),
@@ -162,7 +213,7 @@ export default function ScanPrimeOrder() {
       const w: string[] = [];
       if (body.amountMismatch) w.push("税抜＋消費税が税込の額と合いません。金額を確かめてください。");
       if (body.draft?.handwritten) w.push("手書きの部分があります。金額と工期を特に確かめてください。");
-      if (!match && body.draft?.clientName) w.push(`注文者「${body.draft.clientName}」が得意先マスタに見つかりません。`);
+      if (!match && body.draft?.clientName) w.push(k.missingClient(body.draft.clientName));
       setWarnings(w);
     } catch (e) {
       // 読めなくても原本は残して、手で入れてもらう
@@ -223,6 +274,7 @@ export default function ScanPrimeOrder() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          documentKind: kind,
           targetProjectId: target === NEW_PROJECT ? null : Number(target),
           name: name.trim(),
           clientName: clientName.trim(),
@@ -267,11 +319,9 @@ export default function ScanPrimeOrder() {
       </div>
       <div>
         <h1 className="text-xl font-bold text-slate-900">
-          <span className="text-slate-400 mr-1">①</span>元請からの注文書
+          <span className="text-slate-400 mr-1">{k.no}</span>{k.title}
         </h1>
-        <p className="text-sm text-slate-500">
-          注文書から工事を登録します。まだ確定でなければ仮登録にできます。実行予算は空のまま作られます。
-        </p>
+        <p className="text-sm text-slate-500">{k.intro}</p>
       </div>
 
       <input
@@ -287,7 +337,7 @@ export default function ScanPrimeOrder() {
           <CardContent className="p-6 flex flex-col sm:flex-row gap-3 items-start sm:items-center">
             <Button onClick={() => fileRef.current?.click()}>
               <FileText className="w-4 h-4 mr-2" />
-              注文書のPDF・写真を選ぶ
+              {k.pickLabel}
             </Button>
             <Button variant="outline" onClick={() => { setAiRead(false); setWarnings([]); setStep("form"); }}>
               <Keyboard className="w-4 h-4 mr-2" />
@@ -391,7 +441,7 @@ export default function ScanPrimeOrder() {
               </div>
 
               <div>
-                <Label>注文者（得意先）</Label>
+                <Label>{k.clientLabel}</Label>
                 <div className="flex gap-2 mt-1">
                   <Select
                     value={clients.some((c) => c.clientCode === clientCode) ? clientCode : MANUAL_CLIENT}
@@ -422,14 +472,14 @@ export default function ScanPrimeOrder() {
                   <Input value={location} onChange={(e) => setLocation(e.target.value)} className="mt-1" />
                 </div>
                 <div>
-                  <Label>注文番号</Label>
+                  <Label>{k.numberLabel}</Label>
                   <Input value={orderNumber} onChange={(e) => setOrderNumber(e.target.value)} className="mt-1" />
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <Label>注文日</Label>
+                  <Label>{k.dateLabel}</Label>
                   <Input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} className="mt-1" />
                 </div>
                 <div>

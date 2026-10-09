@@ -76,7 +76,7 @@ export const projectsTable = pgTable("projects", {
   constructionHistoryType: text("construction_history_type"),
   constructionHistoryEngineer: text("construction_history_engineer"),
 
-  // ①元請注文書をスキャンして登録したときの原本（受領請求書と同じ保存先 received-invoices）
+  // ①元請注文書・②客先見積書/契約書をスキャンして登録したときの原本（受領請求書と同じ保存先 received-invoices）
   orderFilePath: text("order_file_path"),
   orderMediaType: text("order_media_type"),
 });
