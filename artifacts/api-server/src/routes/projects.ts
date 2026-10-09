@@ -343,8 +343,8 @@ router.post("/provisional", async (req, res) => {
  * POST /api/projects/from-order — ①元請注文書から工事を仮登録する
  *
  * 注文書をスキャンし、読み取った工事名・請負金額・工期を確認して保存する。
- * 部門は現場担当者が決める（追加依頼4）。読み込む人が部門を選べば（担当者本人など）その場で本登録、
- * 空なら仮登録で止め、担当者が「自分の現場」か工事詳細の「本登録する」で部門を選ぶ。
+ * 注文書が来た＝ほぼ確定なので、画面の既定は本登録（部門を渡す）。まだ確定でないときだけ
+ * 部門なしで送り、仮登録で止める。仮登録は担当者が「自分の現場」か工事詳細の「本登録する」で部門を選ぶ。
  *
  * targetProjectId を渡すと、先に作ってある仮登録の工事（③下請見積書などで作ったもの）に
  * 注文書の内容を入れる。作り直さないので、紐づけ済みの書類はそのまま残る。
@@ -357,7 +357,7 @@ router.post("/from-order", async (req, res) => {
       taxExcludedAmount, taxAmount, contractAmount, siteManager, orderNumber, fileBase64, mediaType,
       department, managementType,
     } = req.body;
-    // 部門が分かっていれば（担当者本人が読み込むときなど）その場で本登録する。空なら仮登録で止める
+    // 部門があれば本登録まで進める（画面で「本登録する」を選んだとき）。無ければ仮登録で止める
     const promoteNow = department != null && department !== "";
 
     if (!name || !String(name).trim()) {

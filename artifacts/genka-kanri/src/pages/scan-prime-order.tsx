@@ -18,9 +18,8 @@ import { takePendingScanFile } from "./scan-pending";
 // ─── ①元請からの注文書をスキャンして、工事を仮登録する ─────────────────────────
 //
 // 注文書を読み込み、AIが読んだ工事名・請負金額・工期を確かめて保存する。
-// 部門は現場担当者が決める（追加依頼4）。担当者本人が読み込むなど部門が分かっていれば
-// その場で本登録できる。空のままなら仮登録になり、担当者が「自分の現場」か工事詳細の
-// 「本登録する」で部門を選んで正式な工事にする（仮登録は必須ではない）。
+// 注文書が来た＝ほぼ確定なので、既定は「本登録」（部門と区分を選ぶ）。まだ確定でないときだけ
+// 「仮登録」を選ぶ（仮登録は任意）。仮登録では部門を聞かず、本登録のときに選ぶ。
 // 先に③下請見積書などで仮登録してある工事があれば、作り直さずにそこへ入れる。
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -96,10 +95,15 @@ export default function ScanPrimeOrder() {
   const [contract, setContract] = useState("");
   const [siteManager, setSiteManager] = useState("");
   const [target, setTarget] = useState(NEW_PROJECT);
-  // 部門は任意。選べばその場で本登録、空なら仮登録
+  // 登録の仕方。既定は本登録。部門は本登録のときだけ選ぶ
+  const [mode, setMode] = useState<"promote" | "provisional">("promote");
+  const promoteNow = mode === "promote";
   const [department, setDepartment] = useState("");
-  const [managementType, setManagementType] = useState<"normal" | "small">("normal");
-  const promoteNow = department !== "";
+  // 区分は人が選ぶまで請負金額から決める（税込100万以下＝小口。新規工事登録と同じ線引き）
+  const [pickedType, setPickedType] = useState<"normal" | "small" | null>(null);
+  const contractNum = parseFloat(contract);
+  const managementType = pickedType
+    ?? (Number.isFinite(contractNum) && contractNum > 0 && contractNum <= 1_000_000 ? "small" : "normal");
 
   // 画面を離れたらプレビュー用のURLを捨てる
   useEffect(() => () => { if (file) URL.revokeObjectURL(file.url); }, [file]);
@@ -195,13 +199,6 @@ export default function ScanPrimeOrder() {
     }
   };
 
-  const pickDepartment = (d: string) => {
-    setDepartment(d);
-    // 区分の線引きは税込100万（新規工事登録と同じ）。選び直せる初期値にする
-    const amount = parseFloat(contract);
-    setManagementType(Number.isFinite(amount) && amount > 0 && amount <= 1_000_000 ? "small" : "normal");
-  };
-
   const handleSave = async () => {
     if (!name.trim()) {
       toast({ title: "工事名を入力してください", variant: "destructive" });
@@ -213,7 +210,11 @@ export default function ScanPrimeOrder() {
       return;
     }
     if (!siteManager) {
-      toast({ title: "担当者を選んでください", description: "担当者が部門を選んで本登録します。", variant: "destructive" });
+      toast({ title: "担当者を選んでください", variant: "destructive" });
+      return;
+    }
+    if (promoteNow && !department) {
+      toast({ title: "部門を選んでください", description: "まだ確定でなければ「仮登録」にしてください。", variant: "destructive" });
       return;
     }
     setSaving(true);
@@ -235,8 +236,8 @@ export default function ScanPrimeOrder() {
           taxAmount: tax ? parseFloat(tax) : null,
           contractAmount: amount,
           siteManager,
-          department: department || null,
-          managementType,
+          department: promoteNow ? department : null,
+          managementType: promoteNow ? managementType : undefined,
           fileBase64: file?.base64,
           mediaType: file?.mediaType,
         }),
@@ -269,7 +270,7 @@ export default function ScanPrimeOrder() {
           <span className="text-slate-400 mr-1">①</span>元請からの注文書
         </h1>
         <p className="text-sm text-slate-500">
-          注文書から工事を登録します。部門が分からなければ仮登録にして、担当者が部門を決めて本登録します。実行予算は空のまま作られます。
+          注文書から工事を登録します。まだ確定でなければ仮登録にできます。実行予算は空のまま作られます。
         </p>
       </div>
 
@@ -335,6 +336,32 @@ export default function ScanPrimeOrder() {
               ))}
 
               <div>
+                <Label>登録の仕方</Label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  {([
+                    ["promote", "本登録する", "工事が決まっている（部門を選ぶ）"],
+                    ["provisional", "仮登録にする", "まだ確定でない（部門はあとで）"],
+                  ] as const).map(([v, label, hint]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setMode(v)}
+                      aria-pressed={mode === v}
+                      className={cn(
+                        "rounded-md border px-3 py-2 text-left transition-colors",
+                        mode === v
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-slate-200 text-slate-700 hover:border-primary/50",
+                      )}
+                    >
+                      <div className="text-sm font-semibold">{label}</div>
+                      <div className="text-xs text-slate-500">{hint}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
                 <Label>登録先</Label>
                 <Select value={target} onValueChange={(v) => {
                   setTarget(v);
@@ -343,7 +370,7 @@ export default function ScanPrimeOrder() {
                 }}>
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={NEW_PROJECT}>新しい工事として仮登録する</SelectItem>
+                    <SelectItem value={NEW_PROJECT}>新しい工事として登録する</SelectItem>
                     {provisionals.map((p) => (
                       <SelectItem key={p.id} value={String(p.id)}>
                         仮登録済みの工事に入れる：{p.name}
@@ -353,7 +380,7 @@ export default function ScanPrimeOrder() {
                 </Select>
                 {suggested && target === String(suggested.id) && (
                   <p className="text-xs text-teal-700 mt-1">
-                    工事名が近い仮登録の工事があったので選んでいます。別の工事なら「新しい工事として仮登録する」に変えてください。
+                    工事名が近い仮登録の工事があったので選んでいます。別の工事なら「新しい工事として登録する」に変えてください。
                   </p>
                 )}
               </div>
@@ -444,41 +471,35 @@ export default function ScanPrimeOrder() {
                 </p>
               </div>
 
-              <div className="rounded-md border border-slate-200 p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label>部門（分かれば）</Label>
-                  {promoteNow && (
-                    <button type="button" onClick={() => setDepartment("")} className="text-xs text-slate-500 hover:underline">
-                      あとで担当者が決める
-                    </button>
-                  )}
-                </div>
-                <DepartmentPicker value={department} onChange={pickDepartment} />
-                {promoteNow ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    {([["normal", "通常の工事"], ["small", "小口工事"]] as const).map(([v, label]) => (
-                      <button
-                        key={v}
-                        type="button"
-                        onClick={() => setManagementType(v)}
-                        aria-pressed={managementType === v}
-                        className={cn(
-                          "rounded-md border px-3 py-1.5 text-sm transition-colors",
-                          managementType === v
-                            ? "border-primary bg-primary/10 font-semibold text-primary"
-                            : "border-slate-200 text-slate-700 hover:border-primary/50",
-                        )}
-                      >
-                        {label}
-                      </button>
-                    ))}
+              {promoteNow && (
+                <div className="rounded-md border border-slate-200 p-3 space-y-3">
+                  <div>
+                    <Label>部門 <span className="text-destructive">*</span></Label>
+                    <DepartmentPicker className="mt-1" value={department} onChange={setDepartment} />
                   </div>
-                ) : (
-                  <p className="text-xs text-slate-500">
-                    空のままなら仮登録になり、担当者が部門を選んで本登録します。
-                  </p>
-                )}
-              </div>
+                  <div>
+                    <Label>区分</Label>
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                      {([["normal", "通常の工事"], ["small", "小口工事"]] as const).map(([v, label]) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => setPickedType(v)}
+                          aria-pressed={managementType === v}
+                          className={cn(
+                            "rounded-md border px-3 py-1.5 text-sm transition-colors",
+                            managementType === v
+                              ? "border-primary bg-primary/10 font-semibold text-primary"
+                              : "border-slate-200 text-slate-700 hover:border-primary/50",
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="flex justify-end gap-2 pt-2 border-t">
                 <Button variant="outline" onClick={() => navigate("/scan")} disabled={saving}>やめる</Button>

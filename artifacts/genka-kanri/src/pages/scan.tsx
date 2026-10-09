@@ -72,7 +72,7 @@ const DOC_TYPES: DocType[] = [
     key: "prime-order",
     no: "①",
     title: "元請からの注文書",
-    hint: "工事を登録します（部門が分からなければ仮登録）",
+    hint: "工事を登録します（まだ確定でなければ仮登録）",
     page: "/scan/prime-order",
     icon: FileText,
     ready: true,
