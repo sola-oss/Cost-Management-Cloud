@@ -19,7 +19,8 @@ import { takePendingScanFile } from "./scan-pending";
 //
 // AIが読んだ仕入先・表紙の行（名称・金額）を確かめ、行ごとに工種を選んで実行予算に入れる。
 // 見積書は印字の合計と実際に決まった額が違うことが多い（手書きの「改メ」・Net価格）。
-// 決定額を入れると、各行へ同じ割合で割り振る（案A・アイさん判断 2026-10-09）。割り振った額は直せる。
+// 行は最初は明細（印字）どおりに入る。決定額に合わせたいときだけ、ボタンで各行へ同じ割合で割り振る
+// （アイさん判断 2026-10-09：割り振りは最初からやらず、任意の操作にする）。割り振った額は直せる。
 // 工事が決まる前に届くことがあるので、工事が無ければその場で仮登録できる（追加依頼2）。
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -156,7 +157,7 @@ export default function ScanSubcontractEstimate() {
       // 決まった額が書かれていればそれを、無ければ印字の合計を決定額の初期値にする
       const dec = Number(d.decidedAmount) || printed;
       setDecided(String(dec));
-      setLines(allocate(read, dec));
+      setLines(read);
       setDecidedNote(Number(d.decidedAmount) ? (d.decidedNote || "書き込み") : "");
       setAiRead(true);
       const w: string[] = [];
@@ -182,16 +183,20 @@ export default function ScanSubcontractEstimate() {
   const linesTotal = lines.reduce((s, l) => s + (parseFloat(l.amount) || 0), 0);
   const totalsDiffer = lines.length > 0 && Math.round(linesTotal) !== Math.round(decidedNum);
 
-  const onDecidedChange = (v: string) => {
-    setDecided(v);
-    setLines((ls) => allocate(ls, parseFloat(v) || 0));
-  };
+  const onDecidedChange = (v: string) => setDecided(v);
+  const fitToDecided = () => setLines((ls) => allocate(ls, decidedNum));
+  const resetToPrinted = () => setLines((ls) => ls.map((l) => ({ ...l, amount: String(l.printed) })));
+  const isPrinted = lines.every((l) => Math.round(parseFloat(l.amount) || 0) === Math.round(l.printed));
+  const printedSum = lines.reduce((s, l) => s + l.printed, 0);
+  const ratio = printedSum !== 0 ? (decidedNum / printedSum) * 100 : null;
   const updateLine = (key: number, patch: Partial<Line>) =>
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   const mergeLines = () => {
     // 工種が1つの見積書（品物ごと・場所ごとに行が並ぶもの）は1行にまとめる
     const first = lines[0];
-    setLines([{ ...newLine(first?.name ?? "", printedTotal, first?.workTypeId ?? ""), amount: String(decidedNum) }]);
+    // 印字の額も今の金額も、そのまま足し合わせる（まとめただけで額が変わらないように）
+    const printed = lines.reduce((s, l) => s + l.printed, 0);
+    setLines([{ ...newLine(first?.name ?? "", printed, first?.workTypeId ?? ""), amount: String(linesTotal) }]);
   };
 
   const handleSave = async () => {
@@ -389,7 +394,7 @@ export default function ScanSubcontractEstimate() {
                 </p>
               ) : (
                 <p className="text-xs text-slate-500 -mt-2">
-                  値引きなどで決まった額が違うときは、決定額を直してください。各行に同じ割合で割り振ります。
+                  値引きなどで決まった額が違うときは、決定額を直してください。
                 </p>
               )}
 
@@ -454,6 +459,25 @@ export default function ScanSubcontractEstimate() {
                   行の合計 {formatCurrency(linesTotal)}
                   {totalsDiffer && `（決定額と ${formatCurrency(linesTotal - decidedNum)} ずれています）`}
                 </div>
+                {/* 決定額に合わせるのは任意。押したときだけ割り振る */}
+                {totalsDiffer && printedSum !== 0 && (
+                  <div className="rounded-md bg-amber-50 border border-amber-200 px-2.5 py-2 text-xs text-amber-900 flex flex-wrap items-center gap-2">
+                    <span className="flex-1 min-w-[12rem]">
+                      行は明細どおりの金額です。決定額に合わせるなら、各行を印字の額の
+                      {ratio != null ? ` ${ratio.toFixed(1)}%` : "同じ割合"}にします。
+                    </span>
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={fitToDecided}>
+                      決定額に合わせて割り振る
+                    </Button>
+                  </div>
+                )}
+                {!isPrinted && (
+                  <div className="text-right">
+                    <button type="button" onClick={resetToPrinted} className="text-xs text-slate-500 hover:underline">
+                      明細どおりの金額に戻す
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t">
