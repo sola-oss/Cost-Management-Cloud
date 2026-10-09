@@ -342,9 +342,9 @@ router.post("/provisional", async (req, res) => {
 /**
  * POST /api/projects/from-order — ①元請注文書から工事を仮登録する
  *
- * 事務が注文書をスキャンし、読み取った工事名・請負金額・工期を確認して保存する。
- * 部門は現場担当者が決めるので（追加依頼4）、ここでは仮登録のまま止める。担当者が
- * 「自分の現場」または工事詳細の「本登録する」で部門を選ぶと正式な工事になる。
+ * 注文書をスキャンし、読み取った工事名・請負金額・工期を確認して保存する。
+ * 部門は現場担当者が決める（追加依頼4）。読み込む人が部門を選べば（担当者本人など）その場で本登録、
+ * 空なら仮登録で止め、担当者が「自分の現場」か工事詳細の「本登録する」で部門を選ぶ。
  *
  * targetProjectId を渡すと、先に作ってある仮登録の工事（③下請見積書などで作ったもの）に
  * 注文書の内容を入れる。作り直さないので、紐づけ済みの書類はそのまま残る。
@@ -355,7 +355,10 @@ router.post("/from-order", async (req, res) => {
     const {
       targetProjectId, name, clientName, clientCode, location, orderDate, startDate, endDate,
       taxExcludedAmount, taxAmount, contractAmount, siteManager, orderNumber, fileBase64, mediaType,
+      department, managementType,
     } = req.body;
+    // 部門が分かっていれば（担当者本人が読み込むときなど）その場で本登録する。空なら仮登録で止める
+    const promoteNow = department != null && department !== "";
 
     if (!name || !String(name).trim()) {
       return res.status(400).json({ message: "工事名は必須です" });
@@ -367,6 +370,11 @@ router.post("/from-order", async (req, res) => {
     if (!siteManager || !String(siteManager).trim()) {
       // 部門を決めるのは担当者。担当者が決まっていないと、誰の「自分の現場」にも出ず本登録されない
       return res.status(400).json({ message: "担当者を選んでください（担当者が部門を決めて本登録します）" });
+    }
+
+    if (promoteNow) {
+      const invalid = validatePromote({ department, managementType, contractAmount: amount });
+      if (invalid) return res.status(400).json({ message: invalid });
     }
 
     let target: typeof projectsTable.$inferSelect | undefined;
@@ -410,24 +418,35 @@ router.post("/from-order", async (req, res) => {
       updatedAt: new Date(),
     };
 
+    // まず仮登録として保存し（既存の仮登録なら上書き）、部門があればそのまま本登録する
+    let saved: typeof projectsTable.$inferSelect | null = null;
     if (target) {
       const [updated] = await db.update(projectsTable).set(fields)
         .where(and(eq(projectsTable.id, target.id), eq(projectsTable.status, "provisional"))).returning();
       if (!updated) return res.status(409).json({ message: "この工事はすでに本登録されています" });
-      return res.json({ ...updated, contractAmount: parseNumeric(updated.contractAmount) });
+      saved = updated;
+    } else {
+      saved = await withAutoProjectCode("仮", 4, "", async (projectCode) => {
+        const [row] = await db.insert(projectsTable).values({
+          ...fields,
+          projectCode,
+          status: "provisional",
+          managementType: "normal",
+        }).returning();
+        return row;
+      });
+      if (!saved) return res.status(409).json({ message: "工事番号の自動採番に失敗しました。時間をおいて再度お試しください。" });
     }
 
-    const project = await withAutoProjectCode("仮", 4, "", async (projectCode) => {
-      const [row] = await db.insert(projectsTable).values({
-        ...fields,
-        projectCode,
-        status: "provisional",
-        managementType: "normal",
-      }).returning();
-      return row;
-    });
-    if (project) return res.status(201).json({ ...project, contractAmount: parseNumeric(project.contractAmount) });
-    return res.status(409).json({ message: "工事番号の自動採番に失敗しました。時間をおいて再度お試しください。" });
+    if (promoteNow) {
+      const promoted = await promoteProject(saved.id, {
+        department, managementType, contractAmount: amount, startDate: fields.startDate, endDate: fields.endDate,
+      });
+      if (promoted === "already") return res.status(409).json({ message: "この工事はすでに本登録されています" });
+      // 番号が振れなかったときは仮登録のまま返す（工事詳細の「本登録する」からやり直せる）
+      if (promoted) saved = promoted;
+    }
+    return res.status(target ? 200 : 201).json({ ...saved, contractAmount: parseNumeric(saved.contractAmount) });
   } catch (err) {
     req.log.error({ err }, "Failed to create project from prime order");
     return res.status(500).json({ message: "Internal server error" });
@@ -465,48 +484,67 @@ router.get("/:id/order-file", async (req, res) => {
  * 同じ工事を作り直さずに格上げするので、仮登録中に紐づけた書類・原価はそのまま残る。
  * 工事番号は正式な番号（YYYYMM####-00）に付け替える。
  */
+type PromoteInput = {
+  department: unknown;
+  managementType?: unknown;
+  contractAmount: unknown;
+  startDate?: unknown;
+  endDate?: unknown;
+};
+
+/** 本登録の入力を確かめる。問題があれば日本語のメッセージを返す */
+function validatePromote(input: PromoteInput): string | null {
+  if (!isProjectDepartment(input.department)) return "部門（おおつか／冨士岡工務店）を選んでください";
+  const mt = input.managementType ?? "normal";
+  if (mt !== "normal" && mt !== "small") return "区分が正しくありません";
+  const amount = typeof input.contractAmount === "string" ? parseFloat(input.contractAmount) : Number(input.contractAmount);
+  if (!Number.isFinite(amount) || amount < 0) return "請負金額を正しく入力してください";
+  return null;
+}
+
+/**
+ * 仮登録の工事を本登録にする（validatePromote を通した入力で呼ぶ）。
+ * 二度押しなどで先に本登録されていたら "already"、番号が振れなければ null。
+ */
+async function promoteProject(id: number, input: PromoteInput) {
+  const managementType = (input.managementType ?? "normal") as "normal" | "small";
+  const amount = typeof input.contractAmount === "string" ? parseFloat(input.contractAmount) : Number(input.contractAmount);
+  const today = new Date().toISOString().slice(0, 10);
+  const start = toDateString(input.startDate) ?? today;
+  const end = toDateString(input.endDate) ?? start;
+
+  let alreadyPromoted = false;
+  const project = await withRegularProjectCode(async (projectCode) => {
+    const [row] = await db.update(projectsTable).set({
+      projectCode,
+      department: input.department as string,
+      managementType,
+      contractAmount: String(amount),
+      // 小口は登録した時点で「施工中」（小口の新規登録と同じ）
+      status: managementType === "small" ? "active" : "planning",
+      startDate: start,
+      endDate: end,
+      updatedAt: new Date(),
+    }).where(and(eq(projectsTable.id, id), eq(projectsTable.status, "provisional"))).returning();
+    if (!row) alreadyPromoted = true;
+    return row ?? null;
+  });
+  return alreadyPromoted ? "already" as const : project;
+}
+
 router.post("/:id/promote", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { department, managementType = "normal", contractAmount, startDate, endDate } = req.body;
-
     const [current] = await db.select().from(projectsTable).where(eq(projectsTable.id, id));
     if (!current) return res.status(404).json({ message: "工事が見つかりません" });
     if (current.status !== "provisional") {
       return res.status(400).json({ message: "この工事はすでに本登録されています" });
     }
-    if (!isProjectDepartment(department)) {
-      return res.status(400).json({ message: "部門（おおつか／冨士岡工務店）を選んでください" });
-    }
-    if (managementType !== "normal" && managementType !== "small") {
-      return res.status(400).json({ message: "区分が正しくありません" });
-    }
-    const amount = typeof contractAmount === "string" ? parseFloat(contractAmount) : Number(contractAmount);
-    if (!Number.isFinite(amount) || amount < 0) {
-      return res.status(400).json({ message: "請負金額を正しく入力してください" });
-    }
-    const today = new Date().toISOString().slice(0, 10);
-    const start = toDateString(startDate) ?? today;
-    const end = toDateString(endDate) ?? start;
+    const invalid = validatePromote(req.body);
+    if (invalid) return res.status(400).json({ message: invalid });
 
-    // 二度押しなどで先に本登録されていたら、更新0件で null を返す（番号の振り直しはしない）
-    let alreadyPromoted = false;
-    const project = await withRegularProjectCode(async (projectCode) => {
-      const [row] = await db.update(projectsTable).set({
-        projectCode,
-        department,
-        managementType,
-        contractAmount: String(amount),
-        // 小口は登録した時点で「施工中」（小口の新規登録と同じ）
-        status: managementType === "small" ? "active" : "planning",
-        startDate: start,
-        endDate: end,
-        updatedAt: new Date(),
-      }).where(and(eq(projectsTable.id, id), eq(projectsTable.status, "provisional"))).returning();
-      if (!row) alreadyPromoted = true;
-      return row ?? null;
-    });
-    if (alreadyPromoted) return res.status(409).json({ message: "この工事はすでに本登録されています" });
+    const project = await promoteProject(id, req.body);
+    if (project === "already") return res.status(409).json({ message: "この工事はすでに本登録されています" });
     if (project) return res.json({ ...project, contractAmount: parseNumeric(project.contractAmount) });
     return res.status(409).json({ message: "工事番号の自動採番に失敗しました。時間をおいて再度お試しください。" });
   } catch (err) {

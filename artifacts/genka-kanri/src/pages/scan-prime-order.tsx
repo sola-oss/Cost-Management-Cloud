@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { NumberInput } from "@/components/ui/number-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MasterSelect } from "@/components/master-select";
+import { DepartmentPicker } from "@/components/department-picker";
 import { useStaffMembers } from "@/hooks/use-staff-members";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -16,9 +17,10 @@ import { takePendingScanFile } from "./scan-pending";
 
 // ─── ①元請からの注文書をスキャンして、工事を仮登録する ─────────────────────────
 //
-// 事務が注文書を読み込み、AIが読んだ工事名・請負金額・工期を確かめて保存する。
-// 部門は現場担当者が決める（追加依頼4）ので、ここでは聞かない。保存すると仮登録になり、
-// 担当者が「自分の現場」か工事詳細の「本登録する」で部門を選んで正式な工事にする。
+// 注文書を読み込み、AIが読んだ工事名・請負金額・工期を確かめて保存する。
+// 部門は現場担当者が決める（追加依頼4）。担当者本人が読み込むなど部門が分かっていれば
+// その場で本登録できる。空のままなら仮登録になり、担当者が「自分の現場」か工事詳細の
+// 「本登録する」で部門を選んで正式な工事にする（仮登録は必須ではない）。
 // 先に③下請見積書などで仮登録してある工事があれば、作り直さずにそこへ入れる。
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -94,6 +96,10 @@ export default function ScanPrimeOrder() {
   const [contract, setContract] = useState("");
   const [siteManager, setSiteManager] = useState("");
   const [target, setTarget] = useState(NEW_PROJECT);
+  // 部門は任意。選べばその場で本登録、空なら仮登録
+  const [department, setDepartment] = useState("");
+  const [managementType, setManagementType] = useState<"normal" | "small">("normal");
+  const promoteNow = department !== "";
 
   // 画面を離れたらプレビュー用のURLを捨てる
   useEffect(() => () => { if (file) URL.revokeObjectURL(file.url); }, [file]);
@@ -189,6 +195,13 @@ export default function ScanPrimeOrder() {
     }
   };
 
+  const pickDepartment = (d: string) => {
+    setDepartment(d);
+    // 区分の線引きは税込100万（新規工事登録と同じ）。選び直せる初期値にする
+    const amount = parseFloat(contract);
+    setManagementType(Number.isFinite(amount) && amount > 0 && amount <= 1_000_000 ? "small" : "normal");
+  };
+
   const handleSave = async () => {
     if (!name.trim()) {
       toast({ title: "工事名を入力してください", variant: "destructive" });
@@ -222,6 +235,8 @@ export default function ScanPrimeOrder() {
           taxAmount: tax ? parseFloat(tax) : null,
           contractAmount: amount,
           siteManager,
+          department: department || null,
+          managementType,
           fileBase64: file?.base64,
           mediaType: file?.mediaType,
         }),
@@ -229,10 +244,9 @@ export default function ScanPrimeOrder() {
       const body = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(body.message ?? "保存に失敗しました");
       qc.invalidateQueries({ predicate: (q) => String(q.queryKey[0] ?? "").includes("/projects") });
-      toast({
-        title: "工事を仮登録しました",
-        description: `${siteManager}さんが部門を選ぶと本登録になります。`,
-      });
+      toast(body.status === "provisional"
+        ? { title: "工事を仮登録しました", description: `${siteManager}さんが部門を選ぶと本登録になります。` }
+        : { title: "工事を本登録しました", description: `工事番号 ${body.projectCode}` });
       navigate(`/projects/${body.id}?tab=basic`);
     } catch (e) {
       toast({ title: "保存できませんでした", description: e instanceof Error ? e.message : "", variant: "destructive" });
@@ -255,7 +269,7 @@ export default function ScanPrimeOrder() {
           <span className="text-slate-400 mr-1">①</span>元請からの注文書
         </h1>
         <p className="text-sm text-slate-500">
-          注文書から工事を仮登録します。部門は担当者が決めて本登録します。実行予算は空のまま作られます。
+          注文書から工事を登録します。部門が分からなければ仮登録にして、担当者が部門を決めて本登録します。実行予算は空のまま作られます。
         </p>
       </div>
 
@@ -293,13 +307,14 @@ export default function ScanPrimeOrder() {
 
       {step === "form" && (
         <div className={cn("grid gap-4", file ? "lg:grid-cols-2" : "")}>
+          {/* 右の入力欄の高さに合わせて伸びるので、原本も枠いっぱいに広げる（下に白い余白を残さない） */}
           {file && (
-            <Card className="overflow-hidden">
-              <CardContent className="p-0 h-[70vh] bg-slate-100">
+            <Card className="overflow-hidden flex flex-col">
+              <CardContent className="p-0 flex-1 min-h-[70vh] relative bg-slate-100">
                 {file.mediaType === "application/pdf" ? (
-                  <iframe src={file.url} title={file.name} className="w-full h-full" />
+                  <iframe src={file.url} title={file.name} className="absolute inset-0 w-full h-full" />
                 ) : (
-                  <img src={file.url} alt={file.name} className="w-full h-full object-contain" />
+                  <img src={file.url} alt={file.name} className="absolute inset-0 w-full h-full object-contain" />
                 )}
               </CardContent>
             </Card>
@@ -425,15 +440,51 @@ export default function ScanPrimeOrder() {
                   placeholder="担当者を選択"
                 />
                 <p className="text-xs text-slate-400 mt-1">
-                  この工事は担当者の「自分の現場」に出ます。担当者が部門を選ぶと本登録になります。
+                  この工事は担当者の「自分の現場」に出ます。
                 </p>
+              </div>
+
+              <div className="rounded-md border border-slate-200 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>部門（分かれば）</Label>
+                  {promoteNow && (
+                    <button type="button" onClick={() => setDepartment("")} className="text-xs text-slate-500 hover:underline">
+                      あとで担当者が決める
+                    </button>
+                  )}
+                </div>
+                <DepartmentPicker value={department} onChange={pickDepartment} />
+                {promoteNow ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {([["normal", "通常の工事"], ["small", "小口工事"]] as const).map(([v, label]) => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => setManagementType(v)}
+                        aria-pressed={managementType === v}
+                        className={cn(
+                          "rounded-md border px-3 py-1.5 text-sm transition-colors",
+                          managementType === v
+                            ? "border-primary bg-primary/10 font-semibold text-primary"
+                            : "border-slate-200 text-slate-700 hover:border-primary/50",
+                        )}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">
+                    空のままなら仮登録になり、担当者が部門を選んで本登録します。
+                  </p>
+                )}
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t">
                 <Button variant="outline" onClick={() => navigate("/scan")} disabled={saving}>やめる</Button>
                 <Button onClick={handleSave} disabled={saving}>
                   {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-                  仮登録する
+                  {promoteNow ? "本登録する" : "仮登録する"}
                 </Button>
               </div>
             </CardContent>
