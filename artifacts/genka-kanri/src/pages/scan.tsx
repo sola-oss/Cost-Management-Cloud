@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/utils";
 import { readOneFile, AiUnavailableError, type ImportStage } from "./received-invoices/import";
 import { setPendingScanFile } from "./scan-pending";
-import { ScanLine, FileText, Truck, Loader2, Keyboard } from "lucide-react";
+import { ScanLine, FileText, Truck, Loader2, Keyboard, Upload, CheckCircle2 } from "lucide-react";
 
 // ─── スキャンする（読み込み）──────────────────────────────────────────────────
 //
@@ -33,29 +33,11 @@ type DocType = {
 
 const DOC_TYPES: DocType[] = [
   {
-    key: "subcontract-invoice",
-    no: "⑤",
-    title: "下請からの請求書",
-    hint: "確定原価として計上します",
-    stage: "confirmed",
-    icon: FileText,
-    ready: true,
-  },
-  {
-    key: "subcontract-delivery",
-    no: "④",
-    title: "下請からの納品書",
-    hint: "仮原価として記録します（請求書が届くまで原価には入れません）",
-    stage: "provisional",
-    icon: Truck,
-    ready: true,
-  },
-  {
-    key: "subcontract-estimate",
-    no: "③",
-    title: "下請の見積書",
-    hint: "実行予算に入れます（工事が無ければその場で仮登録）",
-    page: "/scan/subcontract-estimate",
+    key: "prime-order",
+    no: "①",
+    title: "元請からの注文書",
+    hint: "工事を登録します（まだ確定でなければ仮登録）",
+    page: "/scan/prime-order",
     icon: FileText,
     ready: true,
   },
@@ -69,11 +51,29 @@ const DOC_TYPES: DocType[] = [
     ready: true,
   },
   {
-    key: "prime-order",
-    no: "①",
-    title: "元請からの注文書",
-    hint: "工事を登録します（まだ確定でなければ仮登録）",
-    page: "/scan/prime-order",
+    key: "subcontract-estimate",
+    no: "③",
+    title: "下請の見積書",
+    hint: "実行予算に入れます（工事が無ければその場で仮登録）",
+    page: "/scan/subcontract-estimate",
+    icon: FileText,
+    ready: true,
+  },
+  {
+    key: "subcontract-delivery",
+    no: "④",
+    title: "下請からの納品書",
+    hint: "仮原価として記録します（請求書が届くまで原価には入れません）",
+    stage: "provisional",
+    icon: Truck,
+    ready: true,
+  },
+  {
+    key: "subcontract-invoice",
+    no: "⑤",
+    title: "下請からの請求書",
+    hint: "確定原価として計上します",
+    stage: "confirmed",
     icon: FileText,
     ready: true,
   },
@@ -96,6 +96,7 @@ export default function Scan() {
 
   const [picked, setPicked] = useState<DocType | null>(null);
   const [reading, setReading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number; current: string } | null>(null);
 
   // 読み取りはブラウザから1件ずつ投げている。画面を移っても続くが、タブを閉じると止まる。
@@ -111,10 +112,24 @@ export default function Scan() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [reading]);
 
-  const start = (t: DocType) => {
-    setPicked(t);
-    // 種類を選んでからファイルを選ぶ。選んだ種類で段階が決まる
-    setTimeout(() => fileRef.current?.click(), 0);
+  // 種類を選んでからファイルを選ぶ（仕入の振り分けの取り込みと同じ置き場を下に出す）。
+  // 選んだ種類で段階や読み取り先の画面が決まるので、種類を選ぶまでは取り込めない。
+  const pick = (t: DocType) => setPicked(t);
+
+  const openPicker = () => {
+    if (!picked) {
+      toast({ title: "先に書類の種類を選んでください", variant: "destructive" });
+      return;
+    }
+    fileRef.current?.click();
+  };
+
+  const handleDrop = (files: File[]) => {
+    if (!picked) {
+      toast({ title: "先に書類の種類を選んでください", description: "上の①〜⑤から選んでから、もう一度入れてください。", variant: "destructive" });
+      return;
+    }
+    handleFiles(files);
   };
 
   const handleFiles = async (selected: File[]) => {
@@ -234,18 +249,22 @@ export default function Scan() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {DOC_TYPES.map((t) => {
           const Icon = t.icon;
+          const selected = picked?.key === t.key;
           return (
             <button
               key={t.key}
               type="button"
               disabled={!t.ready || reading}
-              onClick={() => start(t)}
-              className={`text-left rounded-xl border p-4 transition-colors ${
-                t.ready
-                  ? "bg-white border-slate-200 hover:border-teal-400 hover:bg-teal-50/40 cursor-pointer"
-                  : "bg-slate-50 border-slate-200 opacity-70 cursor-not-allowed"
+              onClick={() => pick(t)}
+              className={`relative text-left rounded-xl border p-4 transition-colors ${
+                !t.ready
+                  ? "bg-slate-50 border-slate-200 opacity-70 cursor-not-allowed"
+                  : selected
+                    ? "bg-teal-50 border-teal-500 ring-2 ring-teal-500/30 cursor-pointer"
+                    : "bg-white border-slate-200 hover:border-teal-400 hover:bg-teal-50/40 cursor-pointer"
               }`}
             >
+              {selected && <CheckCircle2 className="absolute top-3 right-3 w-5 h-5 text-teal-600" />}
               <div className="flex items-start gap-3">
                 <div className={`p-2 rounded-lg ${t.ready ? "bg-teal-100 text-teal-700" : "bg-slate-200 text-slate-500"}`}>
                   <Icon className="w-4 h-4" />
@@ -265,6 +284,48 @@ export default function Scan() {
           );
         })}
       </div>
+
+      {/* 取り込みの置き場。種類を選ぶまでは押しても入れても取り込まない */}
+      <button
+        type="button"
+        disabled={reading}
+        onClick={openPicker}
+        onDragOver={(e) => { e.preventDefault(); if (!reading && picked) setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          if (reading) return;
+          handleDrop(Array.from(e.dataTransfer.files ?? []));
+        }}
+        className={`w-full border-2 border-dashed rounded-xl py-10 text-center transition-colors disabled:opacity-60 ${
+          !picked
+            ? "border-slate-200 bg-slate-50 cursor-not-allowed"
+            : dragOver
+              ? "border-teal-500 bg-teal-50"
+              : "border-teal-300 bg-white hover:border-teal-500 hover:bg-teal-50/40"
+        }`}
+      >
+        {picked ? (
+          <div className="flex flex-col items-center gap-2">
+            <Upload className="w-6 h-6 text-teal-600" />
+            <span className="text-sm font-semibold text-slate-700">
+              {picked.no} {picked.title} のPDF・写真を選ぶ
+              {picked.page ? "" : "（まとめて選べます）"}
+            </span>
+            <span className="text-xs text-slate-400">
+              ここにドラッグしても取り込めます。
+              {picked.page ? "この書類は1件ずつ読み込みます" : `一度に${MAX_FILES}件まで（1件30秒〜3分）`}
+            </span>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-2">
+            <Upload className="w-6 h-6 text-slate-300" />
+            <span className="text-sm font-semibold text-slate-400">先に上で書類の種類を選んでください</span>
+            <span className="text-xs text-slate-400">種類を選ぶと、ここにPDF・写真を入れられるようになります</span>
+          </div>
+        )}
+      </button>
 
       <Card className="border-slate-200">
         <CardContent className="p-4 space-y-2">

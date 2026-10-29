@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -228,6 +228,7 @@ function NewProjectDialog({
 }
 
 export default function Projects() {
+  const [, navigate] = useLocation();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [pickerOpen, setPickerOpen] = useState(false);
   // 「新規工事登録」→ 金額を聞く → 小口ならその場で入力、通常なら従来の登録画面へ
@@ -410,7 +411,11 @@ export default function Projects() {
                       {projects.map((project) => {
                         const profit = (project.contractAmount ?? 0) - (project.totalActualCost ?? 0);
                         return (
-                          <TableRow key={project.id} className="hover:bg-slate-50/50">
+                          <TableRow
+                            key={project.id}
+                            className="hover:bg-slate-50 cursor-pointer"
+                            onClick={() => navigate(`/projects/${project.id}`)}
+                          >
                             <TableCell className="font-medium text-slate-900">
                               {project.name}
                               <span className="ml-2 font-mono text-xs text-slate-400">{project.projectCode}</span>
@@ -424,7 +429,7 @@ export default function Projects() {
                                 <span className="ml-1 text-xs text-slate-400">{formatPercent(project.grossProfitRate)}</span>
                               )}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                               <Button variant="ghost" size="sm" asChild>
                                 <Link href={`/projects/${project.id}`}>詳細</Link>
                               </Button>
@@ -509,7 +514,12 @@ export default function Projects() {
                   </TableRow>
                 ) : (
                   projects.map((project) => (
-                    <TableRow key={project.id} className="hover:bg-slate-50/50">
+                    // 行のどこを押しても工事詳細を開く（「詳細」ボタンまで行かなくてよいように）
+                    <TableRow
+                      key={project.id}
+                      className="hover:bg-slate-50 cursor-pointer"
+                      onClick={() => navigate(`/projects/${project.id}`)}
+                    >
                       <TableCell className="font-mono text-xs text-slate-600">{project.projectCode}</TableCell>
                       <TableCell className="font-medium text-slate-900">
                         <div className="flex items-center gap-2">
@@ -559,7 +569,8 @@ export default function Projects() {
                           </span>
                         )}
                       </TableCell>
-                      <TableCell>
+                      {/* ボタンを押したときに行のクリックまで拾うと、実行予算ではなく詳細へ飛んでしまう */}
+                      <TableCell onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">
                           {project.managementType !== "small" && (
                             <Button
