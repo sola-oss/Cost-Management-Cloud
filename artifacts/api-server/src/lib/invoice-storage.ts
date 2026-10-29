@@ -89,6 +89,16 @@ export async function readLocalFile(key: string): Promise<Buffer | null> {
   }
 }
 
+/** 原本ファイルの中身を読む（本番は Supabase から取ってくる）。無ければ null。 */
+export async function readStoredFile(key: string): Promise<Buffer | null> {
+  if (storageMode !== "supabase") return readLocalFile(key);
+  const r = await fetch(`${SUPABASE_URL}/storage/v1/object/authenticated/${BUCKET}/${encodeURI(key)}`, {
+    headers: { Authorization: `Bearer ${SUPABASE_KEY}` },
+  });
+  if (!r.ok) return null;
+  return Buffer.from(await r.arrayBuffer());
+}
+
 /** 原本ファイルを削除する（受領請求書の取消時など）。存在しなくてもエラーにしない。 */
 export async function deleteInvoiceFile(key: string): Promise<void> {
   if (storageMode === "supabase") {

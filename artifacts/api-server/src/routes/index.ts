@@ -26,6 +26,7 @@ import purchaseInvoicesRouter from "./purchase-invoices";
 import unitPricesRouter from "./unit-prices";
 import constructionCategoriesRouter from "./construction-categories";
 import staffMembersRouter from "./staff-members";
+import scanDraftsRouter from "./scan-drafts";
 import usersRouter from "./users";
 import aiExtractRouter from "./ai-extract";
 import receivedInvoicesRouter from "./received-invoices";
@@ -66,5 +67,6 @@ router.use("/staff-members", staffMembersRouter);
 router.use("/users", usersRouter);
 router.use("/ai-extract", aiExtractRouter);
 router.use("/received-invoices", receivedInvoicesRouter);
+router.use("/scan-drafts", scanDraftsRouter);
 
 export default router;

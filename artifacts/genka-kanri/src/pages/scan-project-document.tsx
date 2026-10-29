@@ -13,7 +13,7 @@ import { DepartmentPicker } from "@/components/department-picker";
 import { useStaffMembers } from "@/hooks/use-staff-members";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { takePendingScanFile } from "./scan-pending";
+import { draftIdFromUrl, loadScanDraft, finishScanDraft, remainingScanDrafts, SCAN_DRAFTS_QUERY_KEY } from "./scan-drafts";
 
 // ─── 書類をスキャンして工事を登録する（①元請注文書・②客先見積書/契約書）──────────────
 //
@@ -188,6 +188,24 @@ function ScanProjectDocument({ kind }: { kind: DocumentKind }) {
     setContract(amountStr(d.taxIncludedAmount));
   };
 
+  // AIの読み取り結果を入力欄に入れる。その場で読んだときも、下書きを開き直したときも同じ
+  const applyRead = (body: any) => {
+    const match = (body.clientMatches ?? [])[0];
+    applyDraft(body.draft as Draft, match);
+    setAiRead(true);
+    const w: string[] = [];
+    if (body.amountMismatch) w.push("税抜＋消費税が税込の額と合いません。金額を確かめてください。");
+    if (body.draft?.handwritten) w.push("手書きの部分があります。金額と工期を特に確かめてください。");
+    if (!match && body.draft?.clientName) w.push(k.missingClient(body.draft.clientName));
+    setWarnings(w);
+  };
+
+  // 読めなくても原本は残して、手で入れてもらう
+  const applyReadError = (message: string) => {
+    setAiRead(false);
+    setWarnings([`${message}　内容は手で入力してください。`]);
+  };
+
   const handleFile = async (f: File | undefined) => {
     if (!f) return;
     const base64 = await new Promise<string>((resolve, reject) => {
@@ -207,28 +225,31 @@ function ScanProjectDocument({ kind }: { kind: DocumentKind }) {
       });
       const body = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(body.message ?? "読み取りに失敗しました");
-      const match = (body.clientMatches ?? [])[0];
-      applyDraft(body.draft as Draft, match);
-      setAiRead(true);
-      const w: string[] = [];
-      if (body.amountMismatch) w.push("税抜＋消費税が税込の額と合いません。金額を確かめてください。");
-      if (body.draft?.handwritten) w.push("手書きの部分があります。金額と工期を特に確かめてください。");
-      if (!match && body.draft?.clientName) w.push(k.missingClient(body.draft.clientName));
-      setWarnings(w);
+      applyRead(body);
     } catch (e) {
-      // 読めなくても原本は残して、手で入れてもらう
-      setAiRead(false);
-      setWarnings([`${e instanceof Error ? e.message : "読み取りに失敗しました"}　内容は手で入力してください。`]);
+      applyReadError(e instanceof Error ? e.message : "読み取りに失敗しました");
     }
     setStep("form");
   };
 
-  // スキャンする画面でファイルを選んでから来たときは、すぐ読み取りを始める。
-  // 直接開いた・再読み込みしたときは、この画面でファイルを選んでもらう
+  // スキャンする画面で取り込んだ下書き（?draft=ID）から来たときは、取り込み時の読み取り結果を開く。
+  // 直接開いたときは、この画面でファイルを選んでもらう
+  const [draftId] = useState(draftIdFromUrl);
   useEffect(() => {
-    const f = takePendingScanFile();
-    if (f) handleFile(f);
-  }, []);
+    if (!draftId) return;
+    setStep("reading");
+    loadScanDraft(draftId)
+      .then((d) => {
+        setFile(d.file);
+        if (d.extract) applyRead(d.extract);
+        else applyReadError(d.error ?? "読み取りに失敗しました");
+        setStep("form");
+      })
+      .catch((e) => {
+        toast({ title: "開けませんでした", description: e instanceof Error ? e.message : "", variant: "destructive" });
+        navigate("/scan");
+      });
+  }, [draftId]);
 
   // 仮登録の候補が見つかったら、最初の1回だけそちらを選んでおく（人が選び直せる）
   const suggestedOnce = useRef(false);
@@ -296,11 +317,17 @@ function ScanProjectDocument({ kind }: { kind: DocumentKind }) {
       });
       const body = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(body.message ?? "保存に失敗しました");
+      if (draftId) {
+        await finishScanDraft(draftId, body.id);
+        qc.invalidateQueries({ queryKey: SCAN_DRAFTS_QUERY_KEY });
+      }
       qc.invalidateQueries({ predicate: (q) => String(q.queryKey[0] ?? "").includes("/projects") });
       toast(body.status === "provisional"
         ? { title: "工事を仮登録しました", description: `${siteManager}さんが部門を選ぶと本登録になります。` }
         : { title: "工事を本登録しました", description: `工事番号 ${body.projectCode}` });
-      navigate(`/projects/${body.id}?tab=basic`);
+      // 確認待ちが残っていれば一覧へ戻り、続けて次を開けるようにする
+      if (draftId && (await remainingScanDrafts()) > 0) navigate("/scan");
+      else navigate(`/projects/${body.id}?tab=basic`);
     } catch (e) {
       toast({ title: "保存できませんでした", description: e instanceof Error ? e.message : "", variant: "destructive" });
     } finally {

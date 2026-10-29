@@ -1,21 +1,29 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent } from "@/components/ui/card";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/utils";
 import { readOneFile, AiUnavailableError, type ImportStage } from "./received-invoices/import";
-import { setPendingScanFile } from "./scan-pending";
-import { ScanLine, FileText, Truck, Loader2, Keyboard, Upload, CheckCircle2 } from "lucide-react";
+import {
+  createScanDraft,
+  SCAN_DRAFT_PAGE,
+  SCAN_DRAFTS_QUERY_KEY,
+  type ScanDraftKind,
+  type ScanDraftRow,
+} from "./scan-drafts";
+import { ScanLine, FileText, Truck, Loader2, Keyboard, Upload, Trash2, ChevronRight } from "lucide-react";
 
 // ─── スキャンする（読み込み）──────────────────────────────────────────────────
 //
 // おおつか様の依頼（2026-09-10）：書類のスキャンを起点に登録できるようにする。
-// 書類の種類は①〜⑤。④下請納品書・⑤下請請求書は仕入の振り分けへ、①元請注文書・
-// ②客先見積書/契約書は工事登録の画面（/scan/prime-order・/scan/client-estimate）へ、
-// ③下請見積書は実行予算に入れる画面（/scan/subcontract-estimate）へ進む。
+// 書類の種類は①〜⑤。④下請納品書・⑤下請請求書は仕入の振り分けの下書きに、
+// ①元請注文書・②客先見積書/契約書・③下請見積書はこの画面の「確認待ちの書類」に下書きとして並ぶ。
+// ①②は工事登録の画面（/scan/prime-order・/scan/client-estimate）、③は実行予算に入れる画面
+// （/scan/subcontract-estimate）を ?draft=ID で開いて、1件ずつ確かめて登録する。
 
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const MAX_FILES = 10;
 
 type DocType = {
@@ -92,9 +100,33 @@ export default function Scan() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const qc = useQueryClient();
+
+  // ①②③の確認待ち（取り込んだが、まだ登録していない書類）
+  const { data: draftsData } = useQuery<{ items: ScanDraftRow[] }>({
+    queryKey: SCAN_DRAFTS_QUERY_KEY,
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/scan-drafts`);
+      if (!r.ok) return { items: [] };
+      return r.json();
+    },
+  });
+  const drafts = draftsData?.items ?? [];
+  const delDraft = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await fetch(`${BASE}/api/scan-drafts/${id}`, { method: "DELETE" });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message ?? "削除に失敗しました");
+    },
+    onSuccess: () => {
+      toast({ title: "下書きを削除しました" });
+      qc.invalidateQueries({ queryKey: SCAN_DRAFTS_QUERY_KEY });
+    },
+    onError: (e) => toast({ title: "削除できません", description: e instanceof Error ? e.message : "", variant: "destructive" }),
+  });
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [picked, setPicked] = useState<DocType | null>(null);
+  // 下の取り込み枠で選んだ種類。上のカードとは別に持ち、選ぶまでは枠に入れても取り込まない
+  const [dropType, setDropType] = useState<DocType | null>(null);
   const [reading, setReading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number; current: string } | null>(null);
@@ -112,38 +144,84 @@ export default function Scan() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [reading]);
 
-  // 種類を選んでからファイルを選ぶ（仕入の振り分けの取り込みと同じ置き場を下に出す）。
-  // 選んだ種類で段階や読み取り先の画面が決まるので、種類を選ぶまでは取り込めない。
-  const pick = (t: DocType) => setPicked(t);
+  // 上のカード：種類を押すとすぐファイル選択が開く。選んだ種類で段階が決まる
+  const start = (t: DocType) => {
+    setPicked(t);
+    setTimeout(() => fileRef.current?.click(), 0);
+  };
 
-  const openPicker = () => {
-    if (!picked) {
+  // 下の取り込み枠（仕入の振り分けと同じ形）。選んだ種類で段階や読み取り先の画面が
+  // 決まるので、種類を選ぶまでは押しても入れても取り込まない。
+  const openDropPicker = () => {
+    if (!dropType) {
       toast({ title: "先に書類の種類を選んでください", variant: "destructive" });
       return;
     }
-    fileRef.current?.click();
+    start(dropType);
   };
 
   const handleDrop = (files: File[]) => {
-    if (!picked) {
-      toast({ title: "先に書類の種類を選んでください", description: "上の①〜⑤から選んでから、もう一度入れてください。", variant: "destructive" });
+    if (!dropType) {
+      toast({ title: "先に書類の種類を選んでください", description: "枠の上の①〜⑤から選んでから、もう一度入れてください。", variant: "destructive" });
       return;
     }
-    handleFiles(files);
+    handleFiles(files, dropType);
   };
 
-  const handleFiles = async (selected: File[]) => {
-    // 確認画面が別ページにある書類（①）は、選んだファイルを持ってそのページへ移る
-    if (picked?.page && selected.length > 0) {
-      if (selected.length > 1) {
-        toast({ title: "この書類は1件ずつ読み込みます", description: `最初の「${selected[0].name}」を読み込みます。` });
+  const readToDrafts = async (selected: File[], kind: ScanDraftKind) => {
+    const files = selected.slice(0, MAX_FILES);
+    const dropped = selected.length - files.length;
+    setReading(true);
+    const created: number[] = [];
+    const failed: string[] = [];
+    let unread = 0;
+    let aiDown = false;
+    for (let i = 0; i < files.length; i++) {
+      setProgress({ done: i, total: files.length, current: files[i].name });
+      try {
+        const r = await createScanDraft(files[i], kind, aiDown);
+        created.push(r.id);
+        if (r.error) unread++;
+      } catch (e) {
+        if (e instanceof AiUnavailableError) {
+          // 下書きは原本だけで作ってある。残りもAIを呼ばずに原本だけ残す
+          aiDown = true;
+          unread++;
+          toast({ title: "AI読み取りが使えません", description: `${e.message} 原本だけ下書きに残すので、開いて手で入力してください。`, variant: "destructive" });
+          continue;
+        }
+        failed.push(files[i].name);
       }
-      setPendingScanFile(selected[0]);
-      if (fileRef.current) fileRef.current.value = "";
-      navigate(picked.page);
+    }
+    setProgress(null);
+    setReading(false);
+    if (fileRef.current) fileRef.current.value = "";
+    qc.invalidateQueries({ queryKey: SCAN_DRAFTS_QUERY_KEY });
+
+    // 1件だけで読めたなら、そのまま確認画面へ。それ以外は下の一覧に並べて、あとで1件ずつ確かめてもらう
+    if (files.length === 1 && created.length === 1) {
+      if (mounted.current) navigate(`${SCAN_DRAFT_PAGE[kind]}?draft=${created[0]}`);
       return;
     }
-    if (selected.length === 0 || !picked?.stage) return;
+    const notes = [
+      unread > 0 ? `${unread}件は読み取れなかったので、開いて手で入力してください。` : "",
+      failed.length > 0 ? `${failed.join("、")}は取り込めませんでした。` : "",
+      dropped > 0 ? `${dropped}件は上限（${MAX_FILES}件）を超えたので取り込んでいません。` : "",
+    ].filter(Boolean);
+    toast({
+      title: `${files.length - failed.length}件を下書きにしました`,
+      description: ["下の「確認待ちの書類」から1件ずつ開いて登録してください。", ...notes].join(" "),
+      variant: failed.length > 0 ? "destructive" : undefined,
+    });
+  };
+
+  const handleFiles = async (selected: File[], type: DocType | null = picked) => {
+    // ①②③は読み取って下書きにしておき、確認は別ページで1件ずつ（④⑤の受領書類と同じ流れ）
+    if (type?.page && selected.length > 0) {
+      await readToDrafts(selected, type.key as ScanDraftKind);
+      return;
+    }
+    if (selected.length === 0 || !type?.stage) return;
     const files = selected.slice(0, MAX_FILES);
     const dropped = selected.length - files.length;
 
@@ -155,7 +233,7 @@ export default function Scan() {
     for (let i = 0; i < files.length; i++) {
       setProgress({ done: i, total: files.length, current: files[i].name });
       try {
-        const r = await readOneFile(files[i], picked.stage);
+        const r = await readOneFile(files[i], type.stage);
         createdIds.push(r.id);
         if (!first) first = r;
       } catch (e) {
@@ -249,22 +327,18 @@ export default function Scan() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {DOC_TYPES.map((t) => {
           const Icon = t.icon;
-          const selected = picked?.key === t.key;
           return (
             <button
               key={t.key}
               type="button"
               disabled={!t.ready || reading}
-              onClick={() => pick(t)}
-              className={`relative text-left rounded-xl border p-4 transition-colors ${
-                !t.ready
-                  ? "bg-slate-50 border-slate-200 opacity-70 cursor-not-allowed"
-                  : selected
-                    ? "bg-teal-50 border-teal-500 ring-2 ring-teal-500/30 cursor-pointer"
-                    : "bg-white border-slate-200 hover:border-teal-400 hover:bg-teal-50/40 cursor-pointer"
+              onClick={() => start(t)}
+              className={`text-left rounded-xl border p-4 transition-colors ${
+                t.ready
+                  ? "bg-white border-slate-200 hover:border-teal-400 hover:bg-teal-50/40 cursor-pointer"
+                  : "bg-slate-50 border-slate-200 opacity-70 cursor-not-allowed"
               }`}
             >
-              {selected && <CheckCircle2 className="absolute top-3 right-3 w-5 h-5 text-teal-600" />}
               <div className="flex items-start gap-3">
                 <div className={`p-2 rounded-lg ${t.ready ? "bg-teal-100 text-teal-700" : "bg-slate-200 text-slate-500"}`}>
                   <Icon className="w-4 h-4" />
@@ -285,47 +359,133 @@ export default function Scan() {
         })}
       </div>
 
-      {/* 取り込みの置き場。種類を選ぶまでは押しても入れても取り込まない */}
-      <button
-        type="button"
-        disabled={reading}
-        onClick={openPicker}
-        onDragOver={(e) => { e.preventDefault(); if (!reading && picked) setDragOver(true); }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragOver(false);
-          if (reading) return;
-          handleDrop(Array.from(e.dataTransfer.files ?? []));
-        }}
-        className={`w-full border-2 border-dashed rounded-xl py-10 text-center transition-colors disabled:opacity-60 ${
-          !picked
-            ? "border-slate-200 bg-slate-50 cursor-not-allowed"
-            : dragOver
-              ? "border-teal-500 bg-teal-50"
-              : "border-teal-300 bg-white hover:border-teal-500 hover:bg-teal-50/40"
-        }`}
-      >
-        {picked ? (
-          <div className="flex flex-col items-center gap-2">
-            <Upload className="w-6 h-6 text-teal-600" />
-            <span className="text-sm font-semibold text-slate-700">
-              {picked.no} {picked.title} のPDF・写真を選ぶ
-              {picked.page ? "" : "（まとめて選べます）"}
-            </span>
-            <span className="text-xs text-slate-400">
-              ここにドラッグしても取り込めます。
-              {picked.page ? "この書類は1件ずつ読み込みます" : `一度に${MAX_FILES}件まで（1件30秒〜3分）`}
-            </span>
+      {/* 取り込み枠。仕入の振り分けの「書類を取り込む」と同じ形。種類は選ぶまで空のまま */}
+      <Card>
+        <CardHeader className="py-3 border-b">
+          <CardTitle className="text-sm font-semibold text-slate-700">書類を取り込む</CardTitle>
+        </CardHeader>
+        <CardContent className="p-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-slate-500">書類の種類</span>
+            {DOC_TYPES.filter((t) => t.ready).map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                disabled={reading}
+                onClick={() => setDropType(t)}
+                className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                  dropType?.key === t.key
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                {t.no} {t.title}
+              </button>
+            ))}
+            {dropType && <span className="text-[11px] text-slate-400">{dropType.hint}</span>}
           </div>
-        ) : (
-          <div className="flex flex-col items-center gap-2">
-            <Upload className="w-6 h-6 text-slate-300" />
-            <span className="text-sm font-semibold text-slate-400">先に上で書類の種類を選んでください</span>
-            <span className="text-xs text-slate-400">種類を選ぶと、ここにPDF・写真を入れられるようになります</span>
-          </div>
-        )}
-      </button>
+          <button
+            type="button"
+            disabled={reading}
+            onClick={openDropPicker}
+            onDragOver={(e) => { e.preventDefault(); if (!reading && dropType) setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              if (reading) return;
+              handleDrop(Array.from(e.dataTransfer.files ?? []));
+            }}
+            className={`w-full border-2 border-dashed rounded-lg py-10 text-center transition-colors disabled:opacity-60 ${
+              !dropType
+                ? "border-slate-200 bg-slate-50 cursor-not-allowed"
+                : dragOver
+                  ? "border-primary bg-primary/5"
+                  : "border-slate-200 hover:border-primary hover:bg-slate-50"
+            }`}
+          >
+            {dropType ? (
+              <div className="flex flex-col items-center gap-2">
+                <Upload className="w-6 h-6 text-slate-400" />
+                <span className="text-sm font-semibold text-slate-700">
+                  {dropType.no} {dropType.title}のPDF・写真を選ぶ（まとめて選べます）
+                </span>
+                <span className="text-xs text-slate-400">
+                  ここにドラッグしても取り込めます。
+                  {dropType.page
+                    ? `一度に${MAX_FILES}件まで（1件30秒〜3分）。読み取った分は下の「確認待ちの書類」に並びます`
+                    : `一度に${MAX_FILES}件まで（1件30秒〜3分）。読み取った分は仕入の振り分けに並びます`}
+                </span>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2">
+                <Upload className="w-6 h-6 text-slate-300" />
+                <span className="text-sm font-semibold text-slate-400">先に書類の種類を選んでください</span>
+                <span className="text-xs text-slate-400">種類を選ぶと、ここにPDF・写真をドラッグして取り込めます</span>
+              </div>
+            )}
+          </button>
+        </CardContent>
+      </Card>
+
+      {/* ①②③の確認待ち。④⑤の下書きは仕入の振り分けの一覧に並ぶ */}
+      <Card>
+        <CardHeader className="py-3 border-b">
+          <CardTitle className="text-sm font-semibold text-slate-700">
+            確認待ちの書類（①②③）
+            <span className={`ml-2 ${drafts.length > 0 ? "text-amber-600" : "text-slate-400"}`}>{drafts.length}件</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {drafts.length === 0 ? (
+            <div className="p-4 text-sm text-slate-400">
+              確認待ちの書類はありません。④⑤（納品書・請求書）は「仕入の振り分け」に並びます。
+            </div>
+          ) : (
+            <ul className="divide-y">
+              {drafts.map((d) => {
+                const t = DOC_TYPES.find((x) => x.key === d.kind);
+                return (
+                  <li key={d.id} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50">
+                    <button
+                      type="button"
+                      onClick={() => navigate(`${SCAN_DRAFT_PAGE[d.kind]}?draft=${d.id}`)}
+                      className="flex-1 min-w-0 text-left flex items-center gap-3"
+                    >
+                      <span className="text-xs text-slate-500 shrink-0 w-40 truncate">
+                        {t?.no} {t?.title}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium text-slate-900 truncate">
+                          {d.title || <span className="text-slate-400">（読み取れませんでした）</span>}
+                        </span>
+                        <span className="block text-xs text-slate-400 truncate">
+                          {d.fileName}・{new Date(d.createdAt).toLocaleDateString("ja-JP")}取り込み
+                        </span>
+                      </span>
+                      <span className="text-sm tabular-nums text-slate-700 shrink-0">
+                        {d.amount != null ? formatCurrency(d.amount) : ""}
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+                    </button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-slate-400 hover:text-destructive"
+                      disabled={delDraft.isPending}
+                      onClick={() => {
+                        if (window.confirm(`「${d.title || d.fileName}」の下書きを削除しますか？`)) delDraft.mutate(d.id);
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="border-slate-200">
         <CardContent className="p-4 space-y-2">

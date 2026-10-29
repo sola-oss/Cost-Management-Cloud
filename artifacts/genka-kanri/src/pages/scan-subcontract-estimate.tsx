@@ -13,7 +13,7 @@ import { useVendors } from "@/hooks/use-vendors";
 import { useWorkTypes } from "@/hooks/use-work-types";
 import { useToast } from "@/hooks/use-toast";
 import { cn, formatCurrency } from "@/lib/utils";
-import { takePendingScanFile } from "./scan-pending";
+import { draftIdFromUrl, loadScanDraft, finishScanDraft, remainingScanDrafts, SCAN_DRAFTS_QUERY_KEY } from "./scan-drafts";
 
 // ─── ③下請の見積書をスキャンして、実行予算に入れる ─────────────────────────────
 //
@@ -127,6 +127,38 @@ export default function ScanSubcontractEstimate() {
     }
   }, [step, suggestedProject]);
 
+  // AIの読み取り結果を入力欄に入れる。その場で読んだときも、下書きを開き直したときも同じ
+  const applyRead = (body: any) => {
+    const d = body.draft ?? {};
+    setReadProjectName(d.projectName ?? "");
+    setEstimateNumber(d.estimateNumber ?? "");
+    setEstimateDate(d.estimateDate ?? "");
+    const match = (body.vendorMatches ?? [])[0];
+    setVendorId(match ? String(match.id) : "");
+    const read: Line[] = (d.lines ?? []).map((l: { name: string; amount: number }) =>
+      newLine(l.name ?? "", Number(l.amount) || 0, guessWorkType(l.name ?? "")));
+    const printed = Number(d.subtotal) || read.reduce((s, l) => s + l.printed, 0);
+    setPrintedTotal(printed);
+    // 決まった額が書かれていればそれを、無ければ印字の合計を決定額の初期値にする
+    const dec = Number(d.decidedAmount) || printed;
+    setDecided(String(dec));
+    setLines(read);
+    setDecidedNote(Number(d.decidedAmount) ? (d.decidedNote || "書き込み") : "");
+    setAiRead(true);
+    const w: string[] = [];
+    if (body.linesMismatch) {
+      w.push(`表紙の行の合計（${formatCurrency(body.linesSum)}）が印字の合計と合いません。行の読み落としや、合計に入らない行が無いか確かめてください。`);
+    }
+    if (!match && d.vendorName) w.push(`仕入先「${d.vendorName}」が仕入先マスタに見つかりません。`);
+    setWarnings(w);
+  };
+
+  const applyReadError = (message: string) => {
+    setAiRead(false);
+    setLines([newLine("", 0)]);
+    setWarnings([`${message}　内容は手で入力してください。`]);
+  };
+
   const handleFile = async (f: File | undefined) => {
     if (!f) return;
     const base64 = await new Promise<string>((resolve, reject) => {
@@ -146,40 +178,30 @@ export default function ScanSubcontractEstimate() {
       });
       const body = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(body.message ?? "読み取りに失敗しました");
-      const d = body.draft ?? {};
-      setReadProjectName(d.projectName ?? "");
-      setEstimateNumber(d.estimateNumber ?? "");
-      setEstimateDate(d.estimateDate ?? "");
-      const match = (body.vendorMatches ?? [])[0];
-      setVendorId(match ? String(match.id) : "");
-      const read: Line[] = (d.lines ?? []).map((l: { name: string; amount: number }) =>
-        newLine(l.name ?? "", Number(l.amount) || 0, guessWorkType(l.name ?? "")));
-      const printed = Number(d.subtotal) || read.reduce((s, l) => s + l.printed, 0);
-      setPrintedTotal(printed);
-      // 決まった額が書かれていればそれを、無ければ印字の合計を決定額の初期値にする
-      const dec = Number(d.decidedAmount) || printed;
-      setDecided(String(dec));
-      setLines(read);
-      setDecidedNote(Number(d.decidedAmount) ? (d.decidedNote || "書き込み") : "");
-      setAiRead(true);
-      const w: string[] = [];
-      if (body.linesMismatch) {
-        w.push(`表紙の行の合計（${formatCurrency(body.linesSum)}）が印字の合計と合いません。行の読み落としや、合計に入らない行が無いか確かめてください。`);
-      }
-      if (!match && d.vendorName) w.push(`仕入先「${d.vendorName}」が仕入先マスタに見つかりません。`);
-      setWarnings(w);
+      applyRead(body);
     } catch (e) {
-      setAiRead(false);
-      setLines([newLine("", 0)]);
-      setWarnings([`${e instanceof Error ? e.message : "読み取りに失敗しました"}　内容は手で入力してください。`]);
+      applyReadError(e instanceof Error ? e.message : "読み取りに失敗しました");
     }
     setStep("form");
   };
 
+  // スキャンする画面で取り込んだ下書き（?draft=ID）から来たときは、取り込み時の読み取り結果を開く
+  const [draftId] = useState(draftIdFromUrl);
   useEffect(() => {
-    const f = takePendingScanFile();
-    if (f) handleFile(f);
-  }, []);
+    if (!draftId) return;
+    setStep("reading");
+    loadScanDraft(draftId)
+      .then((d) => {
+        setFile(d.file);
+        if (d.extract) applyRead(d.extract);
+        else applyReadError(d.error ?? "読み取りに失敗しました");
+        setStep("form");
+      })
+      .catch((e) => {
+        toast({ title: "開けませんでした", description: e instanceof Error ? e.message : "", variant: "destructive" });
+        navigate("/scan");
+      });
+  }, [draftId]);
 
   // 二重取り込みの警告：選んだ工事に、同じ仕入先・同じ印字の合計の見積書がもう入っていないか
   const { data: existingData } = useQuery<{ items: { vendorId: number | null; printedTotal: number; createdAt: string }[] }>({
@@ -256,9 +278,15 @@ export default function ScanSubcontractEstimate() {
         throw new Error("この見積書はもう実行予算に入っています。内容を確かめてから、もう一度押してください。");
       }
       if (!r.ok) throw new Error(body.message ?? "保存に失敗しました");
+      if (draftId) {
+        await finishScanDraft(draftId, body.projectId);
+        qc.invalidateQueries({ queryKey: SCAN_DRAFTS_QUERY_KEY });
+      }
       qc.invalidateQueries({ predicate: (q) => /\/projects|\/subcontract-estimates/.test(String(q.queryKey[0] ?? "")) });
       toast({ title: "実行予算に入れました", description: `${body.budgetItemCount}行を追加しました。` });
-      navigate(`/projects/${body.projectId}/budgets`);
+      // 確認待ちが残っていれば一覧へ戻り、続けて次を開けるようにする
+      if (draftId && (await remainingScanDrafts()) > 0) navigate("/scan");
+      else navigate(`/projects/${body.projectId}/budgets`);
     } catch (e) {
       toast({ title: "保存できませんでした", description: e instanceof Error ? e.message : "", variant: "destructive" });
     } finally {
