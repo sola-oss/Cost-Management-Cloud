@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { ProvisionalLinks } from "@/components/provisional-links";
 import { AttendanceSheet } from "@/components/attendance-sheet";
 import { CostSheet } from "@/components/cost-sheet";
+import { ProjectDocuments } from "@/components/project-documents";
 import { ProjectTabBar, PROJECT_TABS, parseProjectTab, type ProjectTabKey } from "@/components/project-tab-bar";
 import { DepartmentPicker } from "@/components/department-picker";
 import { PromoteProjectDialog } from "@/components/promote-project-dialog";
@@ -1821,6 +1822,7 @@ export default function ProjectDetail() {
       <div className={`rounded-lg border-t-4 pt-3 ${PROJECT_TABS.find((t) => t.key === tab)?.panel ?? ""}`}>
         {tab === "basic" && <BasicInfoTab project={project} projectId={projectId} />}
         {tab === "attendance" && <AttendanceSheet projectId={projectId} />}
+        {tab === "documents" && <ProjectDocuments projectId={projectId} />}
         {tab === "costs" && <CostItemsTab projectId={projectId} newInvoiceIds={newInvoiceIds} />}
         {tab === "financial" && (
           <FinancialTab projectId={projectId} contractAmount={project.contractAmount} isSmall={isSmall} />

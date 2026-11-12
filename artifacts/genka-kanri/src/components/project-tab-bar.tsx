@@ -1,4 +1,4 @@
-import { FileText, HardHat, Calculator, ClipboardList, BarChart2 } from "lucide-react";
+import { FileText, HardHat, Calculator, ClipboardList, BarChart2, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ─── 工事詳細のタブ ─────────────────────────────────────────────────────────
@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 // 実行予算は別ページだが、同じタブ帯を出して「工事詳細の中にいる」ことが分かるようにする。
 // 開いているタブは URL の ?tab= に持たせる（戻ったときに同じタブが開くように）。
 
-export type ProjectTabKey = "basic" | "attendance" | "budget" | "costs" | "financial";
+export type ProjectTabKey = "basic" | "attendance" | "budget" | "costs" | "financial" | "documents";
 
 export const PROJECT_TABS: {
   key: ProjectTabKey;
@@ -23,6 +23,7 @@ export const PROJECT_TABS: {
   { key: "budget",     label: "実行予算", icon: Calculator,    active: "bg-blue-600 text-white border-blue-600",       idle: "text-blue-700 border-blue-300 hover:bg-blue-50",       panel: "border-t-blue-600" },
   { key: "costs",      label: "原価明細", icon: ClipboardList, active: "bg-orange-600 text-white border-orange-600",   idle: "text-orange-700 border-orange-300 hover:bg-orange-50", panel: "border-t-orange-600" },
   { key: "financial",  label: "収支状況", icon: BarChart2,     active: "bg-teal-600 text-white border-teal-600",       idle: "text-teal-700 border-teal-300 hover:bg-teal-50",       panel: "border-t-teal-600" },
+  { key: "documents",  label: "書類",     icon: FolderOpen,    active: "bg-amber-600 text-white border-amber-600",     idle: "text-amber-700 border-amber-300 hover:bg-amber-50",    panel: "border-t-amber-600" },
 ];
 
 export const DEFAULT_PROJECT_TAB: ProjectTabKey = "financial";

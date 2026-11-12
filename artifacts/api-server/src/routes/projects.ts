@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, sql, and, or, ilike, inArray, desc } from "drizzle-orm";
 import { confirmedCostOnly, isConfirmedCost } from "../lib/cost-stage";
 import { pendingProvisionalTotal } from "./cost-stage-links";
-import { db, projectsTable, costItemsTable, budgetsTable, budgetItemsTable, invoicesTable, invoicePaymentsTable, companySettingsTable, constructionHistoriesTable, estimatesTable, purchaseOrdersTable, purchaseInvoicesTable, paymentsTable, isProjectDepartment } from "@workspace/db";
+import { db, projectsTable, costItemsTable, budgetsTable, budgetItemsTable, invoicesTable, invoicePaymentsTable, companySettingsTable, constructionHistoriesTable, estimatesTable, purchaseOrdersTable, purchaseInvoicesTable, paymentsTable, isProjectDepartment, subcontractEstimatesTable, receivedInvoicesTable, receivedInvoiceItemsTable } from "@workspace/db";
 import { isUniqueViolation } from "../lib/db-errors";
 import { uploadInvoiceFile, getSignedUrl, readLocalFile, storageMode, newStorageKey } from "../lib/invoice-storage";
 
@@ -461,6 +461,105 @@ router.post("/from-order", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Failed to create project from prime order");
     return res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+/**
+ * GET /api/projects/:id/documents — この工事に入れたスキャン原本を、書類の種類ごとに返す
+ *
+ * 温品様の依頼（2026-11-12）：スキャンした原本を工事の中で種類別に見返したい。
+ * 原本は種類ごとに別のテーブルにあるので、ここで集めて1つの一覧にする。
+ *  ①元請注文書・②確定見積書/契約書 … projects.order_file_path（保存先のフォルダ名で見分ける）
+ *  ③下請見積書 … subcontract_estimates
+ *  ④納品書・⑤請求書 … received_invoices（明細のどれかがこの工事に割り当てられたもの。段階で見分ける）
+ * 確認待ちの下書き（scan_drafts）はまだ工事が決まっていないので出さない。
+ */
+router.get("/:id/documents", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ message: "工事IDが正しくありません" });
+
+    type Doc = {
+      kind: "prime_order" | "client_estimate" | "subcontract_estimate" | "delivery_note" | "invoice";
+      key: string;
+      title: string;
+      date: string | null;
+      amount: number | null;
+      fileUrl: string;
+      mediaType: string | null;
+    };
+    const docs: Doc[] = [];
+
+    const [p] = await db
+      .select({ filePath: projectsTable.orderFilePath, mediaType: projectsTable.orderMediaType, createdAt: projectsTable.createdAt })
+      .from(projectsTable)
+      .where(eq(projectsTable.id, id));
+    if (!p) return res.status(404).json({ message: "工事が見つかりません" });
+    if (p.filePath) {
+      const isEstimate = p.filePath.startsWith("client-estimates/");
+      docs.push({
+        kind: isEstimate ? "client_estimate" : "prime_order",
+        key: "order",
+        title: isEstimate ? "確定見積書・契約書" : "元請注文書",
+        date: p.createdAt ? new Date(p.createdAt).toISOString().slice(0, 10) : null,
+        amount: null,
+        fileUrl: `/api/projects/${id}/order-file`,
+        mediaType: p.mediaType,
+      });
+    }
+
+    const estimates = await db
+      .select()
+      .from(subcontractEstimatesTable)
+      .where(eq(subcontractEstimatesTable.projectId, id))
+      .orderBy(desc(subcontractEstimatesTable.createdAt));
+    for (const e of estimates) {
+      if (!e.filePath) continue;
+      docs.push({
+        kind: "subcontract_estimate",
+        key: `se-${e.id}`,
+        title: e.vendorName || "（仕入先なし）",
+        date: e.estimateDate ?? new Date(e.createdAt).toISOString().slice(0, 10),
+        amount: parseNumeric(e.decidedTotal) || parseNumeric(e.printedTotal),
+        fileUrl: `/api/subcontract-estimates/${e.id}/file`,
+        mediaType: e.mediaType,
+      });
+    }
+
+    const invoices = await db
+      .selectDistinct({
+        id: receivedInvoicesTable.id,
+        vendorName: receivedInvoicesTable.vendorName,
+        invoiceDate: receivedInvoicesTable.invoiceDate,
+        stage: receivedInvoicesTable.stage,
+        status: receivedInvoicesTable.status,
+        totalAmount: receivedInvoicesTable.totalAmount,
+        filePath: receivedInvoicesTable.filePath,
+        mediaType: receivedInvoicesTable.mediaType,
+        createdAt: receivedInvoicesTable.createdAt,
+      })
+      .from(receivedInvoicesTable)
+      .innerJoin(receivedInvoiceItemsTable, eq(receivedInvoiceItemsTable.receivedInvoiceId, receivedInvoicesTable.id))
+      .where(eq(receivedInvoiceItemsTable.projectId, id))
+      .orderBy(desc(receivedInvoicesTable.createdAt));
+    for (const r of invoices) {
+      if (!r.filePath || r.status === "cancelled") continue;
+      docs.push({
+        kind: r.stage === "provisional" ? "delivery_note" : "invoice",
+        key: `ri-${r.id}`,
+        title: r.vendorName || "（仕入先なし）",
+        date: r.invoiceDate ?? new Date(r.createdAt).toISOString().slice(0, 10),
+        // 1枚に複数の工事が混ざることがあるので、書類全体の金額（この工事の分ではない）
+        amount: parseNumeric(r.totalAmount),
+        fileUrl: `/api/received-invoices/${r.id}/file`,
+        mediaType: r.mediaType,
+      });
+    }
+
+    return res.json(docs);
+  } catch (err) {
+    req.log.error({ err }, "Failed to list project documents");
+    return res.status(500).json({ message: "書類の取得に失敗しました。" });
   }
 });
 
