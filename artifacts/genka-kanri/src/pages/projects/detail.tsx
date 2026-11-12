@@ -108,6 +108,7 @@ const projectEditSchema = z.object({
   location: z.string().min(1, "工事場所は必須です"),
   contractAmount: z.coerce.number().min(0, "0以上の値を入力してください"),
   status: z.enum(["provisional", "planning", "active", "completed", "suspended"]),
+  managementType: z.enum(["normal", "small"]),
   startDate: z.string().min(1, "着工日は必須です"),
   endDate: z.string().min(1, "竣工予定日は必須です"),
   description: z.string().optional(),
@@ -890,6 +891,7 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
       location: project.location ?? "",
       contractAmount: project.contractAmount,
       status: project.status as "provisional" | "planning" | "active" | "completed" | "suspended",
+      managementType: project.managementType === "small" ? "small" : "normal",
       startDate: project.startDate,
       endDate: project.endDate,
       description: project.description ?? "",
@@ -958,6 +960,8 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
       location: values.location,
       contractAmount: values.contractAmount,
       status: values.status,
+      // 区分は本登録で決める。仮登録の間は送らない
+      managementType: project.status === "provisional" ? undefined : values.managementType,
       startDate: values.startDate,
       endDate: values.endDate,
       description: normalizeStr(values.description),
@@ -1258,6 +1262,31 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
                           <SelectItem value="suspended">中断</SelectItem>
                         </SelectContent>
                       </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                )}
+                {/* 区分（通常／小口）。線引きは税込50万円だが、あとから請負金額が変わる工事もあるので選び直せる */}
+                {project.status !== "provisional" && (
+                <FormField
+                  control={form.control}
+                  name="managementType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>区分 <span className="text-destructive">*</span></FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="normal">通常の工事（50万円を超える）</SelectItem>
+                          <SelectItem value="small">小口工事（50万円以下）</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-slate-500">
+                        小口工事は実行予算を作らず、粗利を「請負金額 − 実績原価」で見ます。
+                      </p>
                       <FormMessage />
                     </FormItem>
                   )}
