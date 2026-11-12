@@ -45,8 +45,8 @@ export function PromoteProjectDialog({
   useEffect(() => {
     if (open) {
       const amount = project.contractAmount ?? 0;
-      // 区分の線引きは税込100万（新規工事登録と同じ）。決め切らず、選び直せる初期値にする
-      setManagementType(fromOrder && amount <= 1_000_000 ? "small" : "normal");
+      // 区分の線引きは税込50万（新規工事登録と同じ）。決め切らず、選び直せる初期値にする
+      setManagementType(fromOrder && amount <= 500_000 ? "small" : "normal");
       setDepartment("");
       setContractAmount(fromOrder ? String(amount) : "");
       setStartDate(fromOrder && project.startDate ? project.startDate : today);
@@ -113,8 +113,8 @@ export function PromoteProjectDialog({
             <Label>区分</Label>
             <div className="grid grid-cols-2 gap-2 mt-1">
               {([
-                ["normal", "通常の工事", "100万円を超える"],
-                ["small", "小口工事", "100万円以下"],
+                ["normal", "通常の工事", "50万円を超える"],
+                ["small", "小口工事", "50万円以下"],
               ] as const).map(([v, label, hint]) => (
                 <button
                   key={v}

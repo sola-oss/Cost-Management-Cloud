@@ -150,11 +150,11 @@ function ScanProjectDocument({ kind }: { kind: DocumentKind }) {
   const [mode, setMode] = useState<"promote" | "provisional">("promote");
   const promoteNow = mode === "promote";
   const [department, setDepartment] = useState("");
-  // 区分は人が選ぶまで請負金額から決める（税込100万以下＝小口。新規工事登録と同じ線引き）
+  // 区分は人が選ぶまで請負金額から決める（税込50万以下＝小口。新規工事登録と同じ線引き）
   const [pickedType, setPickedType] = useState<"normal" | "small" | null>(null);
   const contractNum = parseFloat(contract);
   const managementType = pickedType
-    ?? (Number.isFinite(contractNum) && contractNum > 0 && contractNum <= 1_000_000 ? "small" : "normal");
+    ?? (Number.isFinite(contractNum) && contractNum > 0 && contractNum <= 500_000 ? "small" : "normal");
 
   // 画面を離れたらプレビュー用のURLを捨てる
   useEffect(() => () => { if (file) URL.revokeObjectURL(file.url); }, [file]);

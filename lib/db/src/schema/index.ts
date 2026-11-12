@@ -24,3 +24,4 @@ export * from "./construction-categories";
 export * from "./staff-members";
 export * from "./zengin-exports";
 export * from "./scan-drafts";
+export * from "./attendance-rates";

@@ -271,7 +271,7 @@ export default function Executive() {
           )}
 
           {/* 区分ごとの内訳。全体だけだと「大きい工事で稼いで小口で溶かしている」
-              といった偏りが見えないため、100万円を境にした2区分で並べる。
+              といった偏りが見えないため、50万円を境にした2区分で並べる。
               小口が0件でも出す。隠すと、まだ使っていない人には機能があること自体が伝わらない。 */}
           {data.projects.length > 0 && (
             <div className="border-t pt-3">
@@ -294,8 +294,8 @@ export default function Executive() {
                   </thead>
                   <tbody className="tabular-nums">
                     {([
-                      { label: "通常の工事（100万超）", d: data.breakdown.normal },
-                      { label: "小口工事（100万以下）", d: data.breakdown.small },
+                      { label: "通常の工事（50万超）", d: data.breakdown.normal },
+                      { label: "小口工事（50万以下）", d: data.breakdown.small },
                     ]).map((row) => (
                       <tr key={row.label} className="border-t border-slate-100">
                         <td className="py-1.5 text-slate-600 whitespace-nowrap pr-2">{row.label}</td>

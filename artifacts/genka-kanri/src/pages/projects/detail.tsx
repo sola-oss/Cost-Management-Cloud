@@ -14,6 +14,7 @@ import type { ProjectDetail } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ProvisionalLinks } from "@/components/provisional-links";
 import { AttendanceSheet } from "@/components/attendance-sheet";
+import { CostSheet } from "@/components/cost-sheet";
 import { ProjectTabBar, PROJECT_TABS, parseProjectTab, type ProjectTabKey } from "@/components/project-tab-bar";
 import { DepartmentPicker } from "@/components/department-picker";
 import { PromoteProjectDialog } from "@/components/promote-project-dialog";
@@ -1503,7 +1504,13 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
           削除
         </Button>
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* 現場の人が慣れている Excel「工事原価計算書」と同じ形で見せる */}
+      <CostSheet projectId={projectId} />
+      <details className="group rounded-lg border border-slate-200 bg-white">
+        <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-slate-600 hover:bg-slate-50">
+          工事の登録内容（部門・請負金額・工期など）
+        </summary>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4 pt-0">
         {/* 左カラム */}
         <Card>
           <CardHeader className="py-3 border-b bg-slate-50/60">
@@ -1688,6 +1695,7 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
           </CardContent>
         </Card>
       </div>
+      </details>
     </div>
   );
 }

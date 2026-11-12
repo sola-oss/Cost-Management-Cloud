@@ -159,7 +159,7 @@ function SmallProjectForm({ onClose, onSaved }: { onClose: () => void; onSaved: 
  *
  * 登録ボタンが「小口工事を登録」と「新規工事登録」の2つ並んでいると、
  * どちらを押せばよいか毎回迷う。入口は1つにして、答えに合う画面へ案内する。
- * 金額はここで縛らない（100万ちょうど付近や、あとから請負金額が変わる工事が
+ * 金額はここで縛らない（50万ちょうど付近や、あとから請負金額が変わる工事が
  * 必ず出るため）。あとから工事の編集画面で区分を変えられる。
  */
 function NewProjectDialog({
@@ -198,7 +198,7 @@ function NewProjectDialog({
                 onClick={() => setStep("small")}
                 className="w-full text-left rounded-lg border border-slate-200 p-4 hover:border-primary hover:bg-primary/5 transition-colors"
               >
-                <div className="font-semibold text-slate-800">100万円以下</div>
+                <div className="font-semibold text-slate-800">50万円以下</div>
                 <div className="text-xs text-slate-500 mt-1 leading-relaxed">
                   小口工事として登録します。工事名・請負金額・部門・担当者の4つだけ。
                   実行予算と出来高は作らず、粗利は「請負金額 − 実績原価」で見ます。
@@ -209,7 +209,7 @@ function NewProjectDialog({
                   onClick={onClose}
                   className="w-full text-left rounded-lg border border-slate-200 p-4 hover:border-primary hover:bg-primary/5 transition-colors cursor-pointer"
                 >
-                  <div className="font-semibold text-slate-800">100万円を超える</div>
+                  <div className="font-semibold text-slate-800">50万円を超える</div>
                   <div className="text-xs text-slate-500 mt-1 leading-relaxed">
                     通常の工事として登録します。工事番号・得意先・工期などを入力し、
                     実行予算と出来高で採算を管理します。
