@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Request } from "express";
-import { db, usersTable } from "@workspace/db";
+import { db, usersTable, staffMembersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import {
   SESSION_COOKIE,
@@ -33,8 +33,12 @@ router.get("/status", async (req, res) => {
     let user = null;
     if (userId != null) {
       const rows = await db
-        .select({ id: usersTable.id, email: usersTable.email, name: usersTable.name, role: usersTable.role })
+        .select({
+          id: usersTable.id, email: usersTable.email, name: usersTable.name, role: usersTable.role,
+          staffMemberId: usersTable.staffMemberId, staffName: staffMembersTable.name,
+        })
         .from(usersTable)
+        .leftJoin(staffMembersTable, eq(staffMembersTable.id, usersTable.staffMemberId))
         .where(eq(usersTable.id, userId));
       user = rows[0] ?? null;
     }

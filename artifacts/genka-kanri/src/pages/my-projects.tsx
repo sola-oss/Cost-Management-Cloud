@@ -11,6 +11,8 @@ import { HardHat, ChevronDown, ChevronUp, AlertTriangle, Loader2, Inbox, Chevron
 import { useStaffMembers } from "@/hooks/use-staff-members";
 import { ProgressInput } from "@/components/progress-input";
 import { formatCurrency } from "@/lib/utils";
+import { useRole } from "@/lib/permissions";
+import { useAuthStatus } from "@/hooks/use-auth";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const STORAGE_KEY = "cmc.myProjects.staffName";
@@ -221,28 +223,38 @@ function InboxSection({ staffId }: { staffId: number }) {
 
 export default function MyProjects() {
   const { data: staff = [] } = useStaffMembers();
-  const [name, setName] = useState<string>("");
+  // 一般（現場）はログインに紐づいた担当者に固定する（他の人の名前は選べない）
+  const isField = useRole() === "field";
+  const { data: auth } = useAuthStatus();
+  const fixedName = isField ? (auth?.user?.staffName ?? "") : null;
+  const fixedStaffId = isField ? (auth?.user?.staffMemberId ?? null) : null;
+  const [pickedName, setName] = useState<string>("");
+  const name = fixedName ?? pickedName;
   const [open, setOpen] = useState<Record<number, boolean>>({});
   const [promoting, setPromoting] = useState<ProjectRow | null>(null);
 
   // 毎回選ばせないよう、選んだ担当者を端末に覚えておく
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) setName(saved);
-  }, []);
+    if (isField) return;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) setName(saved);
+    } catch { /* 端末に覚えられないときは毎回選ぶ */ }
+  }, [isField]);
   useEffect(() => {
-    if (name) localStorage.setItem(STORAGE_KEY, name);
-  }, [name]);
+    if (isField || !name) return;
+    try { localStorage.setItem(STORAGE_KEY, name); } catch { /* 同上 */ }
+  }, [name, isField]);
 
   // 覚えていた名前がマスタに無い場合（退職・改名・別会社の環境）は選び直してもらう。
   // 放置すると選択欄が空欄のまま「担当工事なし」と出て、理由がわからなくなる。
   useEffect(() => {
-    if (!name || staff.length === 0) return;
+    if (isField || !name || staff.length === 0) return;
     if (!staff.some((s) => s.isActive && s.name === name)) {
       setName("");
       localStorage.removeItem(STORAGE_KEY);
     }
-  }, [name, staff]);
+  }, [name, staff, isField]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["/api/projects", { siteManager: name }],
@@ -270,7 +282,7 @@ export default function MyProjects() {
   const smallActual = smallProjects.reduce((s, p) => s + p.totalActualCost, 0);
 
   const activeStaff = staff.filter((s) => s.isActive);
-  const me = staff.find((x) => x.name === name);
+  const me = fixedStaffId != null ? { id: fixedStaffId } : staff.find((x) => x.name === name);
 
   return (
     <div className="p-4 sm:p-6 max-w-3xl mx-auto space-y-4">
@@ -284,12 +296,18 @@ export default function MyProjects() {
 
       <div className="space-y-1">
         <Label className="text-xs">担当者</Label>
+        {isField ? (
+          <div className="h-11 flex items-center px-3 rounded-md border bg-slate-50 text-sm text-slate-700">
+            {name || "担当者が紐づいていません（事務の方に連絡してください）"}
+          </div>
+        ) : (
         <Select value={name} onValueChange={setName}>
           <SelectTrigger className="h-11"><SelectValue placeholder="自分の名前を選んでください" /></SelectTrigger>
           <SelectContent className="max-h-[300px]" searchPlaceholder="名前で検索">
             {activeStaff.map((s) => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
           </SelectContent>
         </Select>
+        )}
       </div>
 
       {me && <InboxSection staffId={me.id} />}

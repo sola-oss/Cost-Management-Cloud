@@ -1,4 +1,5 @@
-import { Switch, Route, Router as WouterRouter, useRoute } from "wouter";
+import { Switch, Route, Router as WouterRouter, useRoute, useLocation, Link } from "wouter";
+import { useRole, pathAllowed, homePath } from "@/lib/permissions";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -50,6 +51,8 @@ import { Redirect } from "wouter";
 const queryClient = new QueryClient();
 
 function Router() {
+  const role = useRole();
+  const [location] = useLocation();
   const [isEstimatePrint] = useRoute("/estimates/:id/print");
   const [isInvoicePrint] = useRoute("/invoices/:id/print");
   const [isPurchaseOrderPrint] = useRoute("/purchase-orders/:id/print");
@@ -81,6 +84,19 @@ function Router() {
           {(params) => <PurchaseOrderPrint id={parseInt(params.id)} />}
         </Route>
       </Switch>
+    );
+  }
+
+  // 役割で開けない画面は中身を出さない（守りはAPI側。ここは迷わせないため）
+  if (!pathAllowed(role, location)) {
+    if (location === "/" || location === "") return <Redirect to={homePath(role)} />;
+    return (
+      <AppLayout>
+        <div className="max-w-md mx-auto mt-16 text-center space-y-3">
+          <p className="text-slate-700 font-medium">この画面は、今の権限では開けません。</p>
+          <Link href={homePath(role)} className="text-sm text-primary underline">最初の画面へ戻る</Link>
+        </div>
+      </AppLayout>
     );
   }
 

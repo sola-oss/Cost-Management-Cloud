@@ -7,6 +7,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import router from "./routes";
 import { requireAuth } from "./middlewares/auth";
+import { enforceRole } from "./lib/access";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
@@ -37,7 +38,7 @@ app.use(cookieParser());
 app.use(express.json({ limit: "30mb" }));
 app.use(express.urlencoded({ extended: true, limit: "30mb" }));
 
-app.use("/api", requireAuth, router);
+app.use("/api", requireAuth, enforceRole, router);
 
 // 本番（Railway等）：ビルドしたフロントを同一ドメインで配信する。
 // FRONTEND_DIST が未指定なら api-server/dist から見た genka-kanri/dist を既定にする。

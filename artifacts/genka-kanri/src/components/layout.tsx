@@ -4,6 +4,7 @@ import { Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, S
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { useCompanySettings } from "@/hooks/use-company-settings";
 import { useAuthStatus, useLogout } from "@/hooks/use-auth";
+import { useRole, pathAllowed, homePath, ROLE_LABELS } from "@/lib/permissions";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
@@ -14,13 +15,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   const companyDisplayName = companySettings?.companyName || "会社名未設定";
 
-  const mainNav = [
+  const role = useRole();
+  const allowed = <T extends { url: string }>(items: T[]) => items.filter((i) => pathAllowed(role, i.url));
+
+  const mainNav = allowed([
     { title: "ダッシュボード", icon: LayoutDashboard, url: "/" },
     { title: "工事一覧", icon: FolderKanban, url: "/projects" },
     { title: "自分の現場", icon: HardHat, url: "/my-projects" },
-  ];
+  ]);
 
-  const operationNav = [
+  const operationNav = allowed([
     // 書類のスキャンを起点に登録する入口（おおつか様の依頼）。作業の起点なので先頭に置く
     { title: "スキャンする", icon: ScanLine, url: "/scan" },
     { title: "見積書", icon: FileText, url: "/estimates" },
@@ -29,13 +33,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     { title: "仕入入力", icon: ShoppingCart, url: "/purchases" },
     { title: "仕入集計", icon: Calculator, url: "/purchase-summary" },
     { title: "請求管理", icon: Receipt, url: "/invoices" },
-  ];
+  ]);
 
-  const reportNav = [
+  const reportNav = allowed([
     { title: "収支レポート", icon: FileSpreadsheet, url: "/reports" },
-  ];
+  ]);
 
-  const masterNav = [
+  const masterNav = allowed([
     { title: "得意先マスタ", icon: Users, url: "/master/clients" },
     { title: "工事分類マスタ", icon: Tags, url: "/master/construction-categories" },
     { title: "担当者マスタ", icon: UserRound, url: "/master/staff" },
@@ -44,7 +48,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     { title: "仕入先マスタ", icon: Building2, url: "/master/suppliers" },
     { title: "ユーザー管理", icon: UserCog, url: "/master/users" },
     { title: "会社設定", icon: Settings, url: "/settings" },
-  ];
+  ]);
 
   const isActive = (url: string) =>
     url === "/" ? location === "/" : location.startsWith(url);
@@ -54,7 +58,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-screen w-full bg-slate-50">
         <Sidebar className="border-r shadow-sm">
           <SidebarHeader className="border-b p-4">
-            <Link href="/">
+            <Link href={homePath(role)}>
               <div className="flex items-center gap-2 font-bold text-lg text-primary hover:opacity-80 transition-opacity cursor-pointer">
                 <div className="bg-primary text-primary-foreground p-1.5 rounded-md">
                   <HardHat className="w-5 h-5" />
@@ -84,7 +88,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </SidebarGroup>
 
             {/* 日次業務 */}
-            <SidebarGroup>
+            {operationNav.length > 0 && <SidebarGroup>
               <SidebarGroupLabel className="text-xs text-slate-400 px-2 py-1">日次業務</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
@@ -100,10 +104,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   ))}
                 </SidebarMenu>
               </SidebarGroupContent>
-            </SidebarGroup>
+            </SidebarGroup>}
 
             {/* レポート */}
-            <SidebarGroup>
+            {reportNav.length > 0 && <SidebarGroup>
               <SidebarGroupLabel className="text-xs text-slate-400 px-2 py-1">レポート</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
@@ -119,10 +123,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   ))}
                 </SidebarMenu>
               </SidebarGroupContent>
-            </SidebarGroup>
+            </SidebarGroup>}
 
             {/* マスタ管理（デフォルト折りたたみ、マスタ画面表示中は開く） */}
-            <SidebarGroup>
+            {masterNav.length > 0 && <SidebarGroup>
               <details open={masterNav.some((item) => isActive(item.url))} className="group/master">
                 <summary className="flex items-center gap-1 text-xs text-slate-400 px-2 py-1 cursor-pointer select-none hover:text-slate-600 list-none [&::-webkit-details-marker]:hidden">
                   <svg className="w-3 h-3 transition-transform group-open/master:rotate-90" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
@@ -143,7 +147,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   </SidebarMenu>
                 </SidebarGroupContent>
               </details>
-            </SidebarGroup>
+            </SidebarGroup>}
           </SidebarContent>
 
           <SidebarRail />
@@ -166,6 +170,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuLabel className="text-xs text-slate-400 font-normal">
                     {auth.user.email}
+                    <div className="mt-0.5">権限：{ROLE_LABELS[role]}</div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => navigate("/account")}>

@@ -16,6 +16,7 @@ import { ProvisionalLinks } from "@/components/provisional-links";
 import { AttendanceSheet } from "@/components/attendance-sheet";
 import { CostSheet } from "@/components/cost-sheet";
 import { ProjectDocuments } from "@/components/project-documents";
+import { useRole } from "@/lib/permissions";
 import { ProjectTabBar, PROJECT_TABS, parseProjectTab, type ProjectTabKey } from "@/components/project-tab-bar";
 import { DepartmentPicker } from "@/components/department-picker";
 import { PromoteProjectDialog } from "@/components/promote-project-dialog";
@@ -168,6 +169,8 @@ function useClients() {
 // ─── 実行予算タブ ─────────────────────────────────────────────────────────
 
 function BudgetTab({ projectId }: { projectId: number }) {
+  // 一般（現場）は見るだけ。登録・編集・削除は事務（API側でも止めている）
+  const isField = useRole() === "field";
   const { data: budgetItemsData } = useListBudgetItems(
     projectId,
     { query: { enabled: !!projectId, queryKey: getListBudgetItemsQueryKey(projectId) } },
@@ -229,7 +232,7 @@ function BudgetTab({ projectId }: { projectId: number }) {
         >
           <Link href={`/projects/${projectId}/budgets`}>
             <ExternalLink className="w-4 h-4" />
-            実行予算を編集する
+            {isField ? "実行予算を見る" : "実行予算を編集する"}
           </Link>
         </Button>
       </div>
@@ -247,6 +250,8 @@ const COST_FILTER_OPTIONS: Array<Category | "all"> = ["all", "material", "labor"
 const COST_ITEMS_LIMIT = 2000;
 
 function CostItemsTab({ projectId, newInvoiceIds = [] }: { projectId: number; newInvoiceIds?: number[] }) {
+  // 一般（現場）は見るだけ。登録・編集・削除は事務（API側でも止めている）
+  const isField = useRole() === "field";
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [addOpen, setAddOpen] = useState(false);
@@ -425,13 +430,13 @@ function CostItemsTab({ projectId, newInvoiceIds = [] }: { projectId: number; ne
             )}
           </div>
           {/* 原価の登録は仕入入力に一本化（このタブは閲覧専用） */}
-          <Button size="sm" variant="outline" asChild className="text-teal-700 border-teal-300 hover:bg-teal-50">
+          {!isField && <Button size="sm" variant="outline" asChild className="text-teal-700 border-teal-300 hover:bg-teal-50">
             {/* 工事から入ったことを渡す。仕入入力に「工事詳細へ戻る」を出し、登録後もここへ戻す */}
             <Link href={`/purchases?projectId=${projectId}&from=project`}>
               <ShoppingCart className="w-4 h-4 mr-1" />
               仕入入力で登録
             </Link>
-          </Button>
+          </Button>}
         </div>
 
         {/* フィルタ + 検索バー */}
@@ -579,7 +584,7 @@ function CostItemsTab({ projectId, newInvoiceIds = [] }: { projectId: number; ne
                           variant="ghost"
                           className="h-7 w-7 text-slate-400 hover:text-destructive"
                           onClick={() => handleDelete(item.id)}
-                          disabled={deletingId === item.id || isFromInvoice}
+                          disabled={isField || deletingId === item.id || isFromInvoice}
                           title={isFromInvoice ? "仕入伝票から登録された明細は伝票側で管理してください" : undefined}
                         >
                           {deletingId === item.id ? (
@@ -818,6 +823,8 @@ function FinancialTab({ projectId, contractAmount, isSmall }: { projectId: numbe
 // ─── 基本情報タブ ─────────────────────────────────────────────────────────────
 
 function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectId: number }) {
+  // 一般（現場）は見るだけ。登録・編集・削除は事務（API側でも止めている）
+  const isField = useRole() === "field";
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
@@ -1489,7 +1496,7 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end gap-2">
+      {!isField && <div className="flex justify-end gap-2">
         <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
           <Edit className="w-4 h-4 mr-1" />
           編集
@@ -1504,7 +1511,7 @@ function BasicInfoTab({ project, projectId }: { project: ProjectDetail; projectI
           {deleting ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Trash2 className="w-4 h-4 mr-1" />}
           削除
         </Button>
-      </div>
+      </div>}
       {/* 現場の人が慣れている Excel「工事原価計算書」と同じ形で見せる */}
       <CostSheet projectId={projectId} />
       <details className="group rounded-lg border border-slate-200 bg-white">
@@ -1747,7 +1754,7 @@ export default function ProjectDetail() {
   if (!project) {
     return (
       <div className="p-6 max-w-7xl mx-auto">
-        <p className="text-slate-500">工事が見つかりません。</p>
+        <p className="text-slate-500">工事が見つからないか、この工事を見る権限がありません。</p>
         <Button variant="link" asChild className="mt-2 px-0">
           <Link href="/projects">← 工事一覧へ戻る</Link>
         </Button>

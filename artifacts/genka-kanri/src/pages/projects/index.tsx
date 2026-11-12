@@ -1,3 +1,4 @@
+import { useRole } from "@/lib/permissions";
 import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useListProjects, getListProjectsQueryKey } from "@workspace/api-client-react";
@@ -228,6 +229,7 @@ function NewProjectDialog({
 }
 
 export default function Projects() {
+  const isField = useRole() === "field";
   const [, navigate] = useLocation();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -284,15 +286,15 @@ export default function Projects() {
             <FolderKanban className="w-6 h-6 text-primary" />
             工事一覧
           </h1>
-          <p className="text-sm text-slate-500 mt-1">すべての工事プロジェクトと進捗状況を管理します。</p>
+          <p className="text-sm text-slate-500 mt-1">{isField ? "あなたが担当の工事です。" : "すべての工事プロジェクトと進捗状況を管理します。"}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {/* 入口は1つだけ。登録ボタンが2つ並んでいると、どちらを押すか毎回迷う。
               まず金額を聞いて、答えに合う登録画面へ案内する。 */}
-          <Button onClick={() => setPickerOpen(true)}>
+          {!isField && <Button onClick={() => setPickerOpen(true)}>
             <Plus className="w-4 h-4 mr-2" />
             新規工事登録
-          </Button>
+          </Button>}
         </div>
       </div>
 

@@ -12,12 +12,22 @@ import { useToast } from "@/hooks/use-toast";
 import { useHighlightNew } from "@/hooks/use-highlight-new";
 import { useAuthStatus } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useStaffMembers } from "@/hooks/use-staff-members";
+import { ROLE_LABELS, toRole, type Role } from "@/lib/permissions";
+
+const ROLE_HELP: Record<Role, string> = {
+  admin: "すべて見られます。ユーザー管理もできます。",
+  manager: "経営画面（会社全体の粗利）とユーザー管理以外は、すべて見られます。",
+  field: "選んだ担当者の工事だけ見られます。他の人の現場や会社全体の数字は見えません。",
+};
 
 interface AppUser {
   id: number;
   email: string;
   name: string;
   role: string;
+  staffMemberId: number | null;
   createdAt: string;
 }
 
@@ -40,6 +50,7 @@ export function UserFormDialog({
   onClose,
   initial,
   initialName,
+  initialStaffMemberId,
   onSaved,
 }: {
   open: boolean;
@@ -47,6 +58,8 @@ export function UserFormDialog({
   initial?: AppUser | null;
   /** 新規作成時に名前欄へ初期セットする値（担当者マスタからの「ログイン発行」用） */
   initialName?: string;
+  /** 担当者マスタから発行するとき、その担当者を最初から選んでおく */
+  initialStaffMemberId?: number;
   onSaved?: (id: number) => void;
 }) {
   const { toast } = useToast();
@@ -54,19 +67,33 @@ export function UserFormDialog({
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState<Role>("manager");
+  const [staffMemberId, setStaffMemberId] = useState<string>("");
+  const { data: staff = [] } = useStaffMembers();
+  const { data: auth } = useAuthStatus();
+  const editingSelf = !!initial && auth?.user?.id === initial.id;
 
   useEffect(() => {
     if (open) {
       setName(initial?.name ?? initialName ?? "");
       setEmail(initial?.email ?? "");
       setPassword("");
+      // 担当者マスタから発行するのは現場の人が多いので「一般」から始める
+      setRole(initial ? toRole(initial.role) : initialStaffMemberId ? "field" : "manager");
+      const sid = initial ? initial.staffMemberId : initialStaffMemberId;
+      setStaffMemberId(sid ? String(sid) : "");
     }
-  }, [open, initial, initialName]);
+  }, [open, initial, initialName, initialStaffMemberId]);
 
   const save = useMutation({
     mutationFn: async () => {
       const url = initial ? `${BASE}/api/users/${initial.id}` : `${BASE}/api/users`;
-      const body: Record<string, string> = { name: name.trim(), email: email.trim() };
+      const body: Record<string, string | number | null> = {
+        name: name.trim(),
+        email: email.trim(),
+        role,
+        staffMemberId: staffMemberId ? Number(staffMemberId) : null,
+      };
       if (password) body.password = password;
       const res = await fetch(url, {
         method: initial ? "PATCH" : "POST",
@@ -100,6 +127,10 @@ export function UserFormDialog({
       toast({ title: "入力エラー", description: "名前とメールアドレスは必須です", variant: "destructive" });
       return;
     }
+    if (role === "field" && !staffMemberId) {
+      toast({ title: "入力エラー", description: "一般（現場）の人は、担当者を選んでください", variant: "destructive" });
+      return;
+    }
     if (!initial && !password) {
       toast({ title: "入力エラー", description: "初期パスワードを入力してください", variant: "destructive" });
       return;
@@ -125,6 +156,33 @@ export function UserFormDialog({
           <div>
             <Label>メールアドレス（ログインID） <span className="text-destructive">*</span></Label>
             <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="taro@example.com" className="mt-1" />
+          </div>
+          <div>
+            <Label>権限 <span className="text-destructive">*</span></Label>
+            <Select value={role} onValueChange={(v) => setRole(toRole(v))} disabled={editingSelf}>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {(["admin", "manager", "field"] as const).map((r) => (
+                  <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-slate-400 mt-1">
+              {editingSelf ? "自分の権限は変えられません。" : ROLE_HELP[role]}
+            </p>
+          </div>
+          <div>
+            <Label>担当者{role === "field" && <span className="text-destructive"> *</span>}</Label>
+            <Select value={staffMemberId || "none"} onValueChange={(v) => setStaffMemberId(v === "none" ? "" : v)}>
+              <SelectTrigger className="mt-1"><SelectValue placeholder="選んでください" /></SelectTrigger>
+              <SelectContent className="max-h-[300px]" searchPlaceholder="名前で検索">
+                <SelectItem value="none">（なし）</SelectItem>
+                {staff.filter((x) => x.isActive || String(x.id) === staffMemberId).map((x) => (
+                  <SelectItem key={x.id} value={String(x.id)}>{x.name}（{x.code}）</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-slate-400 mt-1">工事の担当者と同じ人を選びます。一般（現場）の人は、この担当者の工事だけ見られます。</p>
           </div>
           <div>
             <Label>
@@ -193,6 +251,8 @@ export default function UserMaster() {
   };
 
   const items = data?.items ?? [];
+  const { data: staffList = [] } = useStaffMembers();
+  const staffName = (id: number) => staffList.find((x) => x.id === id)?.name ?? "（担当者が見つかりません）";
   const isSelf = (u: AppUser) => auth?.user?.id === u.id;
 
   return (
@@ -204,7 +264,7 @@ export default function UserMaster() {
             ユーザー管理
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            ログインできるユーザーの追加・変更・削除を行います。パスワードの再設定もここからできます。
+            ログインできるユーザーの追加・変更・削除を行います。権限（経営者・管理者・一般）とパスワードの再設定もここからできます。
           </p>
         </div>
         <Button onClick={() => { setEditing(null); setDialogOpen(true); }}>
@@ -220,6 +280,7 @@ export default function UserMaster() {
               <TableRow className="bg-slate-50">
                 <TableHead>名前</TableHead>
                 <TableHead>メールアドレス（ログインID）</TableHead>
+                <TableHead className="w-40">権限・担当者</TableHead>
                 <TableHead className="w-28">登録日</TableHead>
                 <TableHead className="w-24 text-center">操作</TableHead>
               </TableRow>
@@ -227,13 +288,13 @@ export default function UserMaster() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-8 text-slate-400">
+                  <TableCell colSpan={5} className="text-center py-8 text-slate-400">
                     <Loader2 className="w-5 h-5 animate-spin inline mr-2" />読み込み中...
                   </TableCell>
                 </TableRow>
               ) : items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-8 text-slate-400">
+                  <TableCell colSpan={5} className="text-center py-8 text-slate-400">
                     ユーザーが登録されていません
                   </TableCell>
                 </TableRow>
@@ -245,6 +306,12 @@ export default function UserMaster() {
                       {isSelf(u) && <Badge variant="secondary" className="ml-2">自分</Badge>}
                     </TableCell>
                     <TableCell className="text-slate-600">{u.email}</TableCell>
+                    <TableCell className="text-sm">
+                      <Badge variant={toRole(u.role) === "field" ? "outline" : "secondary"}>{ROLE_LABELS[toRole(u.role)]}</Badge>
+                      {u.staffMemberId && (
+                        <div className="text-xs text-slate-500 mt-0.5">{staffName(u.staffMemberId)}</div>
+                      )}
+                    </TableCell>
                     <TableCell className="text-slate-500 text-sm">
                       {u.createdAt ? new Date(u.createdAt).toLocaleDateString("ja-JP") : "—"}
                     </TableCell>

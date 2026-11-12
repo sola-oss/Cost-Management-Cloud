@@ -12,6 +12,9 @@ export interface AuthUser {
   email: string;
   name: string;
   role: string;
+  // ログインに紐づけた担当者（一般＝現場の人は、この担当者の工事だけ見られる）
+  staffMemberId?: number | null;
+  staffName?: string | null;
 }
 
 export interface AuthStatus {

@@ -4,11 +4,14 @@ import { Button } from "@/components/ui/button";
 import { SimpleCodeNameMaster, type CodeNameRow } from "@/components/simple-code-name-master";
 import { UserFormDialog } from "@/pages/master/users";
 import { useStaffMembers, STAFF_MEMBERS_QUERY_KEY } from "@/hooks/use-staff-members";
+import { useRole } from "@/lib/permissions";
 
 export default function StaffMemberMaster() {
   const { data: rows = [], isLoading } = useStaffMembers();
   // 「ログイン発行」: この担当者の名前を初期セットしてユーザー登録ダイアログを開く
   const [issuingFor, setIssuingFor] = useState<CodeNameRow | null>(null);
+  // ログインの発行（ユーザー管理）は経営者だけ
+  const canIssueLogin = useRole() === "admin";
 
   return (
     <>
@@ -25,7 +28,7 @@ export default function StaffMemberMaster() {
         namePlaceholder="例: 山口 太郎"
         statusToggle={{ columnLabel: "状態", activeLabel: "在職", inactiveLabel: "退職" }}
         renderExtraAction={(row) =>
-          row.isActive === false ? null : (
+          row.isActive === false || !canIssueLogin ? null : (
             <Button
               size="sm"
               variant="ghost"
@@ -42,6 +45,7 @@ export default function StaffMemberMaster() {
         open={issuingFor !== null}
         onClose={() => setIssuingFor(null)}
         initialName={issuingFor?.name}
+        initialStaffMemberId={issuingFor?.id}
       />
     </>
   );

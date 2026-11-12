@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { eq } from "drizzle-orm";
-import { db, usersTable } from "@workspace/db";
+import { db, usersTable, staffMembersTable, isUserRole } from "@workspace/db";
+import { setAccess } from "../lib/access";
 import { SESSION_COOKIE, isAuthRequired, verifySessionToken } from "../lib/auth";
 
 // AUTH_REQUIRED=true のときのみ /api を認証必須にするガード。
@@ -20,14 +21,29 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   try {
     // トークンが有効期間内でも、ユーザーが削除済みなら即座に無効化する
     // （退職者のアカウントを消したら30日セッションを待たず締め出すため）
+    // 役割と担当者も一緒に読む（役割ごとに見られる範囲を決めるため。lib/access.ts）
     const rows = await db
-      .select({ id: usersTable.id })
+      .select({
+        id: usersTable.id,
+        role: usersTable.role,
+        staffMemberId: usersTable.staffMemberId,
+        staffName: staffMembersTable.name,
+      })
       .from(usersTable)
+      .leftJoin(staffMembersTable, eq(staffMembersTable.id, usersTable.staffMemberId))
       .where(eq(usersTable.id, userId));
-    if (!rows[0]) {
+    const u = rows[0];
+    if (!u) {
       res.status(401).json({ error: "認証が必要です" });
       return;
     }
+    setAccess(req, {
+      userId: u.id,
+      // 知らない役割は一番せまい「一般」として扱う
+      role: isUserRole(u.role) ? u.role : "field",
+      staffMemberId: u.staffMemberId,
+      staffName: u.staffName,
+    });
   } catch (err) {
     req.log.error({ err }, "Failed to verify user existence");
     res.status(500).json({ error: "認証確認に失敗しました" });
