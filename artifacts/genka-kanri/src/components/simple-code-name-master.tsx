@@ -37,8 +37,10 @@ interface SimpleCodeNameMasterProps {
   entityLabel: string; // 例: "工事分類"
   nameLabel: string; // 例: "名称" / "名前"
   namePlaceholder?: string;
-  /** 操作列の先頭に行ごとの追加アクションを描画する（例: 担当者マスタの「ログイン発行」） */
+  /** 操作列の先頭に行ごとの追加アクションを描画する */
   renderExtraAction?: (row: CodeNameRow) => React.ReactNode;
+  /** 状態列の右に1列足す（例: 担当者マスタの「ログイン」） */
+  extraColumn?: { label: string; className?: string; render: (row: CodeNameRow) => React.ReactNode };
   /** 有効/無効の状態列と編集ダイアログの切替を有効にする（例: 在職/退職） */
   statusToggle?: {
     columnLabel: string; // 例: "状態"
@@ -61,8 +63,10 @@ export function SimpleCodeNameMaster({
   nameLabel,
   namePlaceholder,
   renderExtraAction,
+  extraColumn,
   statusToggle,
 }: SimpleCodeNameMasterProps) {
+  const colCount = 3 + (statusToggle ? 1 : 0) + (extraColumn ? 1 : 0);
   const { toast } = useToast();
   const qc = useQueryClient();
   const { mark, isNew } = useHighlightNew();
@@ -162,19 +166,20 @@ export function SimpleCodeNameMaster({
                 <TableHead className="w-28">コード</TableHead>
                 <TableHead>{nameLabel}</TableHead>
                 {statusToggle && <TableHead className="w-20">{statusToggle.columnLabel}</TableHead>}
+                {extraColumn && <TableHead className={extraColumn.className}>{extraColumn.label}</TableHead>}
                 <TableHead className="w-24 text-center">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={statusToggle ? 4 : 3} className="text-center py-8 text-slate-400">
+                  <TableCell colSpan={colCount} className="text-center py-8 text-slate-400">
                     <Loader2 className="w-5 h-5 animate-spin inline mr-2" />読み込み中...
                   </TableCell>
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={statusToggle ? 4 : 3} className="text-center py-8 text-slate-400">
+                  <TableCell colSpan={colCount} className="text-center py-8 text-slate-400">
                     {entityLabel}が登録されていません
                   </TableCell>
                 </TableRow>
@@ -196,6 +201,7 @@ export function SimpleCodeNameMaster({
                         )}
                       </TableCell>
                     )}
+                    {extraColumn && <TableCell>{extraColumn.render(row)}</TableCell>}
                     <TableCell>
                       <div className="flex items-center justify-center gap-1">
                         {renderExtraAction?.(row)}

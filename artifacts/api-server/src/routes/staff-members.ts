@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, asc } from "drizzle-orm";
-import { db, staffMembersTable } from "@workspace/db";
+import { db, staffMembersTable, usersTable } from "@workspace/db";
+import { getAccess } from "../lib/access";
 
 import { isUniqueViolation } from "../lib/db-errors";
 
@@ -16,6 +17,24 @@ router.get("/", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Failed to list staff members");
     res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+/**
+ * GET /api/staff-members/logins — 担当者ごとのログインの有無と権限
+ * 担当者マスタで「この人はログインを持っているか」を見るため（作る・直すのはユーザー管理）。
+ * 一般（現場）には出さない（他の人の権限まで見せる必要がないため）。
+ */
+router.get("/logins", async (req, res) => {
+  if (getAccess(req).role === "field") return res.status(403).json({ message: "この操作をする権限がありません" });
+  try {
+    const rows = await db
+      .select({ staffMemberId: usersTable.staffMemberId, role: usersTable.role })
+      .from(usersTable);
+    return res.json({ items: rows.filter((r) => r.staffMemberId != null) });
+  } catch (err) {
+    req.log.error({ err }, "Failed to list staff logins");
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
