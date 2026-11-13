@@ -45,7 +45,9 @@ export function ProjectTabBar({
   className?: string;
 }) {
   return (
-    <div role="tablist" className={cn("grid grid-cols-5 gap-1.5", className)}>
+    // 6つを横1列に並べる（5列のままだと「書類」だけ2段目に落ちる。2026-11-13 アイさん）。
+    // タブレットやスマホのような狭い画面では3つずつ2段にする（「未登録」の印が入りきらないため）
+    <div role="tablist" className={cn("grid grid-cols-3 lg:grid-cols-6 gap-1.5", className)}>
       {PROJECT_TABS.map((t) => {
         const isActive = t.key === current;
         const Icon = t.icon;
@@ -57,11 +59,11 @@ export function ProjectTabBar({
             aria-selected={isActive}
             onClick={() => onSelect(t.key)}
             className={cn(
-              "flex items-center justify-center gap-1.5 rounded-md border-2 bg-white px-2 py-2 text-xs sm:text-sm font-bold transition-colors",
+              "flex items-center justify-center gap-1.5 rounded-md border-2 bg-white px-2 py-2 text-xs sm:text-sm font-bold whitespace-nowrap transition-colors",
               isActive ? `${t.active} shadow` : t.idle,
             )}
           >
-            <Icon className="w-4 h-4 hidden sm:block" />
+            <Icon className="w-4 h-4 hidden sm:block shrink-0" />
             {t.label}
             {badges?.[t.key] && (
               <span className={cn(
