@@ -32,10 +32,18 @@ const router: IRouter = Router();
 // 業者からの原価は、確定原価（請求書）に加えて、まだ請求書の来ていない仮原価（納品書・マスに打った金額）も数える
 // （2026-11-16 温品様の流れ：先に打っておき、請求書が来たらスキャンして確定）。仮は請求書と照合されると数えなくなる
 // ので二重にはならない。照合は lib/cost-sheet-matching.ts。
-// Excel 下段の消耗品費3%・諸経費10% は出さない（アイさん判断 2026-10-29）。
+// Excel 下段の消耗品費・諸経費・総合計も出す（2026-11-16 アイさん。10/29 に一度外したのを戻した）。
+//   消耗品費 = 合計 × 率（既定3%）、諸経費 = (合計 + 消耗品費) × 率（既定10%）。どちらも円未満切り捨て（Excel の TRUNC）
+//   実行金額 = 総合計、純利益 = 決定金額 − 総合計
+export const DEFAULT_CONSUMABLE_RATE = 3;
+export const DEFAULT_OVERHEAD_RATE = 10;
 
 // 原価計算書のマスに打った金額でできた仮の伝票の目印（仕入入力の画面の備考にも出る）
 export const SHEET_ENTRY_NOTE = "工事原価計算書から入力";
+// 表の下の「材料の明細」に打った行でできた仮の伝票の目印。業者×日付で1枚（納品書1枚のイメージ）
+export const DETAIL_NOTE = "工事原価計算書の明細から入力";
+const DETAIL_CATEGORIES = ["material", "expense"] as const;
+type DetailCategory = (typeof DETAIL_CATEGORIES)[number];
 
 const parseN = (v: unknown) => (v == null ? 0 : parseFloat(String(v)) || 0);
 const monthOf = (d: string | Date) => String(d instanceof Date ? d.toISOString() : d).slice(0, 7);
@@ -130,6 +138,60 @@ router.get("/:projectId", async (req, res) => {
     const hiddenProvIds = new Set(matches.filter((m) => m.status === "review").flatMap((m) => m.provisionalIds));
     const reviewKeys = new Set(matches.filter((m) => m.status === "review").flatMap((m) => [`${m.vendorId}:${m.month}`, `${m.vendorId}:${m.invoiceMonth}`]));
 
+    // 材料費・損料等の明細（表の下）。上の表で数えているもの（確定＋請求書待ちの仮）の行を出す
+    const detailRows = await db
+      .select({
+        itemId: purchaseInvoiceItemsTable.id,
+        invoiceId: purchaseInvoiceItemsTable.purchaseInvoiceId,
+        lineNumber: purchaseInvoiceItemsTable.lineNumber,
+        category: purchaseInvoiceItemsTable.category,
+        description: purchaseInvoiceItemsTable.description,
+        specification: purchaseInvoiceItemsTable.specification,
+        unit: purchaseInvoiceItemsTable.unit,
+        quantity: purchaseInvoiceItemsTable.quantity,
+        unitPrice: purchaseInvoiceItemsTable.unitPrice,
+        amount: purchaseInvoiceItemsTable.amount,
+      })
+      .from(purchaseInvoiceItemsTable)
+      .innerJoin(purchaseInvoicesTable, eq(purchaseInvoiceItemsTable.purchaseInvoiceId, purchaseInvoicesTable.id))
+      .where(and(
+        eq(purchaseInvoicesTable.projectId, projectId),
+        ne(purchaseInvoicesTable.status, "cancelled"),
+        inArray(purchaseInvoiceItemsTable.category, [...DETAIL_CATEGORIES]),
+      ));
+    const invById = new Map(invoices.map((i) => [i.id, i]));
+    const purchaseDateById = new Map(
+      (await db.select({ id: purchaseInvoicesTable.id, d: purchaseInvoicesTable.purchaseDate })
+        .from(purchaseInvoicesTable).where(eq(purchaseInvoicesTable.projectId, projectId))).map((r) => [r.id, String(r.d)]),
+    );
+    const details = Object.fromEntries(DETAIL_CATEGORIES.map((c) => [c, [] as unknown[]])) as Record<DetailCategory, unknown[]>;
+    for (const d of detailRows) {
+      const inv = invById.get(d.invoiceId);
+      if (!inv) continue;
+      if (inv.stage === "provisional" && (inv.settledByInvoiceId != null || hiddenProvIds.has(inv.id))) continue;
+      if (inv.stage !== "provisional" && inv.stage !== "confirmed") continue;
+      const editable = inv.stage === "provisional" && inv.notes === DETAIL_NOTE;
+      details[d.category as DetailCategory].push({
+        itemId: d.itemId,
+        invoiceId: d.invoiceId,
+        date: purchaseDateById.get(d.invoiceId) ?? "",
+        vendorId: inv.vendorId,
+        vendorName: inv.vendorName,
+        description: d.description,
+        specification: d.specification ?? "",
+        unit: d.unit ?? "",
+        quantity: parseN(d.quantity),
+        unitPrice: parseN(d.unitPrice),
+        amount: parseN(d.amount),
+        stage: inv.stage,
+        editable,
+        sort: `${purchaseDateById.get(d.invoiceId)}|${String(d.invoiceId).padStart(9, "0")}|${String(d.lineNumber).padStart(4, "0")}`,
+      });
+    }
+    for (const c of DETAIL_CATEGORIES) {
+      (details[c] as { sort: string }[]).sort((a, b) => a.sort.localeCompare(b.sort));
+    }
+
     const vendorList = await db
       .select({ id: vendorsTable.id, name: vendorsTable.name })
       .from(vendorsTable)
@@ -212,9 +274,9 @@ router.get("/:projectId", async (req, res) => {
       const sec = sections[c.category as Section];
       if (!sec) continue;
       const isProv = c.stage === "provisional";
+      const inv = c.invoiceNumber ? invByVoucher.get(c.invoiceNumber) : undefined;
       if (isProv) {
         // 伝票を通らない仮原価（原価明細で手入力）は照合できないので、この表には出さない
-        const inv = c.invoiceNumber ? invByVoucher.get(c.invoiceNumber) : undefined;
         if (!inv || inv.settledByInvoiceId != null || hiddenProvIds.has(inv.id)) continue;
       }
       const name = c.vendorName ?? c.vendorText ?? "（仕入先なし）";
@@ -229,7 +291,9 @@ router.get("/:projectId", async (req, res) => {
       const amt = parseN(c.amount);
       row.byMonth[m] = (row.byMonth[m] ?? 0) + amt;
       if (isProv) row.provByMonth[m] = (row.provByMonth[m] ?? 0) + amt;
-      else if (amt !== 0 && !row.lockedMonths.includes(m)) row.lockedMonths.push(m);
+      // 請求書で確定した月と、下の明細に打ってある月は、上のマスでは打てない（明細の合計が入る。Excel と同じ）
+      const lock = !isProv ? amt !== 0 : inv?.notes === DETAIL_NOTE;
+      if (lock && !row.lockedMonths.includes(m)) row.lockedMonths.push(m);
       row.total += amt;
     }
     for (const sec of Object.values(sections)) {
@@ -265,6 +329,12 @@ router.get("/:projectId", async (req, res) => {
     const costTotal = laborTotal + SECTION_ORDER.reduce((t, s) => t + sectionOut[s].total, 0);
     const contractAmount = parseN(project.contractAmount);
     const grossProfit = contractAmount - costTotal;
+    const consumableRate = project.consumableRate != null ? parseN(project.consumableRate) : DEFAULT_CONSUMABLE_RATE;
+    const overheadRate = project.overheadRate != null ? parseN(project.overheadRate) : DEFAULT_OVERHEAD_RATE;
+    const consumable = Math.trunc((costTotal * consumableRate) / 100);
+    const overhead = Math.trunc(((costTotal + consumable) * overheadRate) / 100);
+    const grandTotal = costTotal + consumable + overhead;
+    const netProfit = contractAmount - grandTotal;
 
     return res.json({
       project: {
@@ -279,6 +349,7 @@ router.get("/:projectId", async (req, res) => {
       },
       months: [...months].sort(),
       vendors: vendorList,
+      details,
       matches: matches.map(({ provisionalIds: _p, ...m }) => m),
       labor: { rows: labor, total: laborTotal },
       sections: sectionOut,
@@ -293,6 +364,15 @@ router.get("/:projectId", async (req, res) => {
         grossProfitRate: contractAmount > 0 ? Math.round((grossProfit / contractAmount) * 1000) / 10 : null,
         laborRate: costTotal > 0 ? Math.round((laborTotal / costTotal) * 1000) / 10 : null,
         materialRate: costTotal > 0 ? Math.round((sectionOut.material.total / costTotal) * 1000) / 10 : null,
+        consumableRate,
+        consumableRateIsDefault: project.consumableRate == null,
+        consumable,
+        overheadRate,
+        overheadRateIsDefault: project.overheadRate == null,
+        overhead,
+        grandTotal,
+        netProfit,
+        netProfitRate: contractAmount > 0 ? Math.round((netProfit / contractAmount) * 1000) / 10 : null,
       },
     });
   } catch (err) {
@@ -380,6 +460,10 @@ router.put("/:projectId/cells", async (req, res) => {
       return res.status(409).json({ message: "請求書との照合が確認待ちの月です。先に下の一覧で確定してください。" });
     }
     const invByVoucher = new Map(invoices.map((i) => [i.voucherNumber, i]));
+    if (cellItems.some((c) => c.stage === "provisional" && c.invoiceNumber && invByVoucher.get(c.invoiceNumber)?.notes === DETAIL_NOTE
+      && invByVoucher.get(c.invoiceNumber)?.settledByInvoiceId == null)) {
+      return res.status(409).json({ message: "この月は下の明細に打ってあります。明細の方で直してください。" });
+    }
     const sheetInv = invoices.find((i) =>
       i.stage === "provisional" && i.settledByInvoiceId == null && i.notes === SHEET_ENTRY_NOTE &&
       i.vendorId === vendorId && i.month === month &&
@@ -459,6 +543,257 @@ router.put("/:projectId/cells", async (req, res) => {
   }
 });
 
+// ─── 材料・損料等の明細（表の下）──────────────────────────────────────────────
+// Excel では下の明細に 日付・品名・色・容量・単価・数量 を打つと、月の合計が上の材料費のマスに入る。
+// 同じく、明細の1行を仮の仕入伝票の1明細として持つ。伝票は 業者×日付 で1枚（DETAIL_NOTE の目印付き）。
+// 請求書が来れば、上の表と同じく 業者×月 で照合して確定する。
+
+type DetailInput = {
+  category?: string;
+  vendorId?: number;
+  date?: string;
+  description?: string;
+  specification?: string;
+  unit?: string;
+  quantity?: number;
+  unitPrice?: number;
+};
+
+function readDetail(b: DetailInput, partial: boolean): { ok: true; v: DetailInput } | { ok: false; message: string } {
+  const v: DetailInput = {};
+  if (b.category !== undefined || !partial) {
+    if (!DETAIL_CATEGORIES.includes(b.category as DetailCategory)) return { ok: false, message: "費目が正しくありません" };
+    v.category = b.category;
+  }
+  if (b.vendorId !== undefined || !partial) {
+    const n = Number(b.vendorId);
+    if (!Number.isInteger(n) || n <= 0) return { ok: false, message: "仕入先を選んでください" };
+    v.vendorId = n;
+  }
+  if (b.date !== undefined || !partial) {
+    if (typeof b.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(b.date) || Number.isNaN(Date.parse(b.date))) {
+      return { ok: false, message: "日付が正しくありません" };
+    }
+    v.date = b.date;
+  }
+  for (const k of ["description", "specification", "unit"] as const) {
+    if (b[k] !== undefined) v[k] = String(b[k] ?? "").trim();
+  }
+  if (!partial && !v.description) return { ok: false, message: "品名を入れてください" };
+  if (partial && v.description !== undefined && !v.description) return { ok: false, message: "品名は空にできません" };
+  for (const k of ["quantity", "unitPrice"] as const) {
+    if (b[k] === undefined) continue;
+    const n = Number(String(b[k]).replace(/,/g, ""));
+    if (!Number.isFinite(n)) return { ok: false, message: "数量・単価は数で入れてください" };
+    v[k] = n;
+  }
+  return { ok: true, v };
+}
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** 伝票の合計を明細から計算し直す。明細が無くなった伝票は消す */
+async function recomputeInvoice(tx: Tx, invoiceId: number) {
+  const items = await tx.select().from(purchaseInvoiceItemsTable).where(eq(purchaseInvoiceItemsTable.purchaseInvoiceId, invoiceId));
+  if (items.length === 0) {
+    await tx.delete(purchaseInvoicesTable).where(eq(purchaseInvoicesTable.id, invoiceId));
+    return;
+  }
+  const subtotal = items.reduce((s, i) => s + parseN(i.amount), 0);
+  const tax = items.reduce((s, i) => s + Math.floor((parseN(i.amount) * parseN(i.taxRate)) / 100), 0);
+  await tx.update(purchaseInvoicesTable)
+    .set({ subtotal: String(subtotal), taxAmount: String(tax), totalAmount: String(subtotal + tax), updatedAt: new Date() })
+    .where(eq(purchaseInvoicesTable.id, invoiceId));
+}
+
+/** 上のマスに合計が打ってある（原価計算書から入力の仮がある）月には、明細を足せない（二重になるため） */
+async function sheetEntryExists(projectId: number, vendorId: number, category: string, date: string) {
+  const month = date.slice(0, 7);
+  const invs = await loadMatchInvoices(projectId);
+  const sheetVouchers = invs
+    .filter((i) => i.notes === SHEET_ENTRY_NOTE && i.stage === "provisional" && i.settledByInvoiceId == null && i.vendorId === vendorId && i.month === month)
+    .map((i) => i.voucherNumber);
+  if (sheetVouchers.length === 0) return false;
+  const rows = await db.select({ id: costItemsTable.id }).from(costItemsTable).where(and(
+    eq(costItemsTable.projectId, projectId),
+    eq(costItemsTable.category, category as DetailCategory),
+    inArray(costItemsTable.invoiceNumber, sheetVouchers),
+  ));
+  return rows.length > 0;
+}
+
+/** 明細1行を、業者×日付の仮の伝票に足す（伝票が無ければ作る） */
+async function addDetailLine(projectId: number, v: Required<Pick<DetailInput, "category" | "vendorId" | "date" | "description">> & DetailInput) {
+  const [vendor] = await db.select({ id: vendorsTable.id, name: vendorsTable.name }).from(vendorsTable).where(eq(vendorsTable.id, v.vendorId));
+  if (!vendor) throw Object.assign(new Error("仕入先が見つかりません"), { status: 404 });
+  const quantity = v.quantity ?? 1;
+  const unitPrice = v.unitPrice ?? 0;
+  const amount = Math.round(quantity * unitPrice);
+  const [existing] = await db.select({ id: purchaseInvoicesTable.id, voucherNumber: purchaseInvoicesTable.voucherNumber })
+    .from(purchaseInvoicesTable)
+    .where(and(
+      eq(purchaseInvoicesTable.projectId, projectId),
+      eq(purchaseInvoicesTable.vendorId, v.vendorId),
+      eq(purchaseInvoicesTable.purchaseDate, v.date),
+      eq(purchaseInvoicesTable.stage, "provisional"),
+      eq(purchaseInvoicesTable.notes, DETAIL_NOTE),
+      sql`${purchaseInvoicesTable.settledByInvoiceId} IS NULL`,
+    ))
+    .limit(1);
+  const item = {
+    category: v.category as DetailCategory,
+    description: v.description,
+    specification: v.specification || null,
+    quantity: String(quantity),
+    unit: v.unit ?? "",
+    unitPrice: String(unitPrice),
+    amount: String(amount),
+    taxRate: "10",
+  };
+  if (existing) {
+    await db.transaction(async (tx) => {
+      const [{ n }] = await tx.select({ n: sql<number>`COALESCE(MAX(${purchaseInvoiceItemsTable.lineNumber}), 0)` })
+        .from(purchaseInvoiceItemsTable).where(eq(purchaseInvoiceItemsTable.purchaseInvoiceId, existing.id));
+      const inserted = await tx.insert(purchaseInvoiceItemsTable).values({ ...item, purchaseInvoiceId: existing.id, lineNumber: Number(n) + 1 }).returning();
+      await syncCostItemsAfterInvoice(tx, projectId, v.date, existing.voucherNumber, "provisional", vendor.name, vendor.id, inserted);
+      await recomputeInvoice(tx, existing.id);
+    });
+    return;
+  }
+  await withUniqueNumberTransaction(generateVoucherNumber, async (voucherNumber, tx) => {
+    const [inv] = await tx.insert(purchaseInvoicesTable).values({
+      voucherNumber,
+      projectId,
+      vendorId: vendor.id,
+      purchaseDate: v.date,
+      status: "provisional",
+      isProvisional: true, // 請求書が来るまでは支払査定に入れない
+      stage: "provisional",
+      notes: DETAIL_NOTE,
+    }).returning();
+    const inserted = await tx.insert(purchaseInvoiceItemsTable).values({ ...item, purchaseInvoiceId: inv.id, lineNumber: 1 }).returning();
+    await syncCostItemsAfterInvoice(tx, projectId, v.date, voucherNumber, "provisional", vendor.name, vendor.id, inserted);
+    await recomputeInvoice(tx, inv.id);
+    return inv;
+  });
+}
+
+/** 直せる明細か（この工事の、明細から入力した、まだ請求書と照合していない仮の伝票の行） */
+async function loadEditableLine(projectId: number, itemId: number) {
+  const [row] = await db
+    .select({ item: purchaseInvoiceItemsTable, inv: purchaseInvoicesTable })
+    .from(purchaseInvoiceItemsTable)
+    .innerJoin(purchaseInvoicesTable, eq(purchaseInvoiceItemsTable.purchaseInvoiceId, purchaseInvoicesTable.id))
+    .where(eq(purchaseInvoiceItemsTable.id, itemId));
+  if (!row || row.inv.projectId !== projectId) return { error: 404, message: "明細が見つかりません。画面を開き直してください。" } as const;
+  if (row.inv.notes !== DETAIL_NOTE || row.inv.stage !== "provisional" || row.inv.settledByInvoiceId != null) {
+    return { error: 409, message: "請求書で確定した明細は、ここでは直せません。" } as const;
+  }
+  return { row } as const;
+}
+
+async function removeLine(itemId: number, invoiceId: number, costItemId: number | null) {
+  await db.transaction(async (tx) => {
+    if (costItemId) await tx.delete(costItemsTable).where(eq(costItemsTable.id, costItemId));
+    await tx.delete(purchaseInvoiceItemsTable).where(eq(purchaseInvoiceItemsTable.id, itemId));
+    await recomputeInvoice(tx, invoiceId);
+  });
+}
+
+// POST /api/cost-sheet/:projectId/detail-lines — 明細を1行足す
+router.post("/:projectId/detail-lines", async (req, res) => {
+  try {
+    const projectId = Number(req.params["projectId"]);
+    const r = readDetail(req.body ?? {}, false);
+    if (!r.ok) return res.status(400).json({ message: r.message });
+    const v = r.v as Required<Pick<DetailInput, "category" | "vendorId" | "date" | "description">> & DetailInput;
+    if (await sheetEntryExists(projectId, v.vendorId, v.category, v.date)) {
+      return res.status(409).json({ message: "この業者のこの月は、上のマスに合計が打ってあります。先に上のマスを空にしてから明細を打ってください。" });
+    }
+    await addDetailLine(projectId, v);
+    return res.status(201).json({ ok: true });
+  } catch (err) {
+    const status = (err as { status?: number }).status;
+    if (status) return res.status(status).json({ message: (err as Error).message });
+    req.log.error({ err }, "Failed to add detail line");
+    return res.status(500).json({ message: "明細の保存に失敗しました。" });
+  }
+});
+
+// PUT /api/cost-sheet/:projectId/detail-lines/:itemId — 明細を直す（送られた欄だけ）
+router.put("/:projectId/detail-lines/:itemId", async (req, res) => {
+  try {
+    const projectId = Number(req.params["projectId"]);
+    const itemId = Number(req.params["itemId"]);
+    const r = readDetail(req.body ?? {}, true);
+    if (!r.ok) return res.status(400).json({ message: r.message });
+    const loaded = await loadEditableLine(projectId, itemId);
+    if ("error" in loaded) return res.status(loaded.error ?? 500).json({ message: loaded.message });
+    const { item, inv } = loaded.row;
+    const v = r.v;
+    const vendorId = v.vendorId ?? inv.vendorId;
+    const date = v.date ?? String(inv.purchaseDate);
+    const merged = {
+      category: (v.category ?? item.category) as DetailCategory,
+      vendorId,
+      date,
+      description: v.description ?? item.description,
+      specification: v.specification ?? item.specification ?? "",
+      unit: v.unit ?? item.unit ?? "",
+      quantity: v.quantity ?? parseN(item.quantity),
+      unitPrice: v.unitPrice ?? parseN(item.unitPrice),
+    };
+    // 業者・日付・費目が変わったら、別の伝票（業者×日付）へ移す
+    if (vendorId !== inv.vendorId || date !== String(inv.purchaseDate) || merged.category !== item.category) {
+      if (await sheetEntryExists(projectId, vendorId, merged.category, date)) {
+        return res.status(409).json({ message: "その業者のその月は、上のマスに合計が打ってあります。先に上のマスを空にしてください。" });
+      }
+      await removeLine(item.id, inv.id, item.costItemId);
+      await addDetailLine(projectId, merged);
+      return res.json({ ok: true });
+    }
+    const amount = Math.round(merged.quantity * merged.unitPrice);
+    await db.transaction(async (tx) => {
+      const values = {
+        description: merged.description,
+        specification: merged.specification || null,
+        unit: merged.unit,
+        quantity: String(merged.quantity),
+        unitPrice: String(merged.unitPrice),
+        amount: String(amount),
+      };
+      await tx.update(purchaseInvoiceItemsTable).set(values).where(eq(purchaseInvoiceItemsTable.id, item.id));
+      if (item.costItemId) {
+        await tx.update(costItemsTable).set({
+          description: values.description, unit: values.unit, quantity: values.quantity,
+          unitPrice: values.unitPrice, amount: values.amount, updatedAt: new Date(),
+        }).where(eq(costItemsTable.id, item.costItemId));
+      }
+      await recomputeInvoice(tx, inv.id);
+    });
+    return res.json({ ok: true });
+  } catch (err) {
+    const status = (err as { status?: number }).status;
+    if (status) return res.status(status).json({ message: (err as Error).message });
+    req.log.error({ err }, "Failed to update detail line");
+    return res.status(500).json({ message: "明細の保存に失敗しました。" });
+  }
+});
+
+// DELETE /api/cost-sheet/:projectId/detail-lines/:itemId — 明細を消す
+router.delete("/:projectId/detail-lines/:itemId", async (req, res) => {
+  try {
+    const projectId = Number(req.params["projectId"]);
+    const loaded = await loadEditableLine(projectId, Number(req.params["itemId"]));
+    if ("error" in loaded) return res.status(loaded.error ?? 500).json({ message: loaded.message });
+    await removeLine(loaded.row.item.id, loaded.row.inv.id, loaded.row.item.costItemId);
+    return res.status(204).send();
+  } catch (err) {
+    req.log.error({ err }, "Failed to delete detail line");
+    return res.status(500).json({ message: "明細の削除に失敗しました。" });
+  }
+});
+
 // POST /api/cost-sheet/:projectId/settle — 確認待ち（仮と請求書の金額が違う）を確定する
 // body: { vendorId, month }  month は仮の月。原価は請求書の金額になる
 router.post("/:projectId/settle", async (req, res) => {
@@ -497,6 +832,33 @@ router.post("/:projectId/vendors", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Failed to create vendor from cost sheet");
     return res.status(500).json({ message: "仕入先の登録に失敗しました。" });
+  }
+});
+
+// PUT /api/cost-sheet/:projectId/overhead-rates — 消耗品費・諸経費の率（%）。送られた方だけ直す。空なら既定に戻す
+router.put("/:projectId/overhead-rates", async (req, res) => {
+  try {
+    const projectId = Number(req.params["projectId"]);
+    if (!Number.isInteger(projectId) || projectId <= 0) return res.status(400).json({ message: "工事が正しくありません" });
+    const set: { consumableRate?: string | null; overheadRate?: string | null } = {};
+    for (const k of ["consumableRate", "overheadRate"] as const) {
+      const v = req.body?.[k];
+      if (v === undefined) continue;
+      if (v === null || v === "") {
+        set[k] = null;
+        continue;
+      }
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0 || n > 100) return res.status(400).json({ message: "率は0〜100の数で入れてください" });
+      set[k] = String(n);
+    }
+    if (Object.keys(set).length === 0) return res.status(400).json({ message: "率がありません" });
+    const [row] = await db.update(projectsTable).set({ ...set, updatedAt: new Date() }).where(eq(projectsTable.id, projectId)).returning({ id: projectsTable.id });
+    if (!row) return res.status(404).json({ message: "工事が見つかりません" });
+    return res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "Failed to save overhead rates");
+    return res.status(500).json({ message: "率の保存に失敗しました。" });
   }
 });
 

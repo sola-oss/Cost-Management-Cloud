@@ -1,12 +1,14 @@
 import { Fragment, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Loader2, ScanLine } from "lucide-react";
+import { Loader2, Printer, ScanLine } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { pathAllowed, useRole } from "@/lib/permissions";
+import { moveFocus } from "@/lib/grid-nav";
+import { CostSheetDetails, type DetailLine } from "@/components/cost-sheet-details";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/utils";
 
@@ -71,6 +73,7 @@ type CostSheetData = {
   };
   months: string[];
   vendors: { id: number; name: string }[];
+  details: { material: DetailLine[]; expense: DetailLine[] };
   matches: Match[];
   labor: { rows: Worker[]; total: number };
   sections: Record<Section, { rows: VendorRow[]; total: number }>;
@@ -84,6 +87,15 @@ type CostSheetData = {
     grossProfitRate: number | null;
     laborRate: number | null;
     materialRate: number | null;
+    consumableRate: number;
+    consumableRateIsDefault: boolean;
+    consumable: number;
+    overheadRate: number;
+    overheadRateIsDefault: boolean;
+    overhead: number;
+    grandTotal: number;
+    netProfit: number;
+    netProfitRate: number | null;
   };
 };
 
@@ -178,28 +190,43 @@ function RateInput({ value, onSave }: { value: number; onSave: (v: number) => Pr
  * 業者×月のマス。Excel のようにそのまま金額を打つ（Enter か、ほかを押すと保存）。
  * 仮（請求書待ち）の金額は黄色、請求書で確定した月は打てない（灰色の数字のまま）。
  */
-/**
- * Excel のように矢印キー・Enter でマスを移る（2026-11-16 アイさん）。
- * マスには data-cs="行:列" を付け、その方向にある次の打てるマスへ移る（確定済みで打てないマスは飛ばす）。
- */
-function moveFocus(from: HTMLElement, dRow: number, dCol: number) {
-  const pos = from.dataset.cs?.split(":").map(Number);
-  const table = from.closest("table");
-  if (!pos || !table) return false;
-  let [r, c] = pos;
-  for (let i = 0; i < 200; i++) {
-    r += dRow;
-    c += dCol;
-    if (r < 0 || c < 0) return false;
-    const next = table.querySelector<HTMLInputElement>(`input[data-cs="${r}:${c}"]`);
-    if (next) {
-      next.focus();
-      return true;
+/** 消耗品費・諸経費の率（%）。空にして保存すると既定（3%・10%）に戻る */
+function PercentInput({ value, isDefault, onSave }: { value: number; isDefault: boolean; onSave: (v: number | null) => Promise<void> }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = async () => {
+    if (draft == null) return;
+    const t = draft.trim().replace(/[%％]/g, "");
+    setDraft(null);
+    if (t === "") {
+      if (!isDefault) await onSave(null);
+      return;
     }
-  }
-  return false;
+    const n = Number(t);
+    if (!Number.isFinite(n) || n < 0 || n > 100 || (n === value && !isDefault)) return;
+    await onSave(n);
+  };
+  return (
+    <div className="flex items-center justify-end gap-0.5" title={isDefault ? "まだ打っていないので、決まった率で計算しています" : undefined}>
+      <input
+        inputMode="decimal"
+        value={draft ?? String(value)}
+        onFocus={(e) => { setDraft(String(value)); const el = e.target; requestAnimationFrame(() => el.select()); }}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.key === "Escape") { setDraft(null); (e.target as HTMLInputElement).blur(); }
+        }}
+        className={`w-12 text-right tabular-nums rounded border px-1 py-0.5 text-sm ${
+          isDefault ? "border-dashed border-slate-300 text-slate-500" : "border-transparent hover:border-slate-300"
+        } focus:border-primary focus:bg-white focus:outline-none`}
+      />
+      <span className="text-xs text-slate-500">%</span>
+    </div>
+  );
 }
 
+/** 業者×月のマス。矢印キー・Enter での移動は lib/grid-nav.ts（2026-11-16 アイさん） */
 function CellInput({
   value,
   prov,
@@ -295,10 +322,12 @@ export function CostSheet({ projectId }: { projectId: number }) {
     labor: [], subcontract: [], material: [], expense: [],
   });
   // 仕入先がマスタに無いとき、その場で登録する窓（どの費目に足すか）
-  const [newVendorFor, setNewVendorFor] = useState<Section | null>(null);
+  // 新しい仕入先を登録したら、どこに使うか（上の表の行を足す／明細の仕入先にする）
+  const [newVendorFor, setNewVendorFor] = useState<{ onPick: (v: { id: number; name: string }) => void } | null>(null);
   const [newVendor, setNewVendor] = useState({ name: "", kana: "" });
   const [creatingVendor, setCreatingVendor] = useState(false);
   const vendorNameRef = useRef<HTMLInputElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
   const qc = useQueryClient();
   const queryKey = ["/api/cost-sheet", projectId];
@@ -352,6 +381,20 @@ export function CostSheet({ projectId }: { projectId: number }) {
     return true;
   };
 
+  const saveOverheadRate = async (patch: { consumableRate?: number | null; overheadRate?: number | null }) => {
+    const r = await fetch(`${BASE}/api/cost-sheet/${projectId}/overhead-rates`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      toast({ title: "率を保存できませんでした", description: body.message, variant: "destructive" });
+      return;
+    }
+    await qc.invalidateQueries({ queryKey });
+  };
+
   const settle = async (m: Match) => {
     const r = await fetch(`${BASE}/api/cost-sheet/${projectId}/settle`, {
       method: "POST",
@@ -384,7 +427,7 @@ export function CostSheet({ projectId }: { projectId: number }) {
       toast({ title: "仕入先を登録できませんでした", description: body.message, variant: "destructive" });
       return;
     }
-    addRow(newVendorFor, body);
+    newVendorFor.onPick(body);
     toast({ title: body.existed ? `「${body.name}」はもう登録されていたので、それを使います` : `「${body.name}」を仕入先に登録しました` });
     setNewVendorFor(null);
     setNewVendor({ name: "", kana: "" });
@@ -402,9 +445,56 @@ export function CostSheet({ projectId }: { projectId: number }) {
     : [];
   const useExisting = (v: { id: number; name: string }) => {
     if (!newVendorFor) return;
-    addRow(newVendorFor, v);
+    newVendorFor.onPick(v);
     setNewVendorFor(null);
     setNewVendor({ name: "", kana: "" });
+  };
+
+  /**
+   * A4縦1枚に印刷する（Excel の印刷範囲と同じく、計算書の本体だけ。明細・照合・入力の補助は出さない）。
+   * 画面の表をそのまま印刷すると周りのメニューや横スクロールが邪魔なので、表を複製して入力欄を文字に置きかえ、
+   * それだけを印刷する。月が多くて大きいときは、紙に収まるよう縮める。
+   */
+  const printSheet = () => {
+    const src = sheetRef.current;
+    if (!src) return;
+    document.getElementById("cs-print-portal")?.remove();
+    const clone = src.cloneNode(true) as HTMLElement;
+    const srcInputs = src.querySelectorAll("input");
+    clone.querySelectorAll("input").forEach((ci, i) => {
+      const span = document.createElement("span");
+      span.textContent = (srcInputs[i] as HTMLInputElement | undefined)?.value ?? "";
+      span.className = ci.className.includes("text-right") ? "block text-right tabular-nums" : "";
+      ci.replaceWith(span);
+    });
+    // 印刷しない行（「＋ 仕入先を足す」）は消す。表の左の費目名は複数の行にまたがっている（rowSpan）ので、
+    // 消した行の分だけ縮めないと、下の行が1列ずつずれる
+    clone.querySelectorAll<HTMLTableRowElement>("tr.cs-no-print").forEach((tr) => {
+      for (let prev = tr.previousElementSibling; prev; prev = prev.previousElementSibling) {
+        const spanning = prev.querySelector<HTMLTableCellElement>("th[rowspan], td[rowspan]");
+        if (spanning && spanning.rowSpan > 1) {
+          spanning.rowSpan -= 1;
+          break;
+        }
+      }
+      tr.remove();
+    });
+    clone.id = "cs-print-root";
+    const portal = document.createElement("div");
+    portal.id = "cs-print-portal";
+    portal.appendChild(clone);
+    document.body.appendChild(portal);
+    // A4縦（210×297mm）から余白8mmずつを引いた大きさ（96dpi の px）に収める
+    const z = Math.min(1, 733 / clone.scrollWidth, 1062 / clone.scrollHeight);
+    clone.style.setProperty("zoom", String(z));
+    document.documentElement.classList.add("cs-print-mode");
+    const done = () => {
+      document.documentElement.classList.remove("cs-print-mode");
+      portal.remove();
+      window.removeEventListener("afterprint", done);
+    };
+    window.addEventListener("afterprint", done);
+    window.print();
   };
 
   const canEdit = months.length > 0;
@@ -430,19 +520,43 @@ export function CostSheet({ projectId }: { projectId: number }) {
   const laborManDaysByMonth = (m: string) => labor.rows.reduce((s, w) => s + (w.manDays[m] ?? 0), 0);
 
   return (
-    <div className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6">
+    <div ref={sheetRef} className="bg-white rounded-lg border border-slate-200 p-4 sm:p-6">
+      <style>{`
+        #cs-print-portal { position: fixed; left: -100000px; top: 0; width: max-content; min-width: 733px; background: white; }
+        #cs-print-root { border: none; padding: 0; }
+        #cs-print-root .cs-no-print { display: none !important; }
+        #cs-print-root .overflow-x-auto { overflow: visible !important; }
+        #cs-print-root .sticky { position: static !important; box-shadow: none !important; }
+        @media print {
+          @page { size: A4 portrait; margin: 8mm; }
+          html.cs-print-mode body > *:not(#cs-print-portal) { display: none !important; }
+          html.cs-print-mode #cs-print-portal { position: static; left: auto; width: auto; min-width: 0; }
+          html.cs-print-mode, html.cs-print-mode body { background: white !important; }
+          #cs-print-root * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+      `}</style>
       <div className="space-y-5 text-sm text-slate-800">
         <div className="relative">
           <h2 className="text-center text-lg font-bold tracking-[0.5em]">工事原価計算書</h2>
-          {pathAllowed(role, "/scan") && (
-            <Link
-              href="/scan"
-              className="absolute right-0 top-0 inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+          <div className="absolute right-0 top-0 flex gap-2 cs-no-print">
+            <button
+              type="button"
+              onClick={printSheet}
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
             >
-              <ScanLine className="w-3.5 h-3.5" />
-              書類をスキャン
-            </Link>
-          )}
+              <Printer className="w-3.5 h-3.5" />
+              印刷
+            </button>
+            {pathAllowed(role, "/scan") && (
+              <Link
+                href="/scan"
+                className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              >
+                <ScanLine className="w-3.5 h-3.5" />
+                書類をスキャン
+              </Link>
+            )}
+          </div>
         </div>
 
         {/* 見出し：工事名・受注先・担当者・工期 */}
@@ -579,14 +693,14 @@ export function CostSheet({ projectId }: { projectId: number }) {
                       </tr>
                   ); })}
                   {canEdit && (
-                    <tr>
+                    <tr className="cs-no-print">
                       <td className={`${cell} ${stickL2} bg-white py-0.5`}>
                         <Select
                           value=""
                           onValueChange={(id) => {
                             if (id === "__new__") {
                               // プルダウンが閉じて元のボタンに戻るのを待ってから窓を開く（でないと名前の欄に入力できない）
-                              setTimeout(() => setNewVendorFor(key), 0);
+                              setTimeout(() => setNewVendorFor({ onPick: (v) => addRow(key, v) }), 0);
                               return;
                             }
                             const v = data.vendors.find((x) => String(x.id) === id);
@@ -623,7 +737,7 @@ export function CostSheet({ projectId }: { projectId: number }) {
             }); })()}
 
             {/* 合計・粗利・費率（Excel 下段）。Excel と同じく右端の「金額」の列に縦にそろえ、
-                上から1本の列で読めるようにする。消耗品費3%・諸経費10%は出さない */}
+                上から1本の列で読めるようにする */}
             {[
               { label: "合計", value: formatCurrency(summary.costTotal), strong: true, tone: "" },
               {
@@ -644,6 +758,46 @@ export function CostSheet({ projectId }: { projectId: number }) {
                 <td className={`${numCell} ${stickR1} bg-white ${r.strong ? "font-semibold" : ""} ${r.tone}`}>{r.value}</td>
               </tr>
             ))}
+
+            {/* 消耗品費・諸経費・総合計（Excel 下段と同じ）。合計の列に掛ける元の金額、真ん中に率、右に金額 */}
+            <tr>
+              <th colSpan={2} className={`${head} sticky left-0 z-10 text-left tracking-[0.3em]`}>消耗品費</th>
+              {monthCols.map((m) => <td key={m.key} className={cell} />)}
+              <td className={`${numCell} ${stickR3} bg-white text-slate-500`}>{yen(summary.costTotal)}</td>
+              <td className={`${cell} ${stickR2} bg-white`}>
+                <PercentInput
+                  key={`c${summary.consumableRate}${summary.consumableRateIsDefault}`}
+                  value={summary.consumableRate}
+                  isDefault={summary.consumableRateIsDefault}
+                  onSave={(v) => saveOverheadRate({ consumableRate: v })}
+                />
+              </td>
+              <td className={`${numCell} ${stickR1} bg-white`}>{formatCurrency(summary.consumable)}</td>
+            </tr>
+            <tr>
+              <th colSpan={2} className={`${head} sticky left-0 z-10 text-left`}>
+                <span className="tracking-[0.3em]">諸経費</span>
+                <span className="ml-1 text-[10px] font-normal text-slate-400">現場管理含む</span>
+              </th>
+              {monthCols.map((m) => <td key={m.key} className={cell} />)}
+              <td className={`${numCell} ${stickR3} bg-white text-slate-500`}>{yen(summary.costTotal + summary.consumable)}</td>
+              <td className={`${cell} ${stickR2} bg-white`}>
+                <PercentInput
+                  key={`o${summary.overheadRate}${summary.overheadRateIsDefault}`}
+                  value={summary.overheadRate}
+                  isDefault={summary.overheadRateIsDefault}
+                  onSave={(v) => saveOverheadRate({ overheadRate: v })}
+                />
+              </td>
+              <td className={`${numCell} ${stickR1} bg-white`}>{formatCurrency(summary.overhead)}</td>
+            </tr>
+            <tr className="bg-slate-50">
+              <th colSpan={2} className={`${head} sticky left-0 z-10 text-left tracking-[0.3em]`}>総合計</th>
+              {monthCols.map((m) => <td key={m.key} className={cell} />)}
+              <td className={`${cell} ${stickR3} bg-slate-50`} />
+              <td className={`${cell} ${stickR2} bg-slate-50`} />
+              <td className={`${numCell} ${stickR1} bg-slate-50 font-semibold`}>{formatCurrency(summary.grandTotal)}</td>
+            </tr>
           </tbody>
         </table>
         </div>
@@ -664,12 +818,13 @@ export function CostSheet({ projectId }: { projectId: number }) {
               <tr>
                 <td className={numCell}>{summary.estimateAmount != null ? formatCurrency(summary.estimateAmount) : "—"}</td>
                 <td className={numCell}>{formatCurrency(summary.contractAmount)}</td>
-                <td className={numCell}>{formatCurrency(summary.costTotal)}</td>
+                {/* Excel と同じく、実行金額は総合計（消耗品費・諸経費を含む）、純利益は決定金額 − 総合計 */}
+                <td className={numCell}>{formatCurrency(summary.grandTotal)}</td>
                 <td className={numCell}>{formatCurrency(summary.invoicedAmount)}</td>
-                <td className={`${numCell} font-semibold ${summary.grossProfit < 0 ? "text-destructive" : ""}`}>
-                  {formatCurrency(summary.grossProfit)}
+                <td className={`${numCell} font-semibold ${summary.netProfit < 0 ? "text-destructive" : ""}`}>
+                  {formatCurrency(summary.netProfit)}
                 </td>
-                <td className={numCell}>{summary.grossProfitRate != null ? `${summary.grossProfitRate}%` : "—"}</td>
+                <td className={numCell}>{summary.netProfitRate != null ? `${summary.netProfitRate}%` : "—"}</td>
               </tr>
             </tbody>
           </table>
@@ -742,8 +897,25 @@ export function CostSheet({ projectId }: { projectId: number }) {
           </DialogContent>
         </Dialog>
 
+        {/* 材料費・損料等の明細。ここに打つと上の表のマスに月の合計が入る（Excel の下の明細と同じ） */}
+        <div className="space-y-5 cs-no-print">
+          {(["material", "expense"] as const).map((c) => (
+            <CostSheetDetails
+              key={c}
+              projectId={projectId}
+              category={c}
+              label={c === "material" ? "材料費" : "損料等及び消耗品"}
+              lines={data.details[c]}
+              vendors={data.vendors}
+              defaultDate={null}
+              onChanged={() => qc.invalidateQueries({ queryKey })}
+              onNewVendor={(onPick) => setNewVendorFor({ onPick })}
+            />
+          ))}
+        </div>
+
         {/* 仮と請求書の照合（Excel で納品書の金額と請求書の金額を見比べていたのと同じ） */}
-        <div>
+        <div className="cs-no-print">
           <h3 className="font-semibold text-slate-700 mb-2">仮と請求書の照合</h3>
           {data.matches.length === 0 ? (
             <p className="text-xs text-slate-400 border border-dashed border-slate-300 rounded px-3 py-3">
@@ -800,7 +972,7 @@ export function CostSheet({ projectId }: { projectId: number }) {
           )}
         </div>
 
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-400 cs-no-print">
           業者からの原価は、請求書で確定した金額と、まだ請求書の来ていない仮（<span className="bg-amber-50 text-amber-800 px-1">黄色</span>）を足しています。
           請求書が来ると仮は請求書の金額に置きかわるので、二重には数えません。労務費は出面の人工×単価で、単価はその欄に直接入れられます。
         </p>

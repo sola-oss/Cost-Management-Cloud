@@ -27,12 +27,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const operationNav = allowed([
     // 書類のスキャンを起点に登録する入口（おおつか様の依頼）。作業の起点なので先頭に置く
     { title: "スキャンする", icon: ScanLine, url: "/scan" },
-    { title: "見積書", icon: FileText, url: "/estimates" },
-    { title: "注文書", icon: ClipboardList, url: "/purchase-orders" },
+    // 見積書・注文書・仕入集計・請求管理はメニューから外した（2026-11-16 アイさん。おおつか様は使っていない）。
+    // 画面は残してあるので、戻すときはここに1行足すだけ：
+    //   { title: "見積書", icon: FileText, url: "/estimates" },
+    //   { title: "注文書", icon: ClipboardList, url: "/purchase-orders" },
+    //   { title: "仕入集計", icon: Calculator, url: "/purchase-summary" },
+    //   { title: "請求管理", icon: Receipt, url: "/invoices" },
     { title: "仕入の振り分け", icon: FileScan, url: "/received-invoices" },
     { title: "仕入入力", icon: ShoppingCart, url: "/purchases" },
-    { title: "仕入集計", icon: Calculator, url: "/purchase-summary" },
-    { title: "請求管理", icon: Receipt, url: "/invoices" },
   ]);
 
   const reportNav = allowed([

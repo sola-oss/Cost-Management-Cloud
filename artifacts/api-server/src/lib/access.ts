@@ -124,6 +124,8 @@ async function fieldAllowed(req: Request, access: Access): Promise<boolean> {
     if (m === "PUT" && seg[2] === "cells" && seg.length === 3) return isOwnProject(access, Number(seg[1]));
     if (m === "POST" && seg[2] === "settle" && seg.length === 3) return isOwnProject(access, Number(seg[1]));
     if (m === "POST" && seg[2] === "vendors" && seg.length === 3) return isOwnProject(access, Number(seg[1]));
+    if (m === "PUT" && seg[2] === "overhead-rates" && seg.length === 3) return isOwnProject(access, Number(seg[1]));
+    if (seg[2] === "detail-lines" && (m === "POST" || m === "PUT" || m === "DELETE")) return isOwnProject(access, Number(seg[1]));
     return false;
   }
 
