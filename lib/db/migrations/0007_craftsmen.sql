@@ -30,3 +30,7 @@ ALTER TABLE attendance_rates DROP CONSTRAINT attendance_rates_unique;
 ALTER TABLE attendance_rates DROP COLUMN staff_member_id;
 ALTER TABLE attendance_rates ADD COLUMN craftsman_id integer NOT NULL CONSTRAINT attendance_rates_craftsman_id_craftsmen_id_fk REFERENCES craftsmen(id) ON DELETE CASCADE;
 ALTER TABLE attendance_rates ADD CONSTRAINT attendance_rates_unique UNIQUE (project_id, craftsman_id);
+
+-- 本番の他の表と同じく、Supabase の外向けAPIからは読めないようにする（アプリはDBに直接つなぐ）
+ALTER TABLE craftsmen ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_craftsmen ENABLE ROW LEVEL SECURITY;
