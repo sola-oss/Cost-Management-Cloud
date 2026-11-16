@@ -43,6 +43,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     { title: "得意先マスタ", icon: Users, url: "/master/clients" },
     { title: "工事分類マスタ", icon: Tags, url: "/master/construction-categories" },
     { title: "担当者マスタ", icon: UserRound, url: "/master/staff" },
+    { title: "職人マスタ", icon: HardHat, url: "/master/craftsmen" },
     { title: "工種マスタ", icon: Wrench, url: "/master/work-types" },
     { title: "単価マスタ", icon: DollarSign, url: "/master/unit-prices" },
     { title: "仕入先マスタ", icon: Building2, url: "/master/suppliers" },

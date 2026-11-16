@@ -118,14 +118,15 @@ export function SimpleCodeNameMaster({
   const remove = useMutation({
     mutationFn: async (id: number) => {
       const res = await fetch(`${BASE}${apiPath}/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete");
+      // サーバが理由を返したとき（例：出面が入っている職人）はそれを見せる
+      if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.message || "削除に失敗しました");
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey });
       toast({ title: "削除しました" });
     },
-    onError: () => {
-      toast({ title: "エラー", description: "削除に失敗しました", variant: "destructive" });
+    onError: (e) => {
+      toast({ title: "エラー", description: e instanceof Error ? e.message : "削除に失敗しました", variant: "destructive" });
     },
   });
 

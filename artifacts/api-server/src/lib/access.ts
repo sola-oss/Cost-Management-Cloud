@@ -71,7 +71,7 @@ async function isRecipient(access: Access, receivedInvoiceId: number): Promise<b
 
 // 一般でも読める表（工事の入力欄の選択肢に使う）。読むだけ。
 const FIELD_READABLE_MASTERS = [
-  "/staff-members", "/work-types", "/vendors", "/vendor-groups", "/clients",
+  "/staff-members", "/craftsmen", "/work-types", "/vendors", "/vendor-groups", "/clients",
   "/construction-categories", "/company-settings", "/unit-prices",
 ];
 
@@ -109,6 +109,8 @@ async function fieldAllowed(req: Request, access: Access): Promise<boolean> {
     return false; // 工事の編集・削除、実行予算の変更は事務
   }
 
+  // 出面と「この現場の職人」（現場が選ぶ。2026-11-16 温品様）
+  if (path === "/attendances/crew" && m === "PUT") return isOwnProject(access, Number(req.body?.projectId));
   if (path === "/attendances" || path === "/attendances/summary") {
     if (m === "GET") return isOwnProject(access, qProject);
     if (m === "PUT" && path === "/attendances") return isOwnProject(access, Number(req.body?.projectId));
@@ -118,6 +120,10 @@ async function fieldAllowed(req: Request, access: Access): Promise<boolean> {
   if (seg[0] === "cost-sheet" && seg[1]) {
     if (m === "GET" && seg.length === 2) return isOwnProject(access, Number(seg[1]));
     if (m === "PUT" && seg[2] === "rates") return isOwnProject(access, Number(seg[1]));
+    // 現場の人もExcelのようにマスへ金額を打ち、請求書との照合を確定する（2026-11-16 温品様）
+    if (m === "PUT" && seg[2] === "cells" && seg.length === 3) return isOwnProject(access, Number(seg[1]));
+    if (m === "POST" && seg[2] === "settle" && seg.length === 3) return isOwnProject(access, Number(seg[1]));
+    if (m === "POST" && seg[2] === "vendors" && seg.length === 3) return isOwnProject(access, Number(seg[1]));
     return false;
   }
 
