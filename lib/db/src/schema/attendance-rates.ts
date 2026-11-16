@@ -1,6 +1,6 @@
 import { pgTable, serial, integer, numeric, timestamp, unique } from "drizzle-orm/pg-core";
 import { projectsTable } from "./projects";
-import { staffMembersTable } from "./staff-members";
+import { craftsmenTable } from "./craftsmen";
 
 // ─── 出面の単価 ──────────────────────────────────────────────────────────────
 //
@@ -12,13 +12,14 @@ export const attendanceRatesTable = pgTable(
   {
     id: serial("id").primaryKey(),
     projectId: integer("project_id").notNull().references(() => projectsTable.id, { onDelete: "cascade" }),
-    staffMemberId: integer("staff_member_id").notNull().references(() => staffMembersTable.id, { onDelete: "cascade" }),
+    // 2026-11-16 担当者マスタから職人マスタに切り替え（本番は出面・単価とも0件のときに切り替えた）
+    craftsmanId: integer("craftsman_id").notNull().references(() => craftsmenTable.id, { onDelete: "cascade" }),
     dayRate: numeric("day_rate", { precision: 12, scale: 2 }).notNull().default("0"),
     overtimeRate: numeric("overtime_rate", { precision: 12, scale: 2 }).notNull().default("0"),
     earlyRate: numeric("early_rate", { precision: 12, scale: 2 }).notNull().default("0"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [unique("attendance_rates_unique").on(t.projectId, t.staffMemberId)],
+  (t) => [unique("attendance_rates_unique").on(t.projectId, t.craftsmanId)],
 );
 
 export type AttendanceRate = typeof attendanceRatesTable.$inferSelect;

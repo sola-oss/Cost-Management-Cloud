@@ -4,28 +4,30 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Link } from "wouter";
+import { pathAllowed, useRole } from "@/lib/permissions";
+import { ChevronLeft, ChevronRight, Loader2, Users } from "lucide-react";
 
 // ─── 出面表（でづらひょう）────────────────────────────────────────────────────
 //
-// 現行のExcel（工事ごとのシート）と同じ形：縦に社員、横に日、マスに人工。
+// 現行のExcel（工事ごとのシート）と同じ形：縦に職人、横に日、マスに人工。
 // 1人につき 工数／早出／残業 の3行。使わない現場はチェックを外して工数だけにできる。
-//
-// 金額は出さない。職人単価をシステムに持ってよいかが未確定のため（温品様へ確認中）。
-// 日数さえ入っていれば、単価が決まった時点で金額は足せる。
+// 並ぶのは「この現場の職人」で選んだ人（職人マスタから。2026-11-16 温品様の依頼）。
+// 金額（人工×単価）は基本情報タブの工事原価計算書で出す。
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const WEEK = ["日", "月", "火", "水", "木", "金", "土"];
 
-type Staff = { id: number; code: string; name: string };
+type Staff = { id: number; code: string; name: string; picked?: boolean };
 type Item = {
-  staffMemberId: number;
+  craftsmanId: number;
   workDate: string;
   manDays: number;
   earlyCount: number;
   overtimeCount: number;
 };
-type Sheet = { month: string; days: number; staff: Staff[]; items: Item[] };
+type Sheet = { month: string; days: number; staff: Staff[]; craftsmen: Staff[]; items: Item[] };
 
 type Kind = "manDays" | "earlyCount" | "overtimeCount";
 const KIND_LABEL: Record<Kind, string> = { manDays: "工数", earlyCount: "早出", overtimeCount: "残業" };
@@ -51,6 +53,10 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
   const [showExtra, setShowExtra] = useState(true);
   // 画面で編集中の値。キーは "社員ID|日付|種類"
   const [edits, setEdits] = useState<Record<string, string>>({});
+  // 「この現場の職人を選ぶ」の窓。選んでいる人のID（並び順）
+  const role = useRole();
+  const [crewOpen, setCrewOpen] = useState(false);
+  const [crewDraft, setCrewDraft] = useState<number[]>([]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["/api/attendances", projectId, month],
@@ -69,7 +75,7 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
       const r = await fetch(`${BASE}/api/attendances/summary?projectId=${projectId}`);
       if (!r.ok) throw new Error("読み込みに失敗しました");
       return (await r.json()) as {
-        items: Array<{ staffMemberId: number; name: string; manDays: number; earlyCount: number; overtimeCount: number }>;
+        items: Array<{ craftsmanId: number; name: string; manDays: number; earlyCount: number; overtimeCount: number }>;
         total: { manDays: number; earlyCount: number; overtimeCount: number };
       };
     },
@@ -81,7 +87,7 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
 
   const byCell = useMemo(() => {
     const m = new Map<string, Item>();
-    for (const it of data?.items ?? []) m.set(`${it.staffMemberId}|${it.workDate}`, it);
+    for (const it of data?.items ?? []) m.set(`${it.craftsmanId}|${it.workDate}`, it);
     return m;
   }, [data]);
 
@@ -116,7 +122,7 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
         const [staffId, workDate] = key.split("|");
         const day = Number(workDate.slice(-2));
         return {
-          staffMemberId: Number(staffId),
+          craftsmanId: Number(staffId),
           workDate,
           manDays: Number(cellValue(Number(staffId), day, "manDays") || 0),
           earlyCount: Number(cellValue(Number(staffId), day, "earlyCount") || 0),
@@ -139,6 +145,30 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
     },
     onError: (e) => toast({ title: "エラー", description: e instanceof Error ? e.message : "", variant: "destructive" }),
   });
+
+  const saveCrew = useMutation({
+    mutationFn: async (craftsmanIds: number[]) => {
+      const r = await fetch(`${BASE}/api/attendances/crew`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, craftsmanIds }),
+      });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).message ?? "保存に失敗しました");
+    },
+    onSuccess: () => {
+      setCrewOpen(false);
+      qc.invalidateQueries({ queryKey: ["/api/attendances", projectId] });
+      qc.invalidateQueries({ queryKey: ["/api/cost-sheet", projectId] });
+      toast({ title: "この現場の職人を保存しました" });
+    },
+    onError: (e) => toast({ title: "エラー", description: e instanceof Error ? e.message : "", variant: "destructive" }),
+  });
+  const openCrew = () => {
+    setCrewDraft(staff.filter((s) => s.picked).map((s) => s.id));
+    setCrewOpen(true);
+  };
+  const toggleCrew = (id: number) =>
+    setCrewDraft((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
 
   const dirty = Object.keys(edits).length > 0;
   const kinds: Kind[] = showExtra ? ["manDays", "earlyCount", "overtimeCount"] : ["manDays"];
@@ -185,6 +215,11 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
           早出・残業も表示する
         </label>
 
+        <Button variant="outline" size="sm" onClick={openCrew} disabled={!data}>
+          <Users className="w-4 h-4 mr-1" />
+          この現場の職人を選ぶ
+        </Button>
+
         <Badge variant="outline" className="ml-auto bg-slate-50">
           この月の合計 {grandTotal} 人工
         </Badge>
@@ -197,11 +232,12 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
       <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="text-sm border-collapse w-max">
+            {/* 枠いっぱいに広げ、余った幅は日付の列に配る（右に空白が残らないように。2026-11-16 アイさん） */}
+            <table className="text-sm border-collapse w-full min-w-max">
               <thead>
                 <tr className="bg-slate-50">
                   <th className="sticky left-0 z-10 bg-slate-50 border-b border-r px-3 py-2 text-left font-medium w-[140px] whitespace-nowrap">
-                    社員
+                    職人
                   </th>
                   {showExtra && <th className="border-b border-r px-2 py-2 font-medium w-[56px] whitespace-nowrap">種類</th>}
                   {Array.from({ length: days }, (_, i) => i + 1).map((d) => {
@@ -209,7 +245,7 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
                     return (
                       <th
                         key={d}
-                        className={`border-b border-r px-0 py-1 w-[30px] font-normal ${
+                        className={`border-b border-r px-0 py-1 min-w-[30px] font-normal ${
                           w === 0 ? "text-red-500 bg-red-50/40" : w === 6 ? "text-blue-500 bg-blue-50/40" : "text-slate-500"
                         }`}
                       >
@@ -232,7 +268,7 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
                 {!isLoading && staff.length === 0 && (
                   <tr>
                     <td colSpan={days + 3} className="px-3 py-6 text-center text-slate-500">
-                      社員が登録されていません。マスタ管理の「担当者マスタ」から登録してください。
+                      この現場の職人がまだ選ばれていません。上の「この現場の職人を選ぶ」から選んでください。
                     </td>
                   </tr>
                 )}
@@ -245,6 +281,11 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
                           className="sticky left-0 z-10 bg-white border-b border-r px-3 py-1.5 align-middle whitespace-nowrap"
                         >
                           {st.name}
+                          {st.picked === false && (
+                            <div className="text-[10px] text-slate-400" title="この現場の職人には選んでいませんが、出面が入っているので出しています">
+                              選んでいない人
+                            </div>
+                          )}
                         </td>
                       )}
                       {showExtra && (
@@ -263,6 +304,8 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
                             <input
                               id={cellId(si * kinds.length + ki, d)}
                               inputMode="decimal"
+                              // 入力欄のもともとの幅（約20文字）で列が広がらないよう、最小にして列の幅に合わせる
+                              size={1}
                               onKeyDown={(e) => onCellKeyDown(e, si * kinds.length + ki, d)}
                               onFocus={(e) => e.currentTarget.select()}
                               value={cellValue(st.id, d, kind)}
@@ -272,7 +315,7 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
                                 if (v !== "" && !/^\d*\.?\d*$/.test(v)) return;
                                 setEdits((prev) => ({ ...prev, [key]: v }));
                               }}
-                              className={`w-[30px] h-7 text-center tabular-nums outline-none bg-transparent focus:bg-primary/10 ${
+                              className={`w-full min-w-0 h-7 text-center tabular-nums outline-none bg-transparent focus:bg-primary/10 ${
                                 key in edits ? "text-primary font-semibold" : ""
                               }`}
                             />
@@ -311,7 +354,7 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
             </div>
             <div className="flex flex-wrap gap-x-5 gap-y-1.5">
               {summary.items.map((it) => (
-                <div key={it.staffMemberId} className="text-sm">
+                <div key={it.craftsmanId} className="text-sm">
                   <span className="text-slate-600">{it.name}</span>
                   <span className="ml-1.5 font-medium tabular-nums">{it.manDays}</span>
                   <span className="text-xs text-slate-400 ml-0.5">人工</span>
@@ -329,8 +372,48 @@ export function AttendanceSheet({ projectId }: { projectId: number }) {
 
       <p className="text-xs text-slate-500">
         1日を「1」、半日を「0.5」で入れます。空欄は0です。矢印キーとEnterでマスを移動できます。
-        金額（人工 × 単価）は、職人単価の扱いが決まってから足します。
+        金額（人工 × 単価）は、基本情報タブの工事原価計算書で単価を入れると出ます。
       </p>
+
+      <Dialog open={crewOpen} onOpenChange={setCrewOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>この現場の職人を選ぶ</DialogTitle>
+            <DialogDescription>
+              チェックした職人だけが出面と工事原価計算書に並びます（チェックした順）。外しても、入っている出面は消えません。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[50vh] overflow-y-auto divide-y border rounded">
+            {(data?.craftsmen ?? []).length === 0 && (
+              <p className="px-3 py-4 text-sm text-slate-500">職人マスタに職人がいません。マスタ管理の「職人マスタ」から登録してください。</p>
+            )}
+            {(data?.craftsmen ?? []).map((c) => {
+              const idx = crewDraft.indexOf(c.id);
+              return (
+                <label key={c.id} className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-slate-50">
+                  <input type="checkbox" checked={idx >= 0} onChange={() => toggleCrew(c.id)} />
+                  <span className="text-xs text-slate-400 font-mono w-12">{c.code}</span>
+                  <span className="text-sm flex-1">{c.name}</span>
+                  {idx >= 0 && <span className="text-xs text-primary tabular-nums">{idx + 1}番目</span>}
+                </label>
+              );
+            })}
+          </div>
+          <p className="text-xs text-slate-500">
+            職人マスタにいない人は、
+            {pathAllowed(role, "/master/craftsmen")
+              ? <Link href="/master/craftsmen" className="text-primary underline">職人マスタ</Link>
+              : "事務の方に頼んで職人マスタ"}
+            で登録してください。
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCrewOpen(false)}>やめる</Button>
+            <Button onClick={() => saveCrew.mutate(crewDraft)} disabled={saveCrew.isPending}>
+              {saveCrew.isPending && <Loader2 className="w-4 h-4 animate-spin mr-1" />}保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

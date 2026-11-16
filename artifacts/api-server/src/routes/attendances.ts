@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
-import { and, asc, eq, gte, lte, sql } from "drizzle-orm";
-import { db, attendancesTable, staffMembersTable } from "@workspace/db";
+import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { db, attendancesTable, craftsmenTable, projectCraftsmenTable } from "@workspace/db";
 
 // ─── 出面（でづら）────────────────────────────────────────────────────────────
 //
-// 工事 × 月で「誰が何日入ったか」を読み書きする。
-// 金額は出さない（職人単価をシステムに持てるか未確定のため。温品様へ確認中）。
+// 工事 × 月で「誰が何日入ったか」を読み書きする。人は職人マスタ（2026-11-16 担当者マスタから切り替え）。
+// 表に並ぶのは「この現場の職人」として選んだ人（＋選んでいなくても、この工事に出面が入っている人）。
+// 金額（人工×単価）は工事原価計算書（基本情報タブ）で出す。
 
 const router: IRouter = Router();
 
@@ -27,8 +28,33 @@ function monthRange(month: string) {
 }
 
 /**
+ * この現場の表に並べる職人。選んだ順に、選んでいないが出面のある人を後ろに足す
+ * （外しても入っている出面が見えなくならないように）。工事原価計算書の労務費でも使う。
+ */
+export async function crewOf(projectId: number) {
+  const [picked, withData] = await Promise.all([
+    db
+      .select({ id: craftsmenTable.id, code: craftsmenTable.code, name: craftsmenTable.name, sortOrder: projectCraftsmenTable.sortOrder })
+      .from(projectCraftsmenTable)
+      .innerJoin(craftsmenTable, eq(projectCraftsmenTable.craftsmanId, craftsmenTable.id))
+      .where(eq(projectCraftsmenTable.projectId, projectId))
+      .orderBy(asc(projectCraftsmenTable.sortOrder), asc(craftsmenTable.code)),
+    db
+      .selectDistinct({ id: craftsmenTable.id, code: craftsmenTable.code, name: craftsmenTable.name })
+      .from(attendancesTable)
+      .innerJoin(craftsmenTable, eq(attendancesTable.craftsmanId, craftsmenTable.id))
+      .where(eq(attendancesTable.projectId, projectId)),
+  ]);
+  const ids = new Set(picked.map((p) => p.id));
+  return [
+    ...picked.map(({ id, code, name }) => ({ id, code, name, picked: true })),
+    ...withData.filter((w) => !ids.has(w.id)).sort((a, b) => a.code.localeCompare(b.code)).map((w) => ({ ...w, picked: false })),
+  ];
+}
+
+/**
  * GET /api/attendances?projectId=1&month=2026-09
- * その工事・その月の出面と、選べる社員の一覧を返す。
+ * その工事・その月の出面と、表に並べる職人（staff）、選べる職人の一覧（craftsmen）を返す。
  */
 router.get("/", async (req, res) => {
   try {
@@ -38,7 +64,7 @@ router.get("/", async (req, res) => {
     const range = monthRange(month);
     if (!range) return res.status(400).json({ message: "month は YYYY-MM で指定してください" });
 
-    const [rows, staff] = await Promise.all([
+    const [rows, staff, craftsmen] = await Promise.all([
       db
         .select()
         .from(attendancesTable)
@@ -48,19 +74,21 @@ router.get("/", async (req, res) => {
           lte(attendancesTable.workDate, range.to),
         ))
         .orderBy(asc(attendancesTable.workDate)),
+      crewOf(projectId),
       db
-        .select({ id: staffMembersTable.id, code: staffMembersTable.code, name: staffMembersTable.name })
-        .from(staffMembersTable)
-        .where(eq(staffMembersTable.isActive, true))
-        .orderBy(asc(staffMembersTable.code)),
+        .select({ id: craftsmenTable.id, code: craftsmenTable.code, name: craftsmenTable.name })
+        .from(craftsmenTable)
+        .where(eq(craftsmenTable.isActive, true))
+        .orderBy(asc(craftsmenTable.code)),
     ]);
 
     return res.json({
       month,
       days: range.days,
       staff,
+      craftsmen,
       items: rows.map((r) => ({
-        staffMemberId: r.staffMemberId,
+        craftsmanId: r.craftsmanId,
         workDate: r.workDate,
         manDays: parseN(r.manDays),
         earlyCount: parseN(r.earlyCount),
@@ -75,7 +103,7 @@ router.get("/", async (req, res) => {
 
 /**
  * PUT /api/attendances
- * body: { projectId, items: [{ staffMemberId, workDate, manDays, earlyCount, overtimeCount }] }
+ * body: { projectId, items: [{ craftsmanId, workDate, manDays, earlyCount, overtimeCount }] }
  *
  * 送られた1マスぶんを入れ替える。3つとも0なら行ごと消す（0だらけの行を残さない）。
  */
@@ -84,7 +112,7 @@ router.put("/", async (req, res) => {
     const b = req.body as {
       projectId?: number;
       items?: Array<{
-        staffMemberId: number;
+        craftsmanId: number;
         workDate: string;
         manDays?: number;
         earlyCount?: number;
@@ -103,7 +131,7 @@ router.put("/", async (req, res) => {
         const overtimeCount = Number(it.overtimeCount ?? 0);
         const where = and(
           eq(attendancesTable.projectId, projectId),
-          eq(attendancesTable.staffMemberId, Number(it.staffMemberId)),
+          eq(attendancesTable.craftsmanId, Number(it.craftsmanId)),
           eq(attendancesTable.workDate, it.workDate),
         );
         if (manDays === 0 && earlyCount === 0 && overtimeCount === 0) {
@@ -114,14 +142,14 @@ router.put("/", async (req, res) => {
           .insert(attendancesTable)
           .values({
             projectId,
-            staffMemberId: Number(it.staffMemberId),
+            craftsmanId: Number(it.craftsmanId),
             workDate: it.workDate,
             manDays: String(manDays),
             earlyCount: String(earlyCount),
             overtimeCount: String(overtimeCount),
           })
           .onConflictDoUpdate({
-            target: [attendancesTable.projectId, attendancesTable.staffMemberId, attendancesTable.workDate],
+            target: [attendancesTable.projectId, attendancesTable.craftsmanId, attendancesTable.workDate],
             set: {
               manDays: String(manDays),
               earlyCount: String(earlyCount),
@@ -140,6 +168,33 @@ router.put("/", async (req, res) => {
 });
 
 /**
+ * PUT /api/attendances/crew   body: { projectId, craftsmanIds: number[] }
+ * この現場に入る職人を選ぶ（並び順もこの順）。送られなかった人は外す。外しても出面は消えない。
+ */
+router.put("/crew", async (req, res) => {
+  try {
+    const projectId = Number(req.body?.projectId);
+    const ids: number[] = Array.isArray(req.body?.craftsmanIds) ? req.body.craftsmanIds.map(Number).filter(Number.isInteger) : [];
+    if (!Number.isInteger(projectId)) return res.status(400).json({ message: "projectId は必須です" });
+    const unique = [...new Set(ids)];
+    if (unique.length > 0) {
+      const found = await db.select({ id: craftsmenTable.id }).from(craftsmenTable).where(inArray(craftsmenTable.id, unique));
+      if (found.length !== unique.length) return res.status(400).json({ message: "職人が見つかりません。画面を開き直してください。" });
+    }
+    await db.transaction(async (tx) => {
+      await tx.delete(projectCraftsmenTable).where(eq(projectCraftsmenTable.projectId, projectId));
+      if (unique.length > 0) {
+        await tx.insert(projectCraftsmenTable).values(unique.map((craftsmanId, i) => ({ projectId, craftsmanId, sortOrder: i })));
+      }
+    });
+    return res.json({ ok: true });
+  } catch (err) {
+    req.log.error({ err }, "Failed to save crew");
+    return res.status(500).json({ message: "保存に失敗しました。" });
+  }
+});
+
+/**
  * GET /api/attendances/summary?projectId=1
  * その工事の合計（社員ごとの人工・早出・残業と、工事全体の合計）。月をまたいで数える。
  */
@@ -150,19 +205,19 @@ router.get("/summary", async (req, res) => {
 
     const rows = await db
       .select({
-        staffMemberId: attendancesTable.staffMemberId,
-        name: staffMembersTable.name,
+        craftsmanId: attendancesTable.craftsmanId,
+        name: craftsmenTable.name,
         manDays: sql<string>`SUM(${attendancesTable.manDays})`,
         earlyCount: sql<string>`SUM(${attendancesTable.earlyCount})`,
         overtimeCount: sql<string>`SUM(${attendancesTable.overtimeCount})`,
       })
       .from(attendancesTable)
-      .leftJoin(staffMembersTable, eq(attendancesTable.staffMemberId, staffMembersTable.id))
+      .leftJoin(craftsmenTable, eq(attendancesTable.craftsmanId, craftsmenTable.id))
       .where(eq(attendancesTable.projectId, projectId))
-      .groupBy(attendancesTable.staffMemberId, staffMembersTable.name);
+      .groupBy(attendancesTable.craftsmanId, craftsmenTable.name);
 
     const items = rows.map((r) => ({
-      staffMemberId: r.staffMemberId,
+      craftsmanId: r.craftsmanId,
       name: r.name ?? "",
       manDays: parseN(r.manDays),
       earlyCount: parseN(r.earlyCount),

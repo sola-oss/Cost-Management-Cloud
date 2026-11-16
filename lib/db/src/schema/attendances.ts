@@ -2,7 +2,7 @@ import { pgTable, serial, integer, date, numeric, text, timestamp, unique, index
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { projectsTable } from "./projects";
-import { staffMembersTable } from "./staff-members";
+import { craftsmenTable } from "./craftsmen";
 
 // ─── 出面（でづら）────────────────────────────────────────────────────────────
 //
@@ -17,7 +17,8 @@ export const attendancesTable = pgTable(
   {
     id: serial("id").primaryKey(),
     projectId: integer("project_id").notNull().references(() => projectsTable.id, { onDelete: "cascade" }),
-    staffMemberId: integer("staff_member_id").notNull().references(() => staffMembersTable.id, { onDelete: "cascade" }),
+    // 2026-11-16 担当者マスタから職人マスタに切り替え（本番は出面・単価とも0件のときに切り替えた）
+    craftsmanId: integer("craftsman_id").notNull().references(() => craftsmenTable.id, { onDelete: "cascade" }),
     workDate: date("work_date").notNull(),
     // 人工。半日は 0.5
     manDays: numeric("man_days", { precision: 5, scale: 2 }).notNull().default("0"),
@@ -28,7 +29,7 @@ export const attendancesTable = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    unique("attendances_unique").on(t.projectId, t.staffMemberId, t.workDate),
+    unique("attendances_unique").on(t.projectId, t.craftsmanId, t.workDate),
     index("attendances_project_date_idx").on(t.projectId, t.workDate),
   ],
 );

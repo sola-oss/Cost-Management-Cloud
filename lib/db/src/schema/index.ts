@@ -1,3 +1,4 @@
+export * from "./craftsmen";
 export * from "./attendances";
 export * from "./projects";
 export * from "./project-progress";

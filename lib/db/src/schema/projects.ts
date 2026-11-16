@@ -69,6 +69,10 @@ export const projectsTable = pgTable("projects", {
   floorAreaTsubo: numeric("floor_area_tsubo", { precision: 10, scale: 2 }),
   floorAreaSqm: numeric("floor_area_sqm", { precision: 10, scale: 2 }),
   memo: text("memo"),
+  // 工事原価計算書の下段（Excel と同じ）。消耗品費＝合計×率、諸経費＝(合計＋消耗品費)×率。
+  // 空なら消耗品費3%・諸経費10%で計算する（2026-11-16 アイさん）。単位は %
+  consumableRate: numeric("consumable_rate", { precision: 5, scale: 2 }),
+  overheadRate: numeric("overhead_rate", { precision: 5, scale: 2 }),
   isCompleted: boolean("is_completed").default(false),
   contractLines: json("contract_lines").$type<ContractLine[]>(),
   publicPrivateType: text("public_private_type"),
