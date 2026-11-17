@@ -467,6 +467,18 @@ export function CostSheet({ projectId }: { projectId: number }) {
       span.className = ci.className.includes("text-right") ? "block text-right tabular-nums" : "";
       ci.replaceWith(span);
     });
+    // 印刷しない行（「＋ 仕入先を足す」）は消す。表の左の費目名は複数の行にまたがっている（rowSpan）ので、
+    // 消した行の分だけ縮めないと、下の行が1列ずつずれる
+    clone.querySelectorAll<HTMLTableRowElement>("tr.cs-no-print").forEach((tr) => {
+      for (let prev = tr.previousElementSibling; prev; prev = prev.previousElementSibling) {
+        const spanning = prev.querySelector<HTMLTableCellElement>("th[rowspan], td[rowspan]");
+        if (spanning && spanning.rowSpan > 1) {
+          spanning.rowSpan -= 1;
+          break;
+        }
+      }
+      tr.remove();
+    });
     clone.id = "cs-print-root";
     const portal = document.createElement("div");
     portal.id = "cs-print-portal";
